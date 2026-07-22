@@ -1,0 +1,23 @@
+{
+  "name": "hubhole",
+  "version": "1.0.0",
+  "description": "HubHole — a HubSpot-flavored hole.io game. Swallow every record, deal, ticket and workflow across 10 Hubs.",
+  "main": "index.html",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "build": "node scripts/build.js",
+    "test": "node scripts/logic-test.js"
+  },
+  "keywords": [
+    "game",
+    "html5",
+    "canvas",
+    "hubspot",
+    "hole-io"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
