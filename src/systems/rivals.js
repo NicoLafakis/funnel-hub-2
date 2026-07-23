@@ -229,9 +229,14 @@ export function updateRival(rival, propObjects, avatar, dt, opts = {}) {
   const pdz = rival.object3D.position.z - avatar.position.z;
   if (playerRadius >= vr * PLAYER_EAT_RIVAL_SIZE_RATIO && pdx * pdx + pdz * pdz < playerReach * playerReach) {
     rival.deadTimer = RESPAWN_COOLDOWN;
-    // EXACT shape ported from the original (`bonus=150+S.level*50`,
-    // index.html:829), scaled by itemValueMultiplier for the reason above.
-    events.bonus = (150 + levelNumber * 50) * itemValueMultiplier;
+    // Bonus is a fixed share of the level's target. The original 2D game's
+    // `bonus=150+S.level*50` (index.html:829) was ~20% of a level's target;
+    // naively scaling that shape by itemValueMultiplier(n)=n*n gives
+    // (150+50n)*n^2 vs target(n)=1000*n^2 — a ratio of 0.15+0.05n that hits
+    // 5.15x the entire level target at n=100 (one rival eat = instant win).
+    // 200*itemValueMultiplier keeps the original's 200/1000 = 20%-of-target
+    // ratio constant across all 100 levels.
+    events.bonus = 200 * itemValueMultiplier;
     events.playerAteRival = true;
   }
 

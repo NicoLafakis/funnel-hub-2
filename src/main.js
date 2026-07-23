@@ -72,6 +72,14 @@ function randomGroundPos(worldSize, margin) {
   };
 }
 
+// A random point in a ring around the world center (the avatar's spawn), used
+// to seed a guaranteed "spawn feast" of small props in the opening view.
+function randomRingPos(minR, maxR, margin) {
+  const ang = Math.random() * Math.PI * 2;
+  const r = minR + margin + Math.random() * Math.max(10, maxR - minR - margin);
+  return { x: Math.cos(ang) * r, z: Math.sin(ang) * r };
+}
+
 // Star rating + coin reward for a completed level. Stars scale with how much
 // of the clock was left (a speed/skill signal); coins scale with level index
 // (so later levels — which take far longer — pay out more) plus a modest
@@ -235,10 +243,18 @@ export function main() {
 
     // Props: spawn level.template scaled by level.itemValueMultiplier per
     // src/content/propkit.js's `kind` contract with src/data/levels.js.
+    // Placement is zoned, not uniform-random: a chase camera sees only a small
+    // cone of the world, so uniform scatter reads as an empty city. The two
+    // smallest tiers put ~60% of their count in a "spawn feast" ring around
+    // the avatar's (0,0) start so the first 10-15s guarantees visible growth;
+    // mid tiers get a smaller share; everything else scatters as before.
     level.template.forEach((tier) => {
+      const nearShare = tier.tierIndex <= 1 ? 0.6 : tier.tierIndex <= 3 ? 0.25 : 0;
       for (let i = 0; i < tier.baseCount; i += 1) {
         const mesh = createPropMesh(tier.kind, THREE, metro.accent);
-        const pos = randomGroundPos(level.world, tier.baseRadius * 1.3 + 20);
+        const pos = Math.random() < nearShare
+          ? randomRingPos(120, 550, tier.baseRadius * 1.3 + 20)
+          : randomGroundPos(level.world, tier.baseRadius * 1.3 + 20);
         mesh.position.set(pos.x, 0, pos.z);
         mesh.rotation.y = Math.random() * Math.PI * 2;
         root.add(mesh);
