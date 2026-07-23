@@ -100,9 +100,14 @@ export function createInput() {
     recompute();
   }
   function onPointerMove(e) {
+    // Track position only — hovering must NOT steer. Steering is active only
+    // while the pointer is held down (drag-to-move, matching the README's
+    // "mouse / finger drag" contract). A hover that leaves the cursor
+    // off-center would otherwise drive the avatar toward the screen edge
+    // forever, since the chase camera keeps the avatar at screen center and
+    // it can never "reach" the cursor.
     pointer.x = e.clientX;
     pointer.y = e.clientY;
-    pointer.active = true;
     recompute();
   }
   function onPointerDown(e) {
@@ -111,12 +116,25 @@ export function createInput() {
     pointer.active = true;
     recompute();
   }
+  function onPointerUp() {
+    pointer.active = false;
+    recompute();
+  }
+  function onBlur() {
+    // Dropped focus mid-drag/mid-key: stop all input so nothing sticks on.
+    keys = {};
+    pointer.active = false;
+    recompute();
+  }
 
   if (typeof window !== 'undefined') {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('blur', onBlur);
   }
 
   function dispose() {
@@ -125,6 +143,9 @@ export function createInput() {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('blur', onBlur);
     }
   }
 
