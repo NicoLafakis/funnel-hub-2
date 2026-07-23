@@ -16,6 +16,14 @@ A scripted Playwright playthrough (start → world map → intro → play → do
 - **Rival-bonus curve break**: `(150+level*50)*itemValueMultiplier` paid 5.15× the entire level-100 target (one rival eat = instant win). Now a constant 20%-of-target share (`200 * itemValueMultiplier`).
 - Plus a look-and-feel improvement: prop placement is zoned with a "spawn feast" ring near the player start instead of uniform scatter (the chase-camera view was empty).
 
+A second game-tester pass (17-level sweep covering all 10 metros, real mouse-drag input, on the live URL) found four more bugs, fixed in commits `25b8afd`, `b4c6a98`, `8d9ea97` — final sweep: **17/17 playable, zero errors**:
+
+- **Mouse drift**: a single hover steered the avatar forever (`pointer.active` never cleared). Now drag-to-move only; pointerup/cancel/blur stop input.
+- **Level famine**: rivals beelined the spawn-feast ring, stripped it, and camped it at un-eatable sizes — players starved at 0 mass on levels 21+. Rivals now spawn ≥ world×0.25 away with a 6s wander-only warmup.
+- **Snowball pacing**: radius grew from n²-scaled mass while worlds only grow ~2×, so mid levels self-completed in seconds (10.6M mass vs a 1.68M target). Avatar + rival radius now grows from base mass (`mass/itemValueMultiplier`), keeping pacing level-invariant; all landmarks stay eatable within the base budget.
+- **Off-map respawns**: the 2D→3D port kept 0..world respawn coordinates in a ±world/2 world, dumping respawned rivals off the map.
+- Plus: tightened feast ring + a 10-prop "opening bite" ring at spawn so any first move eats immediately.
+
 ## Built and working
 
 Independently verified this session (main agent ran `npm test` and `npm run build` directly, not just trusting subagent self-reports): both pass clean on the current working tree.
