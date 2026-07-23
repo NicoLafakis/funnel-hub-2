@@ -1,0 +1,20 @@
+{
+  "name": "flywheel-v2",
+  "version": "0.1.0",
+  "description": "Flywheel V2 — 3D city eater rebuild per the .wiki design docs. Three.js, no bundler, no backend.",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "build": "node scripts/build.js",
+    "test": "node scripts/logic-test.js",
+    "vendor-three": "node scripts/vendor-three.js",
+    "postinstall": "node scripts/vendor-three.js"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "three": "^0.185.0"
+  }
+}
