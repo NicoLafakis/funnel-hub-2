@@ -21,4 +21,7 @@ copyRecursive(path.join(root, 'index.html'), path.join(dist, 'index.html'));
 if (fs.existsSync(path.join(root, 'assets'))) {
   copyRecursive(path.join(root, 'assets'), path.join(dist, 'assets'));
 }
+if (fs.existsSync(path.join(root, 'src'))) {
+  copyRecursive(path.join(root, 'src'), path.join(dist, 'src'));
+}
 console.log(`Built ${dist}`);

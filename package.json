@@ -6,14 +6,21 @@
   "scripts": {
     "start": "node scripts/serve.js",
     "build": "node scripts/build.js",
-    "test": "node scripts/logic-test.js"
+    "test": "node scripts/logic-test.js",
+    "postinstall": "node scripts/vendor-three.js",
+    "vendor-three": "node scripts/vendor-three.js"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
   },
   "keywords": [
     "game",
     "html5",
     "canvas",
     "hubspot",
-    "hole-io"
+    "hole-io",
+    "three.js",
+    "webgl"
   ],
   "author": "",
   "license": "MIT",
