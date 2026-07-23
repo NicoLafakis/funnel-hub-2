@@ -8,20 +8,20 @@ export function createChaseCamera(camera, avatar, THREE) {
   const raycaster = new THREE.Raycaster();
   let obstacles = [];
 
-  // Camera framing scales with the avatar: the offset must stay well outside
-  // the avatar's own radius (26 + sqrt(mass)*1.9 — ~35 units at spawn,
-  // ~1900 at level-100 mass) or the camera ends up inside the sphere and the
-  // city is invisible. back ≈ 1.9r + height ≈ 1.05r puts the camera ~2.2r
-  // away at a ~29° downward angle, framing the avatar bottom-center with the
-  // city ahead in view.
+  // Camera framing scales with the avatar: the offset must stay outside the
+  // avatar's own radius (26 + sqrt(mass/divisor)*1.9) or the camera ends up
+  // inside the sphere. back ~2.6r + height ~1.5r frames the avatar in the
+  // lower third with plenty of city in view — earlier values (1.9r/1.05r)
+  // still let the ball fill most of the screen, and with a featureless
+  // ground players reported "a ball sliding around in nothing".
   const BACK_DIST_BASE = 8;
   const HEIGHT_BASE = 4;
 
   function update(dt) {
     const r = typeof avatar.radius === 'function' ? avatar.radius() : 30;
     const yaw = avatar.object3D.rotation.y;
-    const backDist = BACK_DIST_BASE + r * 1.9;
-    const height = HEIGHT_BASE + r * 1.05;
+    const backDist = BACK_DIST_BASE + r * 2.6;
+    const height = HEIGHT_BASE + r * 1.5;
 
     // Avatar faces along (sin(yaw), 0, cos(yaw)) — see avatar.js facingAngle
     // (Math.atan2(nx, nz)). "Behind" is the negative of that direction.

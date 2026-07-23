@@ -140,13 +140,19 @@ export function renderWorldMap(container, metros, saveData, onSelectLevel) {
     header.style.borderLeftColor = metro.accent || 'rgba(255,255,255,.25)';
     header.innerHTML = `
       <span class="metro-name">${metroUnlocked ? '' : '🔒 '}${metro.name}</span>
-      <span class="metro-meta">${metroUnlocked ? `${completedCount}/10 · ${totalStars}⭐` : 'LOCKED'}</span>
+      <span class="metro-meta">${metroUnlocked ? `${completedCount}/10 · ${totalStars}⭐ <span class="chev">▾</span>` : 'LOCKED'}</span>
     `;
     card.appendChild(header);
 
     const levelsWrap = doc.createElement('div');
     levelsWrap.className = 'metro-levels';
-    levelsWrap.style.display = 'none';
+    // Auto-expand the first metro the player can actually play (the one
+    // containing their next unplayed level): the accordion is otherwise
+    // undiscoverable — live player report: "not sure how you clicked into
+    // the first level, maybe you have to use enter?".
+    const nextLevel = (saveData && saveData.unlockedLevel) || 1;
+    const startOpen = metroUnlocked && nextLevel >= firstLevel && nextLevel <= lastLevel;
+    levelsWrap.style.display = startOpen ? 'grid' : 'none';
     card.appendChild(levelsWrap);
 
     if (metroUnlocked) {

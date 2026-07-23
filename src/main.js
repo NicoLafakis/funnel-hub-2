@@ -239,6 +239,20 @@ export function main() {
     ground.rotation.x = -Math.PI / 2;
     root.add(ground);
 
+    // Street grid: without any visual reference on the ground, a flat-colored
+    // plane gives zero sense of motion ("couldn't see the floor, looked like
+    // nothing was there" — live player report). A subtle grid, tinted from
+    // the metro's accent, restores speed/position readability. Cells ~110u,
+    // matching the old 2D game's grid step.
+    {
+      const grid = new THREE.GridHelper(level.world, Math.round(level.world / 110), metro.accent, metro.accent);
+      grid.material.transparent = true;
+      grid.material.opacity = 0.18;
+      grid.material.depthWrite = false;
+      grid.position.y = 0.5; // float just above the plane to avoid z-fighting
+      root.add(grid);
+    }
+
     const obstacleMeshes = [];
 
     // Props: spawn level.template scaled by level.itemValueMultiplier per
