@@ -85,12 +85,16 @@ export function createRival(startPosition, THREE) {
     // keeps a fed rival from growing to map-covering sizes on high-ivm
     // levels. Default Infinity = original uncapped behavior.
     radiusCap: Infinity,
+    // Same itemValueMultiplier normalization as the avatar (see avatar.js
+    // radius()): rivals gain scaled mass, so without dividing it back out
+    // their radius snowballs on high levels. Default 1 = original behavior.
+    massDivisor: 1,
     // Cooldown after being eaten by the player; >0 means dead/respawning,
     // exactly like the original's `v.dead` (index.html:805-808).
     deadTimer: 0,
     radius() {
       return Math.min(
-        RIVAL_RADIUS_BASE + Math.sqrt(this.mass) * RIVAL_RADIUS_GROWTH,
+        RIVAL_RADIUS_BASE + Math.sqrt(this.mass / this.massDivisor) * RIVAL_RADIUS_GROWTH,
         this.radiusCap,
       );
     },

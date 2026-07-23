@@ -245,15 +245,17 @@ export function main() {
     // src/content/propkit.js's `kind` contract with src/data/levels.js.
     // Placement is zoned, not uniform-random: a chase camera sees only a small
     // cone of the world, so uniform scatter reads as an empty city. The two
-    // smallest tiers put ~60% of their count in a "spawn feast" ring around
-    // the avatar's (0,0) start so the first 10-15s guarantees visible growth;
-    // mid tiers get a smaller share; everything else scatters as before.
+    // smallest tiers put ~75% of their count in a tight "spawn feast" ring
+    // (80-380u — roughly one prop every ~80 units) around the avatar's (0,0)
+    // start so the first 10-15s guarantees visible growth; mid tiers get a
+    // smaller share; everything else scatters as before. (An earlier 120-550
+    // ring at 60% was too thin — blind drives from spawn regularly ate 0.)
     level.template.forEach((tier) => {
-      const nearShare = tier.tierIndex <= 1 ? 0.6 : tier.tierIndex <= 3 ? 0.25 : 0;
+      const nearShare = tier.tierIndex <= 1 ? 0.75 : tier.tierIndex <= 3 ? 0.3 : 0;
       for (let i = 0; i < tier.baseCount; i += 1) {
         const mesh = createPropMesh(tier.kind, THREE, metro.accent);
         const pos = Math.random() < nearShare
-          ? randomRingPos(120, 550, tier.baseRadius * 1.3 + 20)
+          ? randomRingPos(80, 380, tier.baseRadius * 1.3 + 20)
           : randomGroundPos(level.world, tier.baseRadius * 1.3 + 20);
         mesh.position.set(pos.x, 0, pos.z);
         mesh.rotation.y = Math.random() * Math.PI * 2;
@@ -271,6 +273,29 @@ export function main() {
         });
       }
     });
+
+    // Guaranteed opening bite: a small inner ring of tier-0 props right at
+    // the spawn point, so ANY first move (even a blind one) eats within a
+    // second. ~30 base mass — negligible against the level's 1427 budget,
+    // but it eliminates the "0 mass after 10s" failure mode outright.
+    {
+      const biteTier = level.template[0];
+      for (let i = 0; i < 10; i += 1) {
+        const mesh = createPropMesh(biteTier.kind, THREE, metro.accent);
+        const pos = randomRingPos(50, 130, biteTier.baseRadius * 1.3 + 20);
+        mesh.position.set(pos.x, 0, pos.z);
+        mesh.rotation.y = Math.random() * Math.PI * 2;
+        root.add(mesh);
+        state.propObjects.push({
+          object3D: mesh,
+          position: mesh.position,
+          radius: biteTier.baseRadius,
+          mass: biteTier.baseMass,
+          kind: biteTier.kind,
+          golden: false,
+        });
+      }
+    }
 
     // Golden jackpot pickups — 1-2 per level, EXACT count logic ported from
     // the original (`1+(Math.random()<.5?1:0)`). Mass stays BASE (the 8x
@@ -333,6 +358,7 @@ export function main() {
       const rival = createRival({ x: pos.x, y: 0, z: pos.z }, THREE);
       rival.warmupTimer = RIVAL_WARMUP_SECONDS;
       rival.radiusCap = level.world * 0.15;
+      rival.massDivisor = level.itemValueMultiplier;
       const rivalMesh = new THREE.Mesh(
         new THREE.SphereGeometry(1, 20, 16),
         new THREE.MeshStandardMaterial({
@@ -465,6 +491,7 @@ export function main() {
     avatar.mass = state.modifiedStats.startMass;
     avatar.speedMultiplier = state.modifiedStats.moveSpeedMultiplier;
     avatar.radiusCap = level.world * 0.2;
+    avatar.massDivisor = level.itemValueMultiplier;
 
     state.comboTracker = createComboTracker();
     state.timer = state.modifiedStats.timeSeconds;

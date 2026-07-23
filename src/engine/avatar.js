@@ -37,6 +37,7 @@ export function createAvatar(scene, THREE) {
 
   let _mass = 20;
   let _radiusCap = Infinity;
+  let _massDivisor = 1;
   let inputDx = 0;
   let inputDz = 0;
   let facingAngle = 0;
@@ -54,14 +55,17 @@ export function createAvatar(scene, THREE) {
 
   // EXACT formula ported from the original 2D game (its player-radius func).
   // Relied on elsewhere in the design — do not change its shape.
-  // radiusCap: optional world-relative ceiling, set by the integration layer
-  // to level.world * 0.2. Why: target mass and item values scale by n^2 across
-  // 100 levels but world size only grows ~2x, so the uncapped sqrt formula
-  // makes the avatar map-covering huge by the mid levels (one 10-second sweep
-  // consumed 10x a level-41 target live). The cap preserves the original's
-  // pacing at every level; Infinity = uncapped (default, for tests).
+  // massDivisor: the 100-level curve scales item VALUES by itemValueMultiplier
+  // (n^2), but world size only grows ~2x. If radius grew from scaled mass,
+  // the avatar would hit map-covering sizes within seconds on mid/high levels
+  // (observed live: a single 3s drive ate 133% of a level-15 target). The
+  // integration layer sets massDivisor = itemValueMultiplier(n), normalizing
+  // radius growth to level-invariant "base mass" — the original game's
+  // pacing at every level. Base-budget math still lets the player eat every
+  // landmark (max boundingRadius 74 needs r>=93 => ~1225 base, available
+  // ~1427) and tier-6 props with combos. Default 1 = original behavior.
   function radius() {
-    return Math.min(26 + Math.sqrt(_mass) * 1.9, _radiusCap);
+    return Math.min(26 + Math.sqrt(_mass / _massDivisor) * 1.9, _radiusCap);
   }
 
   function setMoveInput(dx, dz) {
@@ -109,6 +113,8 @@ export function createAvatar(scene, THREE) {
     set mass(v) { _mass = Math.max(0, v); },
     get radiusCap() { return _radiusCap; },
     set radiusCap(v) { _radiusCap = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : Infinity; },
+    get massDivisor() { return _massDivisor; },
+    set massDivisor(v) { _massDivisor = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 1; },
     get speedMultiplier() { return _speedMultiplier; },
     set speedMultiplier(v) { _speedMultiplier = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 1; },
     radius,
