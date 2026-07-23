@@ -36,6 +36,7 @@ export function createAvatar(scene, THREE) {
   scene.add(object3D);
 
   let _mass = 20;
+  let _radiusCap = Infinity;
   let inputDx = 0;
   let inputDz = 0;
   let facingAngle = 0;
@@ -53,8 +54,14 @@ export function createAvatar(scene, THREE) {
 
   // EXACT formula ported from the original 2D game (its player-radius func).
   // Relied on elsewhere in the design — do not change its shape.
+  // radiusCap: optional world-relative ceiling, set by the integration layer
+  // to level.world * 0.2. Why: target mass and item values scale by n^2 across
+  // 100 levels but world size only grows ~2x, so the uncapped sqrt formula
+  // makes the avatar map-covering huge by the mid levels (one 10-second sweep
+  // consumed 10x a level-41 target live). The cap preserves the original's
+  // pacing at every level; Infinity = uncapped (default, for tests).
   function radius() {
-    return 26 + Math.sqrt(_mass) * 1.9;
+    return Math.min(26 + Math.sqrt(_mass) * 1.9, _radiusCap);
   }
 
   function setMoveInput(dx, dz) {
@@ -100,6 +107,8 @@ export function createAvatar(scene, THREE) {
     object3D,
     get mass() { return _mass; },
     set mass(v) { _mass = Math.max(0, v); },
+    get radiusCap() { return _radiusCap; },
+    set radiusCap(v) { _radiusCap = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : Infinity; },
     get speedMultiplier() { return _speedMultiplier; },
     set speedMultiplier(v) { _speedMultiplier = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 1; },
     radius,

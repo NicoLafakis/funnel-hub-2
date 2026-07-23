@@ -33,7 +33,7 @@ import { Audio } from './systems/audio.js';
 import { createComboTracker, COMBO_TIERS } from './systems/combo.js';
 import { createAchievementTracker, ACH } from './systems/achievements.js';
 import { checkSwallow, DEFAULT_SIZE_GATE } from './systems/swallow.js';
-import { createRival, updateRival } from './systems/rivals.js';
+import { createRival, updateRival, RIVAL_WARMUP_SECONDS } from './systems/rivals.js';
 import { createStormController } from './systems/storms.js';
 
 import { loadSave, saveSave } from './meta/save.js';
@@ -321,10 +321,18 @@ export function main() {
 
     chaseCamera.setObstacles(obstacleMeshes);
 
-    // Rivals.
+    // Rivals. Spawn well away from the player's (0,0) start so they can't
+    // camp the spawn-feast ring, give them a wander-only warmup so the
+    // player gets the opening feast uncontested, and cap their radius
+    // relative to the world so a fed rival can't grow map-covering huge.
     for (let i = 0; i < level.rivalCount; i += 1) {
-      const pos = randomGroundPos(level.world, 200);
+      let pos = randomGroundPos(level.world, 200);
+      for (let tries = 0; tries < 20 && Math.hypot(pos.x, pos.z) < level.world * 0.25; tries += 1) {
+        pos = randomGroundPos(level.world, 200);
+      }
       const rival = createRival({ x: pos.x, y: 0, z: pos.z }, THREE);
+      rival.warmupTimer = RIVAL_WARMUP_SECONDS;
+      rival.radiusCap = level.world * 0.15;
       const rivalMesh = new THREE.Mesh(
         new THREE.SphereGeometry(1, 20, 16),
         new THREE.MeshStandardMaterial({
@@ -456,6 +464,7 @@ export function main() {
     avatar.object3D.position.set(0, 0, 0);
     avatar.mass = state.modifiedStats.startMass;
     avatar.speedMultiplier = state.modifiedStats.moveSpeedMultiplier;
+    avatar.radiusCap = level.world * 0.2;
 
     state.comboTracker = createComboTracker();
     state.timer = state.modifiedStats.timeSeconds;

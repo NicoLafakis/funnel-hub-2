@@ -41,6 +41,15 @@ const PLAYER_EAT_RIVAL_REACH_FACTOR = 0.6;
 const RESPAWN_COOLDOWN = 8;
 const RESPAWN_MARGIN = 200; // 200 + Math.random()*(world-400)
 
+// Not from the original: a short grace period at level start during which a
+// rival wanders but does not eat. The 3D levels concentrate early food in a
+// ring near the player's spawn; without a warmup, rivals (250 u/s) beeline
+// to the ring, strip it before the player can grow, and camp it at
+// un-eatable sizes — the player starves at 0 mass (observed live on levels
+// 21+). 6s gives the player the uncontested opening feast the level design
+// intends; afterwards rivalry proceeds normally.
+export const RIVAL_WARMUP_SECONDS = 6;
+
 // Not from the original (the 2D game never had a raid-AI mode — see
 // docs/city-3d-redesign-plan.md's Master tier row: "3, raid-AI (actively
 // contest stacks, not just wander)"). Radius (world units) used to count how
@@ -69,11 +78,21 @@ export function createRival(startPosition, THREE) {
     targetX: sx,
     targetZ: sz,
     retargetTimer: 0,
+    // Grace period (seconds) at level start: wander but don't eat. Set by
+    // the integration layer from RIVAL_WARMUP_SECONDS; 0 = fully active.
+    warmupTimer: 0,
+    // Optional world-relative radius ceiling (see avatar.js radiusCap) —
+    // keeps a fed rival from growing to map-covering sizes on high-ivm
+    // levels. Default Infinity = original uncapped behavior.
+    radiusCap: Infinity,
     // Cooldown after being eaten by the player; >0 means dead/respawning,
     // exactly like the original's `v.dead` (index.html:805-808).
     deadTimer: 0,
     radius() {
-      return RIVAL_RADIUS_BASE + Math.sqrt(this.mass) * RIVAL_RADIUS_GROWTH;
+      return Math.min(
+        RIVAL_RADIUS_BASE + Math.sqrt(this.mass) * RIVAL_RADIUS_GROWTH,
+        this.radiusCap,
+      );
     },
   };
 }
@@ -172,12 +191,36 @@ export function updateRival(rival, propObjects, avatar, dt, opts = {}) {
     rival.deadTimer -= dt;
     if (rival.deadTimer <= 0) {
       rival.deadTimer = 0;
-      rival.object3D.position.x = RESPAWN_MARGIN + Math.random() * (worldSize - RESPAWN_MARGIN * 2);
-      rival.object3D.position.z = RESPAWN_MARGIN + Math.random() * (worldSize - RESPAWN_MARGIN * 2);
+      // Respawn inside the playable world. The original 2D formula
+      // (`200 + Math.random()*(world-400)`) produced 0..world coordinates,
+      // correct for its 0..world arena — but this world's playable ground is
+      // centered on (0,0) and spans ±world/2, so the literal port dumped
+      // respawned rivals into the +/+ quadrant, often off the map entirely.
+      const half = worldSize / 2 - RESPAWN_MARGIN;
+      rival.object3D.position.x = -half + Math.random() * half * 2;
+      rival.object3D.position.z = -half + Math.random() * half * 2;
       rival.mass = 0;
       rival.retargetTimer = 0;
       events.respawned = true;
     }
+    return events;
+  }
+
+  // Warmup: wander without eating (the player-eats-rival check is skipped
+  // during warmup too, so a rival can't be cheap-shotted while harmless).
+  if (rival.warmupTimer > 0) {
+    rival.warmupTimer -= dt;
+    const wdx = rival.targetX - rival.object3D.position.x;
+    const wdz = rival.targetZ - rival.object3D.position.z;
+    const wd = Math.hypot(wdx, wdz);
+    if (wd < 40) {
+      rival.targetX = Math.random() * worldSize - worldSize / 2;
+      rival.targetZ = Math.random() * worldSize - worldSize / 2;
+    } else {
+      rival.object3D.position.x += (wdx / wd) * RIVAL_CHASE_SPEED * dt;
+      rival.object3D.position.z += (wdz / wd) * RIVAL_CHASE_SPEED * dt;
+    }
+    rival.object3D.scale.setScalar(rival.radius());
     return events;
   }
 
