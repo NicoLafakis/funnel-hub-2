@@ -34,10 +34,10 @@ export const CITY_QUIPS = {
   billboard: [
     'CTA: Consume The All.',
     'Breeze AI billboard: fully absorbed. Ironic, given the AI never saw it coming.',
-    'Impressions: one. Then it became one with the hole.',
+    'Impressions: one. Then it became one with the flywheel.',
   ],
   'building-small': [
-    'Storefront acquired. By Hole, Inc.',
+    'Storefront acquired. By Flywheel, Inc.',
     'Kiosk relocated. To the void.',
     "Open sign flipped to 'gone'.",
   ],
@@ -48,15 +48,15 @@ export const CITY_QUIPS = {
   ],
   'building-large': [
     'Skyline swallowed. Rent stabilized.',
-    'Portal instance: ported to the hole.',
-    'The building filed for bankruptcy. Then filed itself into the hole.',
+    'Portal instance: ported to the flywheel.',
+    'The building filed for bankruptcy. Then filed itself into the flywheel.',
   ],
   // One flavor quip set per METROS[].landmarkType (src/data/metros.js) — the
   // level-capstone landmark eat for each of the 10 metros/chapters.
   'liberty-statue': [
     'Give me your tired, your poor, your huddled masses... yearning to be eaten.',
     "Lady Liberty's torch: extinguished. Politely.",
-    'Land of the free. Home of the hole.',
+    'Land of the free. Home of the flywheel.',
   ],
   'lattice-tower': [
     'Iron lattice. Zero resistance.',
@@ -64,9 +64,9 @@ export const CITY_QUIPS = {
     'Panoramic view: briefly. Then just dark.',
   ],
   'clock-tower': [
-    'Big Bell, bigger hole.',
+    'Big Bell, bigger flywheel.',
     "Time's up. Literally.",
-    'God Save the Hole.',
+    'God Save the Flywheel.',
   ],
   'sky-tower': [
     'Neon signage: unplugged mid-blink.',
@@ -76,7 +76,7 @@ export const CITY_QUIPS = {
   'mega-spire': [
     "World's tallest. World's gone-est.",
     'Sky bridge: bridge to nowhere.',
-    'Gold-plated. Hole-plated now.',
+    'Gold-plated. Flywheel-plated now.',
   ],
   amphitheater: [
     'Thumbs down. Way down.',
@@ -89,18 +89,18 @@ export const CITY_QUIPS = {
     'Samba stopped. Mid-beat.',
   ],
   'onion-palace': [
-    'Onion domes. Now just a hole where onions used to be.',
+    'Onion domes. Now just a flywheel where onions used to be.',
     'Red Square: now just Square. Also gone.',
     'Kremlin walls: consumed, brick by brick.',
   ],
   'sail-opera': [
     'Curtain call. Final call.',
     'Sails furled. Into the abyss.',
-    'Standing ovation. For the hole.',
+    'Standing ovation. For the flywheel.',
   ],
   'portal-tower': [
     'Breeze AI campus: fully synced. Into the void.',
-    'HubSpot Tower: closed-won. By a hole.',
+    'HubSpot Tower: closed-won. By a flywheel.',
     'The whole platform. Eaten. As threatened.',
   ],
 };

@@ -1,4 +1,4 @@
-// HubHole 3D — real game bootstrap and flow.
+// Flywheel 3D — real game bootstrap and flow.
 //
 // Wires together everything the prior implementation stages built: engine
 // primitives (scene/avatar/camera/input), difficulty-curve data
@@ -407,7 +407,7 @@ export function main() {
   function tierTip(tier) {
     switch (tier) {
       case 'tutorial': return 'Swallow anything smaller than your rim. That is the whole game.';
-      case 'first-contest': return 'A rival hole wants your food — outgrow it, then eat it back.';
+      case 'first-contest': return 'A rival flywheel wants your food — outgrow it, then eat it back.';
       case 'escalation': return 'Hazards incoming: watch for falling cargo drops.';
       case 'expert': return 'Real routing skill required. Plan your route between rivals and hazards.';
       case 'master': return 'This rival plays dirty — it raids clusters, not just wanders. Watch your back.';
@@ -435,7 +435,7 @@ export function main() {
     const descEl = document.getElementById('introDesc');
     if (descEl) {
       descEl.innerHTML = `${level.districtName}, ${metro.name}. 🎯 Target: <b>${level.target.toLocaleString()}</b> mass &nbsp;·&nbsp; ⏱ ${level.time}s`
-        + (level.rivalCount > 0 ? `<br>🕳️ ${level.rivalCount} rival hole${level.rivalCount > 1 ? 's' : ''} contesting this district.` : '')
+        + (level.rivalCount > 0 ? `<br>🌀 ${level.rivalCount} rival flywheel${level.rivalCount > 1 ? 's' : ''} contesting this district.` : '')
         + (capstoneRequired ? `<br>🏙️ Grow big enough to swallow the district's landmark to finish.` : '');
     }
     const tipEl = document.getElementById('introTip');
@@ -475,8 +475,8 @@ export function main() {
     const hintEl = document.getElementById('sizehint');
     if (hintEl) {
       hintEl.textContent = level.rivalCount > 0
-        ? '🕳️ rival holes are stealing your food — eat THEM back!'
-        : '🕳️ swallow things smaller than your rim';
+        ? '🌀 rival flywheels are stealing your food — eat THEM back!'
+        : '🌀 swallow things smaller than your rim';
     }
   }
 
@@ -641,7 +641,7 @@ export function main() {
 
     if (k === 'm') {
       Audio.muted = !Audio.muted;
-      showToast(Audio.muted ? '🔇 <b>Muted.</b> The hole judges you silently.' : '🔊 <b>Sound on.</b> Let them hear it.');
+      showToast(Audio.muted ? '🔇 <b>Muted.</b> The flywheel judges you silently.' : '🔊 <b>Sound on.</b> Let them hear it.');
       return;
     }
 
@@ -810,7 +810,7 @@ export function main() {
         avatar.mass += events.bonus * state.modifiedStats.massGainMultiplier;
         Audio.rivalEat();
         unlockAchievement('rival');
-        showBanner(`🕳️ RIVAL SWALLOWED — +${Math.round(events.bonus)}`, 1600);
+        showBanner(`🌀 RIVAL ABSORBED — +${Math.round(events.bonus)}`, 1600);
       }
       if (events.respawned) {
         showBanner('😈 RIVAL RESPAWNED', 1100);

@@ -34,7 +34,7 @@ export function handleKeyUp(keys, key) {
 
 // Pure: given a keys map, compute the {dx, dz} axis pair from WASD/arrows.
 // Diagonal input is normalized so it isn't faster than cardinal movement
-// (same as the old game: `const l=Math.hypot(mx,my); hole.x+=mx/l*...`).
+// (same as the old game: `const l=Math.hypot(mx,my); pos.x+=mx/l*...`).
 export function axesFromKeys(keys) {
   let mx = 0;
   let mz = 0;

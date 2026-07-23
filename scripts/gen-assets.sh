@@ -1,5 +1,5 @@
 #!/bin/bash
-# HubHole art batch — regenerates all still image assets via Leonardo AI.
+# Flywheel art batch — regenerates all still image assets via Leonardo AI.
 # Usage: bash scripts/gen-assets.sh   (needs .leonardo-key or LEONARDO_API_KEY)
 cd "$(dirname "$0")/.." || exit 1
 G="node scripts/leonardo.js gen"
@@ -8,10 +8,12 @@ ICON=", centered icon on a deep dark navy circular badge, bold clean vector game
 
 mkdir -p assets/hubs
 
+$G "Game logo emblem: a sleek spinning flywheel vortex with glowing orange and coral swirl rings and teal energy streaks, sense of fast rotation and momentum, centered on a deep dark navy circular badge, bold clean vector game art style, high contrast, no text" 768 768 assets/logo-mark.png "$M"
+$G "Wide game hero backdrop: a massive glowing flywheel vortex spinning with momentum, orange coral and teal energy rings, tiny CRM objects (envelopes, tickets, gears, dollar bills, trophies) being pulled into its orbit, deep navy space background, dramatic rim lighting, game key art, no text" 1344 768 assets/hero-vortex.png "$M"
 $G "Game item sprite: a single gleaming golden vinyl record disc with a bright star sparkle in the center, glossy premium cartoon game art, rich gold and amber palette, centered on solid dark navy background, no text" 768 768 assets/golden-record.png "$M"
-$G "Game emblem: a menacing cartoon black hole face with glowing red and purple swirl rings and angry yellow eyes, centered on a dark circular badge, bold clean vector game art style, no text" 768 768 assets/rival-emblem.png "$M"
+$G "Game emblem: a menacing cartoon rival flywheel with glowing red and purple swirl rings, spinning blades and angry yellow eyes at its center, centered on a dark circular badge, bold clean vector game art style, no text" 768 768 assets/rival-emblem.png "$M"
 $G "Sad cartoon scene: a tiny cute floppy disk character watching papers and envelopes fly away into the sky, deep navy background, melancholic but adorable game art style, no text" 1024 1024 assets/fail-art.png "$M"
-$G "Wide game promotional banner: cartoon black hole vortex on the right side swirling with floating office objects, envelopes, smartphones and dollar bills, deep navy space background with empty copy space on the left, vibrant orange and teal accents, game key art, no text" 1344 768 assets/og-card.png "$M"
+$G "Wide game promotional banner: cartoon flywheel vortex on the right side spinning with floating office objects, envelopes, smartphones and dollar bills orbiting into it, deep navy space background with empty copy space on the left, vibrant orange and teal accents, game key art, no text" 1344 768 assets/og-card.png "$M"
 
 $G "Glossy cartoon address book with a person silhouette$ICON" 768 768 assets/hubs/hub-1.png "$M"
 $G "Glossy cartoon megaphone with a flying envelope$ICON" 768 768 assets/hubs/hub-2.png "$M"

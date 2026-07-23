@@ -1,4 +1,4 @@
-// Rival-hole AI — ported from the current shipped 2D game's rival block
+// Rival-flywheel AI — ported from the original 2D game's rival block
 // (recovered from git history: `git show 97c9024:index.html`, lines
 // ~467-471 for spawn/init and ~804-839 for the per-frame AI), adapted from
 // (x,y) canvas movement to 3D (x,z) ground-plane movement. Height (y) is

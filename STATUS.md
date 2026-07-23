@@ -5,6 +5,7 @@ _Last updated: 2026-07-23 (post-deploy verification pass)._
 ## Live
 
 - **Deployed: https://funnel-hub.vercel.app** — Vercel project `funnel-hub`, serving the `dist/` static build. Redeploy flow: `npm run build && cd dist && vercel --prod`. SSO deployment protection was disabled via the Vercel API so the site is public.
+- **Rebrand to Flywheel shipped (2026-07-23)**: the game is now **Flywheel** (previous brand retired) — title/og tags, start-screen copy, and all in-game vortex copy rewritten to flywheel language, package renamed to `flywheel`, save key moved to `flywheel.save.v1` (fresh key, no migration), and the logo/hero/rival/og art regenerated with flywheel prompts. No game-logic changes.
 
 ## Verified in a real browser (2026-07-23)
 
@@ -23,7 +24,7 @@ Independently verified this session (main agent ran `npm test` and `npm run buil
 - **100 levels across 10 stylized city metros** (10 districts each), generated formulaically (`src/data/levels.js` / `src/data/formulas.js`), not hand-authored. Score target is exactly `target(n) = 1000×n²` as requested (1k/4k/9k/…/10,000,000 at level 100). World size, timer, rival count, hazard density, and the capstone size-gate all scale independently per a 6-tier difficulty curve (tutorial → first-contest at level 6 → escalation → expert → master → capital-siege at 100), so difficulty genuinely spikes after level 6 without the per-level object count exploding — item *value* scales by n² instead, verified at a constant ~1.43x spawnable-mass-to-target ratio at every sampled level (1, 6, 7, 10, 25, 50, 100).
 - **Full game loop wired end-to-end** (`src/main.js`): start → world map → level intro → play → done/fail → shop → next level or win screen at 100. Verified by reading the file directly — this is a real integration, not scaffolding.
 - **Mandatory meta-progression, now actually built** (was "proposed" as of the last STATUS update): `localStorage` save (`src/meta/save.js`, with an in-memory fallback when storage is unavailable), a coin economy, 5 upgrade tracks (size/speed/magnet/time/growth) with a shop screen, a world-map level-select grid, per-level stars, and a "Skyline-opedia" collection album.
-- **14 achievements** (11 original + 3 new: `metroCleared`, `centurion`, `hoarder`), combo multiplier (up to 5x, 6 named tiers), golden pickups (8x bonus), rush-hour "storm" drop events, edible rival holes (AI gets more aggressive at the master/capital-siege tiers), Konami-code god mode, and the `unsub`/`breeze` typed easter eggs — all ported faithfully from the original 2D game (recovered via `git show 97c9024:index.html`) and confirmed against the original's exact constants (eat-gate 0.82/0.78, combo formula, golden 8x, rival radius/timing).
+- **14 achievements** (11 original + 3 new: `metroCleared`, `centurion`, `hoarder`), combo multiplier (up to 5x, 6 named tiers), golden pickups (8x bonus), rush-hour "storm" drop events, edible rival flywheels (AI gets more aggressive at the master/capital-siege tiers), Konami-code god mode, and the `unsub`/`breeze` typed easter eggs — all ported faithfully from the original 2D game (recovered via `git show 97c9024:index.html`) and confirmed against the original's exact constants (eat-gate 0.82/0.78, combo formula, golden 8x, rival radius/timing).
 - **53-check headless test suite** (`npm test` / `scripts/logic-test.js`, rewritten this session) — no longer regex-extracts a `<script>` tag; imports the real `src/` modules directly under plain Node. Covers formulas, level generation/pacing invariant, save/load (with and without localStorage), upgrades, real Three.js scene-graph construction (props/landmarks, no GPU needed), swallow math, achievements/combo, and audio. **53 passed, 0 failed**, confirmed by direct run.
 - **`npm run build`** now also copies `src/` into `dist/` alongside `index.html` and `assets/` (including the vendored `assets/vendor/three.module.js`). Confirmed working.
 - **AI-generated art assets** (`assets/`) and **synthesized Web Audio** carry over unchanged from before the rewrite.
@@ -41,7 +42,7 @@ See `docs/city-3d-redesign-plan.md` for the full design (formulas, tier table, m
 
 ## Repo / publishing status
 
-- Public GitHub repo: `https://github.com/NicoLafakis/hubhole` (package name `hubhole`; the local working-copy folder is separately named).
+- Public GitHub repo: `https://github.com/NicoLafakis/hubhole` (repo URL predates the rebrand; package name is now `flywheel`; the local working-copy folder is separately named).
 - Version-controlled since 2026-07-22 (`git init -b main`, initial commit `97c9024`).
 - Tracked: `index.html`, `package.json`, `package-lock.json`, `README.md`, `scripts/`, `docs/`, `assets/`, `src/`, plus this file and `AGENTS.md`.
 - Gitignored: `.leonardo-key`, `node_modules/`, `dist/`, `.DS_Store`, `Thumbs.db`, `*.log`.

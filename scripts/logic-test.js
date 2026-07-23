@@ -1,5 +1,5 @@
 'use strict';
-// HubHole logic test suite — module-import-based (the ES-module engine
+// Flywheel logic test suite — module-import-based (the ES-module engine
 // rewrite has no single <script> tag left to regex-extract, unlike the
 // original single-file version of this test). Runnable via the existing
 // `npm test` command (`node scripts/logic-test.js`) — this file stays plain

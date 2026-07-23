@@ -22,7 +22,7 @@ export const ACH = {
   combo25: ['☄️ Extinction-Level Snacking', '25 combo. Scientists saw it from space.'],
   // was: "You ate a golden record." — "record" retargeted (city has no CRM records).
   gold: ['🌟 Shiny!', 'You swallowed a golden pickup. Legend says there are only a few.'],
-  rival: ['🕳️ Hole-y Domination', 'You ate a rival hole. There can be only one.'],
+  rival: ['🌀 Flywheel Domination', 'You ate a rival flywheel. There can be only one.'],
   // was: "Touch more records." — retargeted to the new swallow-target: the city.
   fast: ['⚡ Speedrunner', 'Half the target with 30+ seconds left. Touch grass? No. Touch more city.'],
   // was: "Ate 5 sync-storm drops." — "sync-storm" (data-sync jargon) softened to plain "storm".

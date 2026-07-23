@@ -1,6 +1,6 @@
 // Meta-progression persistence layer.
 //
-// Storage contract: localStorage key `hubhole.save.v1`, schema:
+// Storage contract: localStorage key `flywheel.save.v1`, schema:
 //   {
 //     coins: number,
 //     stars: { [levelN: string]: number },       // per-level star rating, sparse
@@ -19,7 +19,7 @@
 // in-memory object store behind the identical API, so save/load round-trip
 // logic can be exercised headlessly.
 
-export const SAVE_KEY = 'hubhole.save.v1';
+export const SAVE_KEY = 'flywheel.save.v1';
 
 const UPGRADE_KEYS = ['size', 'speed', 'magnet', 'time', 'growth'];
 
@@ -45,7 +45,7 @@ function hasLocalStorage() {
     if (typeof localStorage === 'undefined' || localStorage === null) return false;
     // Confirm it's actually usable, not just present (some environments expose
     // a stub that throws on get/setItem).
-    const probeKey = '__hubhole_probe__';
+    const probeKey = '__flywheel_probe__';
     localStorage.setItem(probeKey, '1');
     localStorage.removeItem(probeKey);
     return true;

@@ -1,7 +1,7 @@
 {
-  "name": "hubhole",
+  "name": "flywheel",
   "version": "1.0.0",
-  "description": "HubHole — a HubSpot-flavored hole.io game. Swallow every record, deal, ticket and workflow across 10 Hubs.",
+  "description": "Flywheel — a HubSpot-flavored eat-'em-up game. Swallow every record, deal, ticket and workflow across 10 Hubs.",
   "main": "index.html",
   "scripts": {
     "start": "node scripts/serve.js",
@@ -18,7 +18,7 @@
     "html5",
     "canvas",
     "hubspot",
-    "hole-io",
+    "flywheel",
     "three.js",
     "webgl"
   ],

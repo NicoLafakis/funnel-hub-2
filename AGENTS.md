@@ -2,9 +2,9 @@
 
 Onboarding contract for AI agents (and humans acting like one) working in this repo.
 
-## What HubHole is
+## What Flywheel is
 
-A hole.io-style game, now set across 10 stylized city metros (10 districts/levels each, 100 total), rendered in true 3D with a 3rd-person chase camera behind a visible avatar. Swallow city props — trash, bikes, cars, buses, buildings — and eventually each metro's landmark capstone. See [`README.md`](README.md) for gameplay, controls, and setup, and [`docs/city-3d-redesign-plan.md`](docs/city-3d-redesign-plan.md) for the full design rationale (formulas, tiers, metro table).
+An eat-'em-up game (in the spirit of hole.io), now set across 10 stylized city metros (10 districts/levels each, 100 total), rendered in true 3D with a 3rd-person chase camera behind a visible avatar. Swallow city props — trash, bikes, cars, buses, buildings — and eventually each metro's landmark capstone. See [`README.md`](README.md) for gameplay, controls, and setup, and [`docs/city-3d-redesign-plan.md`](docs/city-3d-redesign-plan.md) for the full design rationale (formulas, tiers, metro table).
 
 ## Architecture in one sentence
 

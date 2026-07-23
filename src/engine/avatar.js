@@ -1,11 +1,11 @@
-// The player avatar: a swirling dark-matter vortex orb — the existing HubHole
+// The player avatar: a swirling dark-matter vortex orb — the existing Flywheel
 // brand mascot (logo-mark.png / hero-vortex.png), given a 3D body a chase
 // camera can frame. No browser-only API is touched at module top level — only
 // inside createAvatar(), so a bare `import` of this file never throws in Node.
 export function createAvatar(scene, THREE) {
   const object3D = new THREE.Group();
 
-  // Core: dark, emissive-purple sphere — the "hole" body.
+  // Core: dark, emissive-purple sphere — the vortex body.
   const coreGeo = new THREE.SphereGeometry(1, 32, 24);
   const coreMat = new THREE.MeshStandardMaterial({
     color: 0x120018,
@@ -45,13 +45,13 @@ export function createAvatar(scene, THREE) {
   // byte-identical behavior to before this field existed.
   let _speedMultiplier = 1;
 
-  // World units/sec — same magnitude as the old 2D game's hole move speed
-  // (`hole.x += mx/l*340*dt`), reused because world sizes (2400-4000, see
+  // World units/sec — same magnitude as the old 2D game's flywheel move speed
+  // (`pos.x += mx/l*340*dt`), reused because world sizes (2400-4000, see
   // src/data/formulas.js worldSize()) are unchanged from the old game's pixel
   // world sizes, so the same constant keeps the same relative pacing.
   const BASE_SPEED = 340;
 
-  // EXACT formula ported from the current shipped game (index.html `holeR()`).
+  // EXACT formula ported from the original 2D game (its player-radius func).
   // Relied on elsewhere in the design — do not change its shape.
   function radius() {
     return 26 + Math.sqrt(_mass) * 1.9;
@@ -84,7 +84,7 @@ export function createAvatar(scene, THREE) {
     // Orientation: smoothly face the travel direction (damped like the old
     // game's camera lerp, `Math.min(1, dt*6)`), plus a forward tilt that
     // grows with speed so it reads as a rolling/accelerating mass rather than
-    // a static hole-in-the-ground.
+    // a static pit-in-the-ground.
     const damp = Math.min(1, dt * 6);
     object3D.rotation.y += (facingAngle - object3D.rotation.y) * damp;
     const tiltTarget = Math.min(0.35, (speed / BASE_SPEED) * 0.35);

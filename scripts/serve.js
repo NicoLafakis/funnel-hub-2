@@ -26,4 +26,4 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' });
     res.end(data);
   });
-}).listen(port, () => console.log(`HubHole serving at http://localhost:${port}`));
+}).listen(port, () => console.log(`Flywheel serving at http://localhost:${port}`));
