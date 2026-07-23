@@ -29,20 +29,24 @@ import { METROS } from './metros.js';
 //
 // Invariant (verified below, see LEVEL_TEMPLATE_MASS_SUM): the total base mass
 // available per level — sum(baseMass * baseCount) across all 7 tiers — must
-// stay comfortably above target(1) = 1000 once scaled by itemValueMultiplier(n),
-// mirroring how the current shipped game always spawns somewhat more total mass
-// than a level's target requires. Because itemValueMultiplier(n) = n*n and
-// target(n) = 1000*n*n, that ratio is constant across every level: with the
-// concrete numbers below, sum(baseMass*baseCount) = 1427, i.e. ~42.7% of
-// headroom above target(1)/itemValueMultiplier(1) = 1000 at every n from 1..100.
+// stay comfortably above target(1) = 1000 once scaled by itemValueMultiplier(n).
+// Because itemValueMultiplier(n) = n*n and target(n) = 1000*n*n, that ratio is
+// constant across every level: with the concrete numbers below,
+// sum(baseMass*baseCount) = 4281, i.e. ~4.3x target at every n from 1..100.
+//
+// Why 4.3x and not the ~1.4x a top-down game wants: the 3D chase camera sees
+// only a small cone of the world at any moment (vs the old 2D top-down view
+// that showed a whole neighborhood), so routing efficiency is far lower —
+// winning must require eating ~25% of the content, not ~70%. The tripled
+// counts also make the city actually read as a city instead of a parking lot.
 const LEVEL_TEMPLATE = [
-  { tierIndex: 0, baseRadius: 16, baseMass: 3, baseCount: 42, kind: 'trash' },
-  { tierIndex: 1, baseRadius: 20, baseMass: 5, baseCount: 30, kind: 'bike' },
-  { tierIndex: 2, baseRadius: 27, baseMass: 9, baseCount: 20, kind: 'car' },
-  { tierIndex: 3, baseRadius: 36, baseMass: 16, baseCount: 14, kind: 'bus' },
-  { tierIndex: 4, baseRadius: 48, baseMass: 28, baseCount: 9, kind: 'building-small' },
-  { tierIndex: 5, baseRadius: 66, baseMass: 48, baseCount: 5, kind: 'building-medium' },
-  { tierIndex: 6, baseRadius: 90, baseMass: 85, baseCount: 3, kind: 'building-large', isCapstoneCandidate: true },
+  { tierIndex: 0, baseRadius: 16, baseMass: 3, baseCount: 126, kind: 'trash' },
+  { tierIndex: 1, baseRadius: 20, baseMass: 5, baseCount: 90, kind: 'bike' },
+  { tierIndex: 2, baseRadius: 27, baseMass: 9, baseCount: 60, kind: 'car' },
+  { tierIndex: 3, baseRadius: 36, baseMass: 16, baseCount: 42, kind: 'bus' },
+  { tierIndex: 4, baseRadius: 48, baseMass: 28, baseCount: 27, kind: 'building-small' },
+  { tierIndex: 5, baseRadius: 66, baseMass: 48, baseCount: 15, kind: 'building-medium' },
+  { tierIndex: 6, baseRadius: 90, baseMass: 85, baseCount: 9, kind: 'building-large', isCapstoneCandidate: true },
 ];
 
 // Sanity-computed sum(baseMass * baseCount), exported for tests/introspection.

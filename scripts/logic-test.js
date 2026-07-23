@@ -166,9 +166,9 @@ async function main() {
       const totalAvailable = massSum * lvl.itemValueMultiplier;
       const ratio = totalAvailable / lvl.target;
       ratios.push(`n=${n}:${ratio.toFixed(3)}`);
-      if (!(ratio >= 1.1 && ratio <= 1.6)) allInRange = false;
+      if (!(ratio >= 3.8 && ratio <= 4.8)) allInRange = false;
     }
-    check(`pacing invariant holds (1.1x-1.6x headroom) for n in {${sampleNs.join(',')}} [${ratios.join(' ')}]`, allInRange);
+    check(`pacing invariant holds (3.8x-4.8x headroom — chase-cam visibility needs more content than top-down) for n in {${sampleNs.join(',')}} [${ratios.join(' ')}]`, allInRange);
   }
 
   // ---------------------------------------------------------------------
