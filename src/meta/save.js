@@ -46,6 +46,8 @@
 // behind the identical API, so save/load round-trip logic can be exercised
 // headlessly.
 
+import { normalizeCollectionVisualKey } from './collection.js';
+
 export const SAVE_KEY = 'flywheel.save.v2';
 export const LEGACY_SAVE_KEY = 'flywheel.save.v1';
 
@@ -79,9 +81,11 @@ export function defaultSave() {
     metroTokens: {},
     metroPerks: {},
     tokenClaims: {},
+    rewardClaims: { firstClear: {}, starMilestones: {} },
     unlockedLevel: 1,
     collection: {},
     collectionVariants: {},
+    legacyCollectionKeys: {},
     galleryCards: [],
     daily: defaultDaily(),
     seedHistory: [],
@@ -162,6 +166,75 @@ function normalizeDaily(raw) {
   };
 }
 
+function normalizeRewardClaims(raw, stars) {
+  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const firstClear = safePlainObject(src.firstClear, {});
+  const starMilestones = safePlainObject(src.starMilestones, {});
+  const savedStars = stars && typeof stars === 'object' ? stars : {};
+  for (const [key, value] of Object.entries(savedStars)) {
+    const rating = Math.max(0, Math.min(3, Math.floor(safeNumber(value, 0))));
+    if (rating > 0) {
+      firstClear[key] = true;
+      starMilestones[key] = Math.max(
+        rating,
+        Math.max(0, Math.min(3, Math.floor(safeNumber(starMilestones[key], 0)))),
+      );
+    }
+  }
+  for (const key of Object.keys(firstClear)) firstClear[key] = firstClear[key] === true;
+  for (const key of Object.keys(starMilestones)) {
+    starMilestones[key] = Math.max(0, Math.min(3, Math.floor(safeNumber(starMilestones[key], 0))));
+  }
+  return { firstClear, starMilestones };
+}
+
+function mergeCollectionEntry(target, key, value) {
+  if (!key || !value || typeof value !== 'object' || Array.isArray(value)) return;
+  const incomingCount = Math.max(0, Math.floor(safeNumber(value.count, 0)));
+  const incomingFirst = safeNumber(value.firstSeenAt, 0);
+  const existing = target[key];
+  target[key] = {
+    count: incomingCount + (existing ? Math.max(0, safeNumber(existing.count, 0)) : 0),
+    firstSeenAt: existing ? Math.min(incomingFirst, safeNumber(existing.firstSeenAt, incomingFirst)) : incomingFirst,
+  };
+}
+
+function normalizeCollectionMaps(rawCollection, rawVariants, rawLegacy) {
+  const collection = {};
+  const collectionVariants = {};
+  const legacyCollectionKeys = safePlainObject(rawLegacy, {});
+  const classicKeys = new Set([
+    'trash', 'bike', 'car', 'bus', 'building-small', 'building-medium', 'building-large',
+    'billboard', 'liberty-statue', 'lattice-tower', 'clock-tower', 'sky-tower',
+    'mega-spire', 'amphitheater', 'mountain-statue', 'onion-palace', 'sail-opera', 'portal-tower',
+  ]);
+  const preserveLegacy = (key, value) => {
+    if (!Object.prototype.hasOwnProperty.call(legacyCollectionKeys, key)) {
+      mergeCollectionEntry(legacyCollectionKeys, key, value);
+    }
+  };
+  const source = rawCollection && typeof rawCollection === 'object' && !Array.isArray(rawCollection) ? rawCollection : {};
+  for (const [key, value] of Object.entries(source)) {
+    const normalized = normalizeCollectionVisualKey(key);
+    if (normalized) mergeCollectionEntry(collection, normalized, value);
+    else {
+      mergeCollectionEntry(collection, key, value); // classic album compatibility.
+      if (!classicKeys.has(key)) preserveLegacy(key, value);
+    }
+  }
+  const variants = rawVariants && typeof rawVariants === 'object' && !Array.isArray(rawVariants) ? rawVariants : {};
+  for (const [key, value] of Object.entries(variants)) {
+    const split = key.indexOf(':');
+    const prefix = split >= 0 ? key.slice(0, split + 1) : '';
+    const suffix = split >= 0 ? key.slice(split + 1) : key;
+    const normalized = normalizeCollectionVisualKey(suffix);
+    const targetKey = normalized ? `${prefix}${normalized}` : key;
+    mergeCollectionEntry(collectionVariants, targetKey, value);
+    if (!normalized) preserveLegacy(`variant:${key}`, value);
+  }
+  return { collection, collectionVariants, legacyCollectionKeys };
+}
+
 // Defensive normalizer: given whatever JSON.parse produced (or a raw object
 // handed to saveSave), always returns a fully-shaped, type-safe v2 save object.
 // Never throws.
@@ -169,11 +242,17 @@ function normalizeSave(raw) {
   const defaults = defaultSave();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaults;
   const daily = normalizeDaily(raw.daily);
+  const stars = safePlainObject(raw.stars, defaults.stars);
+  const collectionMaps = normalizeCollectionMaps(
+    raw.collection,
+    raw.collectionVariants,
+    raw.legacyCollectionKeys,
+  );
   return {
     version: 2,
     coins: Math.max(0, safeNumber(raw.coins, defaults.coins)),
     lifetimeCoins: Math.max(0, safeNumber(raw.lifetimeCoins, safeNumber(raw.coins, defaults.lifetimeCoins))),
-    stars: safePlainObject(raw.stars, defaults.stars),
+    stars,
     upgrades: normalizeUpgrades(raw.upgrades),
     builds: safePlainObject(raw.builds, defaults.builds),
     skins: safeArray(raw.skins, defaults.skins),
@@ -181,9 +260,11 @@ function normalizeSave(raw) {
     metroTokens: safePlainObject(raw.metroTokens, defaults.metroTokens),
     metroPerks: safePlainObject(raw.metroPerks, defaults.metroPerks),
     tokenClaims: safePlainObject(raw.tokenClaims, defaults.tokenClaims),
+    rewardClaims: normalizeRewardClaims(raw.rewardClaims, stars),
     unlockedLevel: Math.max(1, Math.floor(safeNumber(raw.unlockedLevel, defaults.unlockedLevel))),
-    collection: safePlainObject(raw.collection, defaults.collection),
-    collectionVariants: safePlainObject(raw.collectionVariants, defaults.collectionVariants),
+    collection: collectionMaps.collection,
+    collectionVariants: collectionMaps.collectionVariants,
+    legacyCollectionKeys: collectionMaps.legacyCollectionKeys,
     galleryCards: safeArray(raw.galleryCards, defaults.galleryCards),
     daily,
     seedHistory: safeArray(raw.seedHistory, defaults.seedHistory).slice(-SEED_HISTORY_CAP),

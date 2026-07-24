@@ -1,5 +1,11 @@
 # V2 Roadmap
 
+**Progression update (2026-07-24): implemented and logic-verified.**
+`npm test` now covers 126 logic checks plus 9 progression floor/ceiling
+invariants at 100/100 levels, full duplicate determinism, and representative
+maximum-build ceilings. Live human calibration remains pending an
+explicitly deployed build; no deployment was performed.
+
 **Status (2026-07-23): Phases 1–3 implemented and verified.** Phase 4 items
 landed with Wave 4 (metro signatures, capstone twists, elite goldens, night
 variants, capstone gating fix, tint-blend softening). `npm test` = logic

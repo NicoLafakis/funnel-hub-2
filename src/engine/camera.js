@@ -161,8 +161,15 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
         // raycastable parts are child meshes.
         const hits = raycaster.intersectObjects(obstacles, true);
         if (hits.length) {
-          const pull = Math.max(0.5, hits[0].distance - 0.5);
-          desiredPos.copy(rayOrigin).addScaledVector(rayDir, pull);
+          // An obstacle overlapping the avatar does not leave enough room for
+          // a valid chase camera. Pulling to that near face collapses the view
+          // inside the avatar/prop, so ignore hits inside the radius-derived
+          // safety envelope and retain the normal framed position.
+          const minimumSafeDistance = r * 1.5;
+          if (hits[0].distance >= minimumSafeDistance) {
+            const pull = Math.max(minimumSafeDistance, hits[0].distance - 0.5);
+            desiredPos.copy(rayOrigin).addScaledVector(rayDir, pull);
+          }
         }
       }
     }

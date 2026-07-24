@@ -252,6 +252,9 @@ export function applyBuilds(baseStats, buildState) {
   }
 
   const baseStartMass = typeof base.startMass === 'number' ? base.startMass : 0;
+  const itemValueMultiplier = typeof base.itemValueMultiplier === 'number' && base.itemValueMultiplier > 0
+    ? base.itemValueMultiplier
+    : 1;
   const baseTimeSeconds = typeof base.timeSeconds === 'number' ? base.timeSeconds : 0;
 
   return {
@@ -265,7 +268,7 @@ export function applyBuilds(baseStats, buildState) {
     extraComboWindow,
     coinMultiplier,
     goldenMassMultiplier,
-    startMass: baseStartMass + extraStartMass,
+    startMass: baseStartMass + extraStartMass * itemValueMultiplier,
     timeSeconds: baseTimeSeconds + extraSeconds,
   };
 }

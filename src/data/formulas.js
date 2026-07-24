@@ -29,7 +29,8 @@ export function levelInChapterOf(n) {
 }
 
 export function timeSeconds(n) {
-  return 60 + 6 * n;
+  const arcPosition = (levelInChapterOf(n) - 1) % 5;
+  return 75 + 5 * arcPosition;
 }
 
 export function worldSize(n) {
@@ -85,6 +86,85 @@ export function itemValueMultiplier(n) {
 
 export const LEVEL_COUNT = 100;
 
+export const MAX_SINGLE_AWARD_FRACTION = 0.15;
+export const GOLDEN_AWARD_FRACTION = 0.10;
+export const ELITE_GOLDEN_AWARD_FRACTION = 0.15;
+export const RIVAL_AWARD_FRACTION = 0.10;
+export const REPLAY_REWARD_FRACTION = 0.20;
+export const ORDINARY_MASS_FRACTION = 0.78;
+export const AVAILABLE_MASS_BUDGET_FRACTION = 8;
+export const RIVAL_HOARD_SAFETY = 0.95;
+
+// Deterministic per-district route calibration. These coefficients were
+// measured against the seeded no-upgrade soak route and keep clears inside
+// the 55%-80% timer corridor without changing target(n) or world generation.
+const ORDINARY_MASS_FRACTIONS = [
+  0.6094, 0.6223, 0.531, 0.4547, 0.4891, 0.4117, 0.4203, 0.5062, 0.5729, 0.4375,
+  0.5406, 0.5406, 0.5363, 0.5213, 0.4858, 0.6174, 0.6064, 0.7469, 0.5449, 0.5234,
+  0.8156, 0.575, 0.6873, 0.4738, 0.5578, 0.7125, 0.749, 0.6846, 0.6523, 0.5234,
+  0.7813, 0.807, 0.6695, 0.7813, 0.5836, 0.7297, 0.7297, 0.6502, 0.5973, 0.3461,
+  1.0562, 1.1508, 0.8156, 0.85, 0.923, 0.8908, 0.8307, 1.082, 0.85, 0.85,
+  0.6996, 0.9016, 0.5062, 0.648, 0.6437, 0.7984, 0.8113, 0.7813, 0.7963, 0.6609,
+  0.575, 0.6437, 0.5965, 0.502, 0.5213, 0.9359, 0.7641, 0.7125, 0.9187, 0.502,
+  0.8109, 0.9875, 0.8586, 0.6899, 0.9875, 0.8461, 0.85, 0.7125, 0.7125, 0.5156,
+  1.125, 1.125, 0.8, 0.596, 0.9615, 0.9016, 1.2367, 0.6051, 0.85, 0.85,
+  0.85, 0.8844, 0.9531, 0.749, 0.807, 0.85, 0.6469, 0.618, 0.893, 0.9359,
+];
+
+export function ordinaryMassFraction(n) {
+  return ORDINARY_MASS_FRACTIONS[Math.max(1, Math.min(LEVEL_COUNT, Math.floor(n))) - 1]
+    || ORDINARY_MASS_FRACTION;
+}
+
+export function progressionMassBudget(n) {
+  return target(n) * 2;
+}
+
+export function availableMassBudget(n) {
+  return target(n) * AVAILABLE_MASS_BUDGET_FRACTION;
+}
+
+export function maxSingleAward(nOrTarget) {
+  const value = Number(nOrTarget);
+  const levelTarget = Number.isInteger(value) && value >= 1 && value <= LEVEL_COUNT
+    ? target(value)
+    : Math.max(0, value || 0);
+  return levelTarget * MAX_SINGLE_AWARD_FRACTION;
+}
+
+export function capProgressionAward(amount, levelTarget, fraction = MAX_SINGLE_AWARD_FRACTION) {
+  const safeAmount = Math.max(0, Number(amount) || 0);
+  const safeTarget = Math.max(0, Number(levelTarget) || 0);
+  const safeFraction = Math.max(0, Math.min(MAX_SINGLE_AWARD_FRACTION, Number(fraction) || 0));
+  return safeTarget > 0 ? Math.min(safeAmount, safeTarget * safeFraction) : safeAmount;
+}
+
+export function progressionAwardReport(prop, itemMultiplier, ordinaryFraction, levelTarget) {
+  const source = prop && prop.isCapstone ? 'capstone'
+    : (prop && prop.elite ? 'elite-golden'
+      : (prop && prop.golden ? 'golden'
+        : (prop && prop.mega ? 'mega'
+          : (prop && prop.storm ? 'storm'
+            : (prop && prop.crumb ? 'crumb' : 'ordinary')))));
+  if (!prop || prop.hazard) {
+    return { source: prop && prop.hazard ? 'hazard' : source, amount: 0, targetFraction: 0 };
+  }
+  let amount = Math.max(0, Number(prop.mass) || 0)
+    * Math.max(0, Number(itemMultiplier) || 0)
+    * Math.max(0, Number(ordinaryFraction) || 0);
+  if (prop.elite) amount *= ELITE_GOLDEN_MASS_MULTIPLIER;
+  else if (prop.golden) amount *= GOLDEN_MASS_MULTIPLIER;
+  const capFraction = prop.elite
+    ? ELITE_GOLDEN_AWARD_FRACTION
+    : (prop.golden ? GOLDEN_AWARD_FRACTION : MAX_SINGLE_AWARD_FRACTION);
+  amount = capProgressionAward(amount, levelTarget, capFraction);
+  return {
+    source,
+    amount,
+    targetFraction: levelTarget > 0 ? amount / levelTarget : 0,
+  };
+}
+
 // --- V2 economy (content-and-meta.md §4) ------------------------------------
 
 // Coin payout per completed level: coins = 50 + 25*stars + challengeBonus.
@@ -116,7 +196,7 @@ export const GOLDEN_COIN_BONUS = 10;
 // at every level. V1's ported (150+50n)*n^2 was (0.15+0.05n)*target — 5.15x
 // the entire target at n=100. This shape is level-invariant by construction.
 export function rivalEatBonus(n) {
-  return 100 * n * n;
+  return target(n) * RIVAL_AWARD_FRACTION;
 }
 
 // Avatar radius from BASE mass (B6: radius growth stays normalized —

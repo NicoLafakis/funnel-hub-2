@@ -457,7 +457,7 @@ export function updateRival(rival, propObjects, avatar, dt, opts = {}) {
       const oz = obj.position.z - rival.object3D.position.z;
       if (ox * ox + oz * oz < rivalReachSq && obj.radius <= sizeGateRadius) {
         propObjects.splice(idx, 1);
-        rival.mass += obj.mass * itemValueMultiplier;
+        rival.mass = Math.min(hoardCap, rival.mass + obj.mass * itemValueMultiplier);
         events.ateProps.push(obj);
         if (rival.mass >= hoardCap) break; // cap reached mid-bite
       }

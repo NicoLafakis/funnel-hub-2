@@ -17,6 +17,9 @@
 // local +Z maps to world (sin rotY, cos rotY). Streets always carry their
 // LENGTH in w (long axis = local X).
 import { mulberry32 } from '../data/seeds.js';
+import {
+  districtCatalog, resolveVisualArchetype,
+} from './archetypes.js';
 
 export const ARCHETYPES = ['grid', 'radial', 'organic'];
 export const ZONES = ['plaza', 'avenue', 'park', 'residential'];
@@ -384,6 +387,7 @@ export function generateDistrict(level, opts = {}) {
   const mechanics = level.mechanics || {};
   const rngLayout = mulberry32(seed);
   const rngProps = mulberry32((seed ^ 0x9E3779B9) >>> 0);
+  const rngVisual = mulberry32((seed ^ 0xA511E9B3) >>> 0);
 
   const archetype = ARCHETYPES[Math.floor(rngLayout() * ARCHETYPES.length)];
   const { streets, blocks } = (archetype === 'grid' ? buildGrid : archetype === 'radial' ? buildRadial : buildOrganic)(world, rngLayout);
@@ -466,16 +470,65 @@ export function generateDistrict(level, opts = {}) {
     perTier[tier.kind] = (perTier[tier.kind] || 0) + count + (tier.tierIndex === 0 ? feastCount : 0);
   }
 
-  // Metro prop variant (content-and-meta.md §2): reskin ~25% of the variant
-  // kind with the metro's tint/accessory. Pure marking; propkit meshes it.
-  const variant = level.metro && level.metro.propVariant;
-  if (variant) {
-    const candidates = shuffle(props.filter((p) => p.kind === variant.kind && !p.spawnFeast), rngProps);
-    const n = Math.max(1, Math.round(candidates.length * 0.25));
-    for (let i = 0; i < n; i += 1) {
-      candidates[i].variant = { tint: variant.tint || null, accessory: variant.accessory || null, name: variant.name };
+  // Preserve the pre-remediation gameplay RNG stream: the former metro
+  // variant selector shuffled this candidate list before traffic/mega/golden
+  // selection. Visual selection itself has a separate seed stream below.
+  const legacyVariant = level.metro && level.metro.propVariant;
+  if (legacyVariant) {
+    shuffle(props.filter((p) => p.kind === legacyVariant.kind && !p.spawnFeast), rngProps);
+  }
+
+  // Visual identity is independent from gameplay kind. District 1 establishes
+  // one baseline per tier; later districts reserve >=25% of all initial
+  // placements for IDs absent from their direct predecessor.
+  const metroId = level.metro && level.metro.id;
+  const districtN = level.levelInChapter || ((level.districtIndex || 0) + 1);
+  const catalog = districtCatalog(metroId, districtN);
+  if (!catalog) throw new Error(`Missing district visual catalog: ${metroId || 'unknown'}:${districtN}`);
+  for (const p of props) {
+    const fallback = catalog.mixes[p.kind] && catalog.mixes[p.kind][0];
+    const descriptor = resolveVisualArchetype(fallback, p.kind);
+    p.visualId = descriptor.id;
+    p.collectionKey = descriptor.collectionKey;
+  }
+  const noveltyTarget = districtN > 1 ? Math.ceil(props.length * 0.25) : props.length;
+  if (districtN > 1) {
+    const introductionsByKind = new Map();
+    for (const id of catalog.introduces) {
+      const descriptor = resolveVisualArchetype(id);
+      const list = introductionsByKind.get(descriptor.gameplayKind) || [];
+      list.push(id);
+      introductionsByKind.set(descriptor.gameplayKind, list);
+    }
+    const candidates = shuffle(props.filter((p) => introductionsByKind.has(p.kind)), rngVisual);
+    if (candidates.length < noveltyTarget) {
+      throw new Error(`${metroId}:${districtN} cannot meet visual novelty target (${candidates.length}/${noveltyTarget})`);
+    }
+    const perKindCursor = new Map();
+    for (let i = 0; i < noveltyTarget; i += 1) {
+      const p = candidates[i];
+      const ids = introductionsByKind.get(p.kind);
+      const cursor = perKindCursor.get(p.kind) || 0;
+      const descriptor = resolveVisualArchetype(ids[cursor % ids.length], p.kind);
+      perKindCursor.set(p.kind, cursor + 1);
+      p.visualId = descriptor.id;
+      p.collectionKey = descriptor.collectionKey;
     }
   }
+  const currentVisualIds = new Set(props.map((p) => p.visualId));
+  const predecessor = districtN > 1 ? districtCatalog(metroId, districtN - 1) : null;
+  const predecessorIds = new Set(predecessor
+    ? Object.values(predecessor.mixes).flat()
+    : []);
+  const novelCount = districtN === 1
+    ? props.length
+    : props.filter((p) => !predecessorIds.has(p.visualId)).length;
+  const novelty = {
+    novelCount,
+    total: props.length,
+    ratio: props.length ? novelCount / props.length : 0,
+    visualIds: [...currentVisualIds].sort(),
+  };
 
   // Moving traffic (L21+; rush at L81+): a share of road props drive their
   // street's lane. Systems animate; this only marks who moves and how.
@@ -522,9 +575,34 @@ export function generateDistrict(level, opts = {}) {
   for (const p of props) {
     p.x = clamp(p.x, -bound, bound);
     p.z = clamp(p.z, -bound, bound);
+    // The initial chase camera sits behind spawn along -Z. Keep building
+    // tiers out of that sightline so a seeded corner/frontage site cannot
+    // put the camera inside an instanced facade on frame one. Relocation is
+    // deterministic and changes no count, mass, radius, flags, or RNG stream.
+    if (p.tierIndex >= 4) {
+      const clearHalfWidth = 90 + p.radius;
+      if (Math.abs(p.x) < clearHalfWidth && p.z > -200 && p.z < 35) {
+        p.x = clamp((p.x < 0 ? -1 : 1) * (clearHalfWidth + 45), -bound, bound);
+      }
+    }
+    // Big Bell Plaza's immutable seed places several double-deckers directly
+    // through the avatar. Correct only that authored invalid cluster; a global
+    // bus relocation changes route pacing in otherwise valid districts.
+    if (level.n === 30 && p.tierIndex === 3 && Math.hypot(p.x, p.z) < 90) {
+      const clearRadius = 90 + p.radius;
+      const angle = Math.atan2(p.z, p.x);
+      p.x = clamp(Math.cos(angle) * clearRadius, -bound, bound);
+      p.z = clamp(Math.sin(angle) * clearRadius, -bound, bound);
+    }
   }
   landmark.x = clamp(landmark.x, -bound, bound);
   landmark.z = clamp(landmark.z, -bound, bound);
+  // Landmark meshes are much wider than their anchor point (Big Bell Plaza
+  // is the worst case), so reserve clearance for the complete silhouette.
+  const landmarkClearHalfWidth = 720;
+  if (Math.abs(landmark.x) < landmarkClearHalfWidth && landmark.z > -240 && landmark.z < 50) {
+    landmark.x = clamp((landmark.x < 0 ? -1 : 1) * landmarkClearHalfWidth, -bound, bound);
+  }
 
   return {
     seed,
@@ -540,6 +618,7 @@ export function generateDistrict(level, opts = {}) {
       propCount: props.length,
       totalBaseMass,
       perTier,
+      novelty,
     },
   };
 }

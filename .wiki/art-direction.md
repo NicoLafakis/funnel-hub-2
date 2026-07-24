@@ -19,6 +19,13 @@ instead of uniform scatter:**
   roads, buildings on block corners facing streets, parks = dense small-prop
   clusters (the feast), the landmark on the largest plaza. Placement reads
   from the layout, not from `Math.random()`.
+- **Spawn framing corridor:** building tiers are deterministically displaced
+  from the initial chase-camera sightline behind spawn, the complete landmark
+  silhouette is shifted laterally when it intersects that corridor, and seeded
+  rivals begin in the forward semicircle. Facades, capstones, and fast-growing
+  rivals therefore cannot fill the first gameplay frame without changing
+  content budgets. Big Bell Plaza also moves its seed-specific double-decker
+  overlap outside the avatar footprint while preserving every prop and mass.
 - **Ground gets a texture**, not a color: procedural asphalt/plaza/grass
   tinting per block via a canvas-generated texture (no image assets needed —
   64×64 noise + tint, cheap). The V1 grid overlay dies with this; real
@@ -58,6 +65,11 @@ answers "a vortex/whirlpool," not "a ball."
   learn by bumping).
 - **Tier silhouettes:** the 7 tiers already have distinct silhouettes;
   enforce a 1.35× size step in the prop kit and keep it sacred.
+- **District vocabulary:** every metro owns 30 low-poly visual archetypes.
+  Districts 2–10 reserve at least 25% of initial placements for IDs absent
+  from the direct predecessor. Identity is carried by a baked cap, bar, mast,
+  canopy, box, or spire profile cue plus environmental naming/placement—not
+  color alone. Standard districts stay at 24 or fewer opaque prop groups.
 - **Fog with intent:** V1 fog is a flat fade. V2 fog color = metro sky,
   density low enough that the *landmark is always silhouette-visible*
   (it's the goal — never hide the goal).

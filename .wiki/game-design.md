@@ -111,17 +111,25 @@ post-normalization is level-invariant; difficulty spikes come from rival
 count and capstone gate. B3 and B6 both came from scaling formulas that
 were never re-derived.
 
-**V2:** one page of invariants every system must satisfy, enforced by tests:
-1. Reachable mass in 60% of timer ≥ 1.5× target at every level (simulated
-   greedy-bot run, not vibes).
-2. Avatar radius at 100% target ≤ 0.25× world width.
-3. Rival hoard at minute 1 ≤ player's reachable mass by then.
-4. Capstone edible radius reachable by 90% of timer with ≤ combo ×2.
-5. Every level completable by the scripted bot *without* upgrades (upgrades
-   are style/speed, not a gate).
+**V2 progression invariants (remediated 2026-07-24):**
+1. Base timer is 75–120 seconds.
+2. Avatar radius at target is at most 25% of world width.
+3. Rival hoard at minute one never exceeds player-reachable mass.
+4. A required capstone is edible by 90% of the timer.
+5. The no-upgrade bot completes every level.
+6. No-upgrade completion lands at 55–80% of the base timer.
+7. Completion consumes 45–70% of the 2× target route budget.
+8. No swallow frame or rival award exceeds 15% of target.
+9. Initial and dynamically spawned progression mass stays within the
+   8× target available-mass budget.
 
-**Acceptance:** the five invariants run in CI against all 100 levels on
-every PR. A level that fails blocks merge.
+The same inputs must also produce byte-identical summaries across all 100
+levels. Maximum growth and utility builds must complete no earlier than 25% of
+their extended timer and must retain the 15% event cap. Combo never multiplies
+growth mass.
+
+**Acceptance:** all nine invariants, the full determinism pass, and the
+representative maximum-build ceiling run in CI. Any failure blocks merge.
 
 ## 6. Death/fail texture
 

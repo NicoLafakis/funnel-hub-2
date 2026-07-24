@@ -23,6 +23,14 @@ builds on.
    combo multiplier is applied to mass at award time but is absent from the
    4.28x available-mass invariant, so levels are winnable on ~20% of the
    props in under 17% of the timer.
+8. [`0001-level-progression-remediation/00-overview.md`](0001-level-progression-remediation/00-overview.md)
+   — implementation-ready remediation package for progression mechanics:
+   requirements, target-normalized economy design, decision record, tests,
+   phased tasks, and save-compatible reward changes.
+
+9. [`0002-district-object-remediation/00-overview.md`](0002-district-object-remediation/00-overview.md)
+   â€” implementation-ready plan for district-specific object catalogs, visible
+   variants, and a tested 25% level-to-level visual-novelty contract.
 
 ## Working agreements (edit as the project evolves)
 

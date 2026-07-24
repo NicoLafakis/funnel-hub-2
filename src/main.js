@@ -39,10 +39,11 @@ import { createPool } from './engine/pools.js';
 
 import { METROS } from './data/metros.js';
 import { generateLevel, LEVEL_COUNT } from './data/levels.js';
+import { mulberry32 } from './data/seeds.js';
 import {
-  coinsForLevel, rivalComposition, capstoneGateRadius, radiusFromMass,
-  ELITE_GOLDEN_MASS_MULTIPLIER, ELITE_GOLDEN_COIN_BONUS,
-  PLAYER_BASE_SPEED, REACH_SWEEP_WIDTH,
+  rivalComposition, capstoneGateRadius, radiusFromMass, capProgressionAward,
+  ELITE_GOLDEN_COIN_BONUS,
+  PLAYER_BASE_SPEED, REACH_SWEEP_WIDTH, RIVAL_HOARD_SAFETY,
 } from './data/formulas.js';
 
 import * as propkit from './content/propkit.js';
@@ -61,6 +62,9 @@ import { createRival, updateRival, RIVAL_WARMUP_SECONDS } from './systems/rivals
 import { createStormController } from './systems/storms.js';
 
 import { loadSave, saveSave, logSeed } from './meta/save.js';
+import {
+  createAvailableMassLedger, starResult, levelReward,
+} from './meta/progression.js';
 import {
   buildShopViewModel, buyBuildPick, respec, applyBuilds, claimMetroTokens, perkEffects,
 } from './meta/upgrades.js';
@@ -107,13 +111,6 @@ const RIVAL_COLORS = {
 
 // Star rating for a completed level — scales with how much of the clock was
 // left (a speed/skill signal), same thresholds as V1.
-function computeStars(level, timeRemaining) {
-  const timeFraction = level.time > 0 ? Math.max(0, Math.min(1, timeRemaining / level.time)) : 0;
-  if (timeFraction >= 0.5) return 3;
-  if (timeFraction >= 0.25) return 2;
-  return 1;
-}
-
 function starGlyphs(count) {
   const c = Math.max(0, Math.min(3, count || 0));
   return '★'.repeat(c) + '☆'.repeat(3 - c);
@@ -325,8 +322,12 @@ export function main() {
   // ---------------------------------------------------------------------------
   function spawnProps(records) {
     if (!records.length || !state.world) return;
-    const firstIndex = state.world.add(records);
-    records.forEach((prop, i) => {
+    const admitted = state.massLedger
+      ? state.massLedger.admit(records, state.level.itemValueMultiplier * state.valueMultiplier)
+      : records;
+    if (!admitted.length) return;
+    const firstIndex = state.world.add(admitted);
+    admitted.forEach((prop, i) => {
       state.worldIndex.set(prop, firstIndex + i);
       state.propObjects.push(prop);
       state.hash.insert(prop);
@@ -473,6 +474,9 @@ export function main() {
         radius,
         mass: rec.mass,
         kind: rec.kind,
+        visualId: rec.visualId,
+        collectionKey: rec.collectionKey,
+        materialVariant: rec.materialVariant || 'default',
         golden: !!rec.golden,
         elite: !!rec.elite,
         variant: rec.variant || null,
@@ -530,6 +534,11 @@ export function main() {
       // size check until the shield breaks (see the eat loop).
       capstoneGate: state.shieldRemaining > 0 ? 0 : level.capstoneGate,
     });
+    state.massLedger = createAvailableMassLedger(
+      level,
+      state.propObjects,
+      level.itemValueMultiplier * state.valueMultiplier,
+    );
 
     chaseCamera.setObstacles([landmark]);
 
@@ -562,10 +571,16 @@ export function main() {
     // is capped at what the player could have swept by minute 1 — the same
     // corridor model as formulas.reachableBaseMass, at t=60s.
     const reachFraction = Math.min(1, (PLAYER_BASE_SPEED * 60 * REACH_SWEEP_WIDTH) / (level.world * level.world));
-    const hoardCap = reachFraction * (layout.stats.totalBaseMass || 0) * level.itemValueMultiplier;
+    const hoardCap = RIVAL_HOARD_SAFETY * reachFraction * (layout.stats.totalBaseMass || 0)
+      * level.itemValueMultiplier * level.progression.ordinaryMassFraction / Math.max(1, comp.length);
+    const rivalSpawnRng = mulberry32((layout.seed ^ 0xD1B54A35) >>> 0);
     comp.forEach((archetype, i) => {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = level.world * (0.3 + Math.random() * 0.15);
+      // Spawn in the forward semicircle (+Z). A rival behind spawn can grow
+      // during warmup directly inside the initial chase-camera sightline.
+      // Its own seeded stream keeps placement deterministic without consuming
+      // district prop RNG or changing any rival gameplay values.
+      const angle = -Math.PI / 2 + rivalSpawnRng() * Math.PI;
+      const dist = level.world * (0.3 + rivalSpawnRng() * 0.15);
       const half = level.world / 2 - 200;
       const pos = {
         x: Math.max(-half, Math.min(half, Math.cos(angle) * dist)),
@@ -817,16 +832,28 @@ export function main() {
 
     // V2 meta: mutually exclusive build picks (applyBuilds), plus unlocked
     // metro-perk flags folded into the same modified-stats object.
-    const stats = applyBuilds({ startMass: 0, timeSeconds: level.time }, state.saveData.builds);
+    const stats = applyBuilds({
+      startMass: 0,
+      timeSeconds: level.time,
+      itemValueMultiplier: level.itemValueMultiplier,
+    }, state.saveData.builds);
     if (state.perks.extraStartMass) {
       stats.extraStartMass += state.perks.extraStartMass;
-      stats.startMass += state.perks.extraStartMass;
+      stats.startMass += state.perks.extraStartMass * level.itemValueMultiplier;
     }
     if (state.perks.extraComboWindow) stats.extraComboWindow += state.perks.extraComboWindow;
     if (state.perks.neonRushMultiplier && level.mechanics.night) {
       stats.moveSpeedMultiplier *= state.perks.neonRushMultiplier;
     }
     state.modifiedStats = stats;
+
+    const twist = level.isCapstone && level.capstoneTwist ? level.capstoneTwist : null;
+    state.twist = twist;
+    state.twistState = twist ? { fired: false, stormT: 0 } : null;
+    const tp = twist ? twist.params || {} : {};
+    state.valueMultiplier = typeof tp.valueMultiplier === 'number' ? tp.valueMultiplier : 1;
+    state.coinComboMultiplier = typeof tp.coinComboMultiplier === 'number' ? tp.coinComboMultiplier : 1;
+    state.rivalSpeedMultiplier = typeof tp.rivalSpeedMultiplier === 'number' ? tp.rivalSpeedMultiplier : 1;
 
     buildLevelWorld(level, {
       seed: state.isDailyRun ? dailyLevelSeed(state.dailyDate) : undefined,
@@ -869,6 +896,9 @@ export function main() {
     state.fastAchieved = false;
     state.peakCombo = 0;
     state.stormEatenCount = 0;
+    state.goldensEaten = 0;
+    state.rivalsEaten = 0;
+    state.usedSecondWind = false;
     state.lastEatenKind = null;
     state.chaosTimer = 0;
     state.notifTimer = 8 + Math.random() * 6;
@@ -886,13 +916,6 @@ export function main() {
     // Capstone twist (content-and-meta §1): the authored twist on each
     // metro's 10th district. Static effects apply here; time/mass-driven
     // effects run in updatePlay off state.twistState.
-    const twist = level.isCapstone && level.capstoneTwist ? level.capstoneTwist : null;
-    state.twist = twist;
-    state.twistState = twist ? { fired: false, stormT: 0 } : null;
-    const tp = twist ? twist.params || {} : {};
-    state.valueMultiplier = typeof tp.valueMultiplier === 'number' ? tp.valueMultiplier : 1;
-    state.coinComboMultiplier = typeof tp.coinComboMultiplier === 'number' ? tp.coinComboMultiplier : 1;
-    state.rivalSpeedMultiplier = typeof tp.rivalSpeedMultiplier === 'number' ? tp.rivalSpeedMultiplier : 1;
     if (twist) showOneLiner(`🌪 ${twist.description}`, 3200);
     if (typeof tp.speedMultiplier === 'number') {
       avatar.speedMultiplier *= tp.speedMultiplier; // deep-freeze
@@ -974,10 +997,21 @@ export function main() {
     Audio.done();
     hideOnboarding();
 
-    const stars = computeStars(level, state.timer);
+    const stars = starResult(level, {
+      completed: true,
+      completionFraction: state.levelTime > 0
+        ? (state.levelTime - state.timer) / state.levelTime
+        : 1,
+      capstoneEaten: state.capstoneEaten,
+      rivalsEaten: state.rivalsEaten,
+      peakCombo: state.peakCombo,
+      goldensEaten: state.goldensEaten,
+      usedSecondWind: state.usedSecondWind,
+    }).stars;
     // V2 economy (content-and-meta §4): flat-in-n payout, NOT V1's
     // mass-scaled one; build coin picks multiply it.
-    const coins = Math.round(coinsForLevel(stars, 0) * state.modifiedStats.coinMultiplier);
+    const settlement = levelReward(level, { stars }, state.saveData);
+    const coins = Math.round(settlement.coins * state.modifiedStats.coinMultiplier);
     state.saveData.coins += coins;
     state.saveData.lifetimeCoins += coins;
     const prevStars = state.saveData.stars[level.n] || 0;
@@ -1050,6 +1084,7 @@ export function main() {
     // Opera Bay's Encore perk tops the offer up (+5s).
     const seconds = state.mercy.consumeSecondWind() + (state.perks.secondWindBonus || 0);
     if (seconds <= 0) return;
+    state.usedSecondWind = true;
     state.timer += seconds;
     unlockAchievement('secondWind');
     showBanner(`🌬️ SECOND WIND — +${seconds}s`, 1400);
@@ -1420,11 +1455,10 @@ export function main() {
     // fold into the level's itemValueMultiplier for everything eaten.
     const ivmEff = level.itemValueMultiplier * state.valueMultiplier;
     const comboCountBefore = state.comboTracker.count;
-    const frameMult = state.comboTracker.mult();
     const reachMultiplier = state.modifiedStats.attractRadiusMultiplier * state.mercy.magnetMultiplier;
     const res = state.swallower.update(
       gdt, swallowAvatar, state.propObjects, state.comboTracker,
-      ivmEff, reachMultiplier
+      ivmEff, reachMultiplier, level.target, level.progression.ordinaryMassFraction
     );
 
     for (const obj of res.vacuumStarted) state.vacuuming.add(obj);
@@ -1433,17 +1467,21 @@ export function main() {
     if (res.eaten.length) {
       let goldenBonusMass = 0;
       let goldenPerkCoins = 0;
-      let eliteBonusMass = 0;
       let eliteBonusCoins = 0;
       for (const obj of res.eaten) {
         removePropRoster(obj);
         avatar.onEat();
         state.lastEatenKind = obj.kind;
 
-        const { collection, isNew } = recordSighting(state.saveData.collection, obj.kind);
+        const collectionKey = obj.collectionKey || obj.visualId || obj.kind;
+        const { collection, isNew } = recordSighting(state.saveData.collection, collectionKey);
         state.saveData.collection = collection;
-        if (obj.variant && obj.variant.name) {
-          const v = recordVariantSighting(state.saveData.collectionVariants, level.metro.id, obj.variant.name);
+        if (obj.visualId || (obj.variant && obj.variant.name)) {
+          const v = recordVariantSighting(
+            state.saveData.collectionVariants,
+            level.metro.id,
+            obj.visualId || obj.variant.name,
+          );
           state.saveData.collectionVariants = v.collectionVariants;
         }
         if (isNew && checkHoarderMilestone(state.saveData.collection)) {
@@ -1453,19 +1491,19 @@ export function main() {
         unlockAchievement('first');
 
         if (obj.golden) {
+          state.goldensEaten += 1;
           unlockAchievement('gold');
           Audio.golden();
           // Golden Touch build pick: +50% golden mass on top of the 8x.
           if (state.modifiedStats.goldenMassMultiplier > 1) {
-            goldenBonusMass += obj.mass * ivmEff * frameMult * 8
+            goldenBonusMass += obj.mass * ivmEff * 8
               * (state.modifiedStats.goldenMassMultiplier - 1);
           }
           // Desert Spires' Gold Rush perk: goldens drop extra coins.
           if (state.perks.goldenCoinBonus) goldenPerkCoins += state.perks.goldenCoinBonus;
-          // Elite goldens (L71+): swallow.js already paid the regular golden
-          // rate (8x mass, +10 coins) — top up to the elite rate (16x, +25).
+          // Elite goldens (L71+): swallow.js pays the full capped elite mass;
+          // coin settlement tops the regular +10 up to +25 here.
           if (obj.elite) {
-            eliteBonusMass += obj.mass * ivmEff * frameMult * (ELITE_GOLDEN_MASS_MULTIPLIER - 8);
             eliteBonusCoins += ELITE_GOLDEN_COIN_BONUS - 10;
           }
         } else {
@@ -1495,7 +1533,10 @@ export function main() {
       // Mass + coins. res.coinsGained already carries the +10/golden V2
       // bonus (formulas.GOLDEN_COIN_BONUS via swallow.js); Coliseum City's
       // roaring-crowd twist doubles combo coin payouts.
-      avatar.mass += res.massGained * state.modifiedStats.massGainMultiplier + goldenBonusMass + eliteBonusMass;
+      avatar.mass += capProgressionAward(
+        res.massGained * state.modifiedStats.massGainMultiplier + goldenBonusMass,
+        level.target,
+      );
       const coinsNow = Math.round((res.coinsGained + goldenPerkCoins + eliteBonusCoins) * state.coinComboMultiplier);
       if (coinsNow > 0) {
         state.runCoins += coinsNow;
@@ -1598,7 +1639,19 @@ export function main() {
       if (events.pinata) {
         // Crumbs are already in propObjects (rivals.js pushed them) — attach
         // them to the instanced world + swallow registry via the same funnel.
-        const crumbs = events.pinata.crumbs;
+        const rawCrumbs = events.pinata.crumbs;
+        const crumbs = state.massLedger
+          ? state.massLedger.admit(rawCrumbs, ivmEff)
+          : rawCrumbs;
+        if (crumbs.length !== rawCrumbs.length) {
+          const admitted = new Set(crumbs);
+          for (let i = state.propObjects.length - 1; i >= 0; i -= 1) {
+            const prop = state.propObjects[i];
+            if (prop.crumb && rawCrumbs.includes(prop) && !admitted.has(prop)) {
+              state.propObjects.splice(i, 1);
+            }
+          }
+        }
         for (const crumb of crumbs) {
           const crumbScale = propBaseScale(crumb.kind, crumb.radius);
           crumb.rotationY = Math.random() * Math.PI * 2;
@@ -1624,8 +1677,12 @@ export function main() {
         spawnShockwave(events.shockwave.x, events.shockwave.z, events.shockwave.radius);
       }
       if (events.playerAteRival) {
-        const bonus = events.bonus * state.modifiedStats.massGainMultiplier
-          * (state.perks.rivalBonusMultiplier || 1);
+        state.rivalsEaten += 1;
+        const bonus = capProgressionAward(
+          events.bonus * state.modifiedStats.massGainMultiplier
+            * (state.perks.rivalBonusMultiplier || 1),
+          level.target,
+        );
         avatar.mass += bonus;
         Audio.rivalEat();
         unlockAchievement('rival');

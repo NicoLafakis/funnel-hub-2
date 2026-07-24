@@ -1,5 +1,13 @@
 # Economy Balance Audit — levels complete far too fast
 
+> **Remediated 2026-07-24.** Combo no longer multiplies growth; clocks are
+> bounded to 75–95 seconds; seeded districts use authored ordinary-mass
+> coefficients; rewards distinguish first clear, improved stars, and 20%
+> replay; starting-mass bonuses scale with item values. The deterministic
+> suite now reports all nine progression invariants at 100/100, byte-identical
+> duplicate summaries, and bounded maximum-build runs. The remainder preserves
+> the reproducible before-state.
+
 **Date:** 2026-07-24
 **Verdict:** Confirmed. Levels are winnable on ~20% of the props and in
 ~3–17% of the timer. The felt problem is real and has one dominant cause.

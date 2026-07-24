@@ -12,7 +12,25 @@
 // — keep in sync: 'trash' | 'bike' | 'car' | 'bus' | 'building-small' |
 // 'building-medium' | 'building-large'.
 
+import {
+  DISTRICT_CATALOGS, VISUAL_ARCHETYPES, resolveVisualArchetype,
+} from './archetypes.js';
+
 const DEFAULT_ACCENT = '#9aa3ad';
+
+export function resolveVisualDescriptor(visualId, kind) {
+  return resolveVisualArchetype(visualId, kind);
+}
+
+export const metroVariants = Object.freeze(Object.fromEntries(
+  Object.entries(DISTRICT_CATALOGS).map(([metroId, districts]) => {
+    const ids = [...new Set(Object.values(districts).flatMap((catalog) => Object.values(catalog.mixes).flat()))];
+    return [metroId, Object.freeze(ids.map((id) => Object.freeze({
+      key: id,
+      name: VISUAL_ARCHETYPES[id].family.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    })))];
+  }),
+));
 
 // --- Tier size step (art-direction.md §3, "keep it sacred") -----------------
 // The 7 tiers MUST read as escalating silhouettes at a glance: each tier's
@@ -412,6 +430,66 @@ export function createPropMesh(kind, THREE, accentColorHex, variant) {
   return mesh;
 }
 
+// Adds one strong, low-poly silhouette cue to the sacred gameplay-tier base.
+// The cue is baked into merged geometry, so it remains visible when instanced.
+function applyVisualRecipe(group, THREE, descriptor, accent) {
+  if (!descriptor || descriptor.recipe === 'base' || descriptor.family === 'legacy_fallback') return;
+  const dim = DIMENSIONS[descriptor.gameplayKind] || DIMENSIONS.trash;
+  const index = descriptor.recipeIndex || 0;
+  const phase = (index % 5) / 5;
+  const material = standardMat(THREE, shade(THREE, accent, 0.18 - phase * 0.12), {
+    roughness: 0.62,
+    metalness: descriptor.recipe === 'mast' ? 0.35 : 0.08,
+  });
+  let geometry;
+  let position;
+  switch (descriptor.recipe) {
+    case 'cap':
+      geometry = new THREE.ConeGeometry(dim.w * (0.24 + phase * 0.08), dim.h * 0.24, 6);
+      position = [dim.w * 0.2, dim.h * 1.04, -dim.d * 0.12];
+      break;
+    case 'bar':
+      geometry = new THREE.BoxGeometry(dim.w * 1.08, Math.max(0.12, dim.h * 0.09), dim.d * 0.2);
+      position = [0, dim.h * 0.82, dim.d * 0.28];
+      break;
+    case 'mast':
+      geometry = new THREE.CylinderGeometry(dim.w * 0.055, dim.w * 0.08, dim.h * 0.72, 6);
+      position = [dim.w * 0.3, dim.h * 1.02, -dim.d * 0.22];
+      break;
+    case 'canopy':
+      geometry = new THREE.BoxGeometry(dim.w * 1.12, Math.max(0.12, dim.h * 0.08), dim.d * 0.62);
+      position = [0, dim.h * 1.08, -dim.d * 0.08];
+      break;
+    case 'spire':
+      geometry = new THREE.ConeGeometry(dim.w * 0.2, dim.h * (0.3 + phase * 0.12), 7);
+      position = [-dim.w * 0.18, dim.h * 1.12, dim.d * 0.08];
+      break;
+    case 'box':
+    default:
+      geometry = new THREE.BoxGeometry(
+        dim.w * (0.24 + phase * 0.1),
+        dim.h * (0.18 + phase * 0.08),
+        dim.d * 0.28,
+      );
+      position = [dim.w * 0.24, dim.h * 0.88, -dim.d * 0.22];
+      break;
+  }
+  const cue = new THREE.Mesh(geometry, material);
+  cue.position.set(position[0], position[1], position[2]);
+  cue.rotation.y = (index % 4) * Math.PI / 12;
+  group.add(cue);
+}
+
+export function createVisualPropMesh(visualId, kind, THREE, accentColorHex) {
+  const descriptor = resolveVisualArchetype(visualId, kind);
+  const accent = resolveColor(THREE, accentColorHex);
+  const group = createPropMesh(descriptor.gameplayKind, THREE, accentColorHex);
+  applyVisualRecipe(group, THREE, descriptor, accent);
+  group.userData.visualId = descriptor.id;
+  group.userData.gameplayKind = descriptor.gameplayKind;
+  return group;
+}
+
 // Real multi-part geometry for instancing (art-direction §3: "tier
 // silhouettes ... keep it sacred" — the earlier single-box stand-in rendered
 // every kind as an identical blue cube). Each kind's detailed builder (the
@@ -423,14 +501,15 @@ export function createPropMesh(kind, THREE, accentColorHex, variant) {
 // per-instance paths (brightness jitter, edibility tint, golden) keep working
 // unchanged. Small local merge — no three/examples BufferGeometryUtils (B1:
 // only the vendored core files exist).
-const mergedGeometryCache = new Map(); // `${kind}|${accent}` -> BufferGeometry
+const mergedGeometryCache = new Map(); // `${visualId}|${accent}` -> BufferGeometry
 
-function mergedKindGeometry(THREE, kind, accentColorHex) {
-  const key = `${kind}|${accentColorHex}`;
+function mergedKindGeometry(THREE, kind, accentColorHex, visualId) {
+  const descriptor = resolveVisualArchetype(visualId, kind);
+  const key = `${descriptor.id}|${accentColorHex}`;
   const cached = mergedGeometryCache.get(key);
   if (cached) return cached;
 
-  const group = createPropMesh(kind, THREE, accentColorHex);
+  const group = createVisualPropMesh(descriptor.id, kind, THREE, accentColorHex);
   group.updateMatrixWorld(true);
 
   const positions = [];
@@ -499,13 +578,17 @@ export function kindHeight(kind) {
 
 export function createInstancedPropField(kind, count, THREE, accentColorHex, opts = {}) {
   const safeCount = Math.max(0, Math.floor(Number(count) || 0));
-  const geometry = mergedKindGeometry(THREE, kind, accentColorHex);
+  const descriptor = resolveVisualArchetype(opts.visualId, kind);
+  const geometry = mergedKindGeometry(THREE, kind, accentColorHex, descriptor.id);
   // White base material: the real per-part colors live in the vertex colors;
   // instance colors multiply on top (jitter / edibility / golden).
   const material = standardMat(THREE, 0xffffff, { roughness: 0.7, metalness: 0.1 });
   material.vertexColors = true;
 
   const mesh = new THREE.InstancedMesh(geometry, material, safeCount);
+  mesh.name = `props-${descriptor.id}${opts.golden ? '-golden' : ''}`;
+  mesh.userData.visualId = descriptor.id;
+  mesh.userData.gameplayKind = descriptor.gameplayKind;
   mesh.name = `prop-field:${kind}`;
 
   const matrix = new THREE.Matrix4();
@@ -543,4 +626,20 @@ export function createInstancedPropField(kind, count, THREE, accentColorHex, opt
   }
 
   return mesh;
+}
+
+export function visualGeometryFingerprint(visualId, kind, THREE, accentColorHex = DEFAULT_ACCENT) {
+  const geometry = mergedKindGeometry(THREE, kind, accentColorHex, visualId);
+  const position = geometry.getAttribute('position');
+  const box = geometry.boundingBox || (geometry.computeBoundingBox(), geometry.boundingBox);
+  let checksum = 0;
+  for (let i = 0; i < position.count; i += 1) {
+    checksum += position.getX(i) * 3 + position.getY(i) * 5 + position.getZ(i) * 7;
+  }
+  return {
+    vertices: position.count,
+    triangles: geometry.index ? geometry.index.count / 3 : position.count / 3,
+    bounds: box ? [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z] : [],
+    checksum: Math.round(checksum * 1e6) / 1e6,
+  };
 }

@@ -21,7 +21,9 @@
 //   - no vacuum-snap assist (pure contact eating only)
 //   - storm drops (L11+) are ignored: free extra mass the bot never collects
 //   - moving traffic (L21+) is treated as parked (positions stay as seeded)
-//   - no upgrades, builds, perks, mercy magnet or second wind (invariant 5)
+//   - no perks, mercy magnet or second wind; optional buildStats are used only
+//     by the separate maximum-build ceiling probe
+//   - capstone value/speed twists are included; visual-only twists are ignored
 //
 // DETERMINISM: the only nondeterministic API the real systems touch is
 // Math.random (rival respawns/wander in rivals.js). The bot swaps in a
@@ -37,11 +39,14 @@ import { generateDistrict } from '../src/content/districts.js';
 import { mulberry32 } from '../src/data/seeds.js';
 import {
   PLAYER_BASE_SPEED, REACH_SWEEP_WIDTH, radiusFromMass, rivalComposition, capstoneGateRadius,
+  capProgressionAward, GOLDEN_MASS_MULTIPLIER,
+  RIVAL_HOARD_SAFETY,
 } from '../src/data/formulas.js';
 import { checkSwallow, DEFAULT_SIZE_GATE } from '../src/systems/swallow.js';
 import { createComboTracker } from '../src/systems/combo.js';
 import { createRival, updateRival, RIVAL_WARMUP_SECONDS } from '../src/systems/rivals.js';
 import { createSpatialHash } from '../src/engine/spatialhash.js';
+import { createAvailableMassLedger } from '../src/meta/progression.js';
 
 // Minimal stand-in for the `THREE` parameter of createRival: rivals only use
 // Group(), position.set() and scale.setScalar(). Keeps the bot THREE-free
@@ -73,6 +78,8 @@ const MINUTE_PROBE_SECONDS = 60; // invariant 3 probes rival hoard at minute 1
  *   dt?: number,                  // sim step, seconds (default 0.2)
  *   maxComboMult?: number,        // clamp the combo multiplier (invariant 4
  *                                 // uses 2); default Infinity = real combos
+ *   ordinaryMassFraction?: number,// calibration override for tuning only
+ *   buildStats?: object,          // applyBuilds() output for ceiling probes
  * }} opts
  * @returns {{
  *   n: number, target: number, time: number, world: number,
@@ -93,6 +100,19 @@ export function simulateLevel(n, opts = {}) {
   const level = generateLevel(n);
   const layout = generateDistrict(level);
   const ivm = level.itemValueMultiplier;
+  const twistParams = level.isCapstone && level.capstoneTwist
+    ? (level.capstoneTwist.params || {})
+    : {};
+  const valueMultiplier = Math.max(1, Number(twistParams.valueMultiplier) || 1);
+  const ivmEff = ivm * valueMultiplier;
+  const buildStats = opts.buildStats && typeof opts.buildStats === 'object' ? opts.buildStats : {};
+  const totalTime = level.time + Math.max(0, Number(buildStats.extraSeconds) || 0);
+  const speedMultiplier = Math.max(0.1, Number(buildStats.moveSpeedMultiplier) || 1)
+    * Math.max(0.1, Number(twistParams.speedMultiplier) || 1);
+  const reachMultiplier = Math.max(1, Number(buildStats.attractRadiusMultiplier) || 1);
+  const eatRadiusMultiplier = Math.max(1, Number(buildStats.eatRadiusMultiplier) || 1);
+  const massGainMultiplier = Math.max(1, Number(buildStats.massGainMultiplier) || 1);
+  const goldenMassMultiplier = Math.max(1, Number(buildStats.goldenMassMultiplier) || 1);
 
   // Seeded RNG replaces Math.random for the whole run (see header).
   const rng = mulberry32((level.seed ^ 0xB07B007) >>> 0);
@@ -126,6 +146,7 @@ export function simulateLevel(n, opts = {}) {
       capstoneGate: shieldRemaining > 0 ? 0 : level.capstoneGate,
     };
     propObjects.push(capstone);
+    const massLedger = createAvailableMassLedger(level, propObjects, ivmEff);
 
     const hash = createSpatialHash({ cellSize: 100 });
     for (const p of propObjects) hash.insert(p);
@@ -133,10 +154,14 @@ export function simulateLevel(n, opts = {}) {
     // Bot state — mirrors avatar.js: radius from base mass, world-relative
     // cap, growth-dragged base speed.
     const pos = { x: 0, y: 0, z: 0 };
-    let mass = 0;
+    let mass = Math.max(0, Number(buildStats.startMass) || 0);
     const radiusCap = level.world * 0.2;
     const botRadius = () => Math.min(radiusFromMass(mass / ivm), radiusCap);
     const avatarShim = { position: pos, radius: botRadius };
+    const swallowAvatarShim = {
+      position: pos,
+      radius: () => botRadius() * eatRadiusMultiplier,
+    };
 
     // Combo: real tracker, with an optional clamp on the multiplier read
     // (invariant 4: "with <= combo x2").
@@ -152,7 +177,8 @@ export function simulateLevel(n, opts = {}) {
       ? level.mechanics.rivals
       : rivalComposition(level.n);
     const reachFraction = Math.min(1, (PLAYER_BASE_SPEED * 60 * REACH_SWEEP_WIDTH) / (level.world * level.world));
-    const hoardCap = reachFraction * (layout.stats.totalBaseMass || 0) * ivm;
+    const hoardCap = RIVAL_HOARD_SAFETY * reachFraction * (layout.stats.totalBaseMass || 0)
+      * ivm * level.progression.ordinaryMassFraction / Math.max(1, comp.length);
     const rivals = comp.map((archetype) => {
       const angle = rng() * Math.PI * 2;
       const dist = level.world * (0.3 + rng() * 0.15);
@@ -173,6 +199,9 @@ export function simulateLevel(n, opts = {}) {
     const worldBound = level.world / 2 - 30;
     let capstoneEaten = false;
     let propsEaten = 0;
+    let propsEatenAtCompletion = null;
+    let awardedMassAtCompletion = null;
+    let maxSingleAward = 0;
     let stuck = false;
 
     // Probes (recorded at the first sim time >= the probe time, so the value
@@ -181,15 +210,16 @@ export function simulateLevel(n, opts = {}) {
     let rivalHoardAt60s = null;
     let massAt60Pct = null;
     let capstoneEdibleTime = null;
-    const probe60Pct = 0.6 * level.time;
+    const probe60Pct = 0.6 * totalTime;
     const capstoneEdibleNow = () => (
-      capstone.capstoneGate > 0 && botRadius() >= capstone.radius / capstone.capstoneGate
+      capstone.capstoneGate > 0
+      && botRadius() * eatRadiusMultiplier >= capstone.radius / capstone.capstoneGate
     );
 
     let completed = false;
     let completionTime = null;
     let t = 0;
-    while (t < level.time - 1e-9) {
+    while (t < totalTime - 1e-9) {
       // --- probes + win check at sim time t (before this step's actions) ---
       if (massAt60s === null && t >= MINUTE_PROBE_SECONDS) {
         massAt60s = mass;
@@ -197,12 +227,13 @@ export function simulateLevel(n, opts = {}) {
       }
       if (massAt60Pct === null && t >= probe60Pct) massAt60Pct = mass;
       if (capstoneEdibleTime === null && capstoneEdibleNow()) capstoneEdibleTime = t;
-      // The win is recorded, NOT broken on: invariant 1 asks how much mass is
-      // REACHABLE by 60% of the timer, so the bot keeps eating past the
-      // finish line to fill the probes (rivals keep competing too).
+      // The win is recorded, not broken on, so later rival/starvation probes
+      // and available-mass accounting use a complete deterministic run.
       if (!completed && mass >= level.target && (!capstoneRequired || capstoneEaten)) {
         completed = true;
         completionTime = t;
+        propsEatenAtCompletion = propsEaten;
+        awardedMassAtCompletion = mass;
       }
 
       // --- bot turn -------------------------------------------------------
@@ -212,10 +243,14 @@ export function simulateLevel(n, opts = {}) {
       // Target: the capstone the moment it's edible (it's both the best meal
       // and, on gated levels, the finish line); else nearest edible prop.
       let target = null;
-      if (!capstoneEaten && capstone.capstoneGate > 0 && capstone.radius <= r * capstone.capstoneGate) {
+      if (
+        !capstoneEaten
+        && capstone.capstoneGate > 0
+        && capstone.radius <= r * eatRadiusMultiplier * capstone.capstoneGate
+      ) {
         target = capstone;
       } else {
-        const gate = r * DEFAULT_SIZE_GATE;
+        const gate = r * eatRadiusMultiplier * DEFAULT_SIZE_GATE;
         let bestDistSq = Infinity;
         for (const obj of propObjects) {
           if (obj.isCapstone || obj.hazard) continue;
@@ -240,7 +275,7 @@ export function simulateLevel(n, opts = {}) {
       }
 
       // Move toward the target (avatar.js movement math, camera-free).
-      const speed = PLAYER_BASE_SPEED * (60 / Math.max(60, r));
+      const speed = PLAYER_BASE_SPEED * speedMultiplier * (60 / Math.max(60, r));
       const dx = target.position.x - pos.x;
       const dz = target.position.z - pos.z;
       const d = Math.hypot(dx, dz);
@@ -254,9 +289,26 @@ export function simulateLevel(n, opts = {}) {
       }
 
       // Contact eating — the REAL swallow gate set (no vacuum assist).
-      const res = checkSwallow(avatarShim, propObjects, comboShim, ivm, 1);
+      const awardFraction = typeof opts.ordinaryMassFraction === 'number'
+        ? opts.ordinaryMassFraction
+        : level.progression.ordinaryMassFraction;
+      const res = checkSwallow(
+        swallowAvatarShim, propObjects, comboShim, ivmEff, reachMultiplier,
+        level.target, awardFraction,
+      );
       if (res.eaten.length) {
-        mass += res.massGained; // massGainMultiplier 1: no upgrades (inv. 5)
+        let exceptionalTopUp = 0;
+        for (const obj of res.eaten) {
+          if (!obj.golden) continue;
+          exceptionalTopUp += obj.mass * ivmEff * GOLDEN_MASS_MULTIPLIER
+            * (goldenMassMultiplier - 1);
+        }
+        const frameAward = capProgressionAward(
+          res.massGained * massGainMultiplier + exceptionalTopUp,
+          level.target,
+        );
+        mass += frameAward; // mirrors main.js's per-frame progression cap
+        maxSingleAward = Math.max(maxSingleAward, frameAward);
         propsEaten += res.eaten.length;
         for (const obj of res.eaten) {
           hash.remove(obj);
@@ -276,13 +328,29 @@ export function simulateLevel(n, opts = {}) {
           archetype: rival.archetype,
           worldSize: level.world,
           levelNumber: level.n,
-          itemValueMultiplier: ivm,
+          itemValueMultiplier: ivmEff,
           spatialHash: hash,
           hoardCap: rival.hoardCap,
         });
         for (const obj of events.ateProps) hash.remove(obj);
-        if (events.pinata) for (const c of events.pinata.crumbs) hash.insert(c);
-        if (events.playerAteRival) mass += events.bonus; // ~10% of target
+        if (events.pinata) {
+          const rawCrumbs = events.pinata.crumbs;
+          const crumbs = massLedger.admit(rawCrumbs, ivmEff);
+          if (crumbs.length !== rawCrumbs.length) {
+            const admitted = new Set(crumbs);
+            for (let i = propObjects.length - 1; i >= 0; i -= 1) {
+              const prop = propObjects[i];
+              if (prop.crumb && rawCrumbs.includes(prop) && !admitted.has(prop)) {
+                propObjects.splice(i, 1);
+              }
+            }
+          }
+          for (const c of crumbs) hash.insert(c);
+        }
+        if (events.playerAteRival) {
+          mass += events.bonus; // ~10% of target
+          maxSingleAward = Math.max(maxSingleAward, events.bonus);
+        }
       }
 
       t += dt;
@@ -296,7 +364,7 @@ export function simulateLevel(n, opts = {}) {
     return {
       n: level.n,
       target: level.target,
-      time: level.time,
+      time: totalTime,
       world: level.world,
       completed,
       completionTime,
@@ -308,6 +376,15 @@ export function simulateLevel(n, opts = {}) {
       capstoneEdibleTime,
       capstoneEaten,
       propsEaten,
+      propsEatenAtCompletion,
+      awardedMassAtCompletion,
+      completionFraction: completionTime === null ? null : completionTime / totalTime,
+      budgetConsumptionFraction: awardedMassAtCompletion === null
+        ? null
+        : awardedMassAtCompletion / level.progression.massBudget,
+      maxSingleAward,
+      maxSingleAwardFraction: maxSingleAward / level.target,
+      availableMass: massLedger.summary(),
       propsRemaining: propObjects.length,
       stuck,
     };

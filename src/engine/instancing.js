@@ -79,6 +79,21 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad' } = {}
   const accentColor = new THREE.Color(accent);
   const hiddenScale = new THREE.Vector3(0, 0, 0);
 
+  function identityFor(p) {
+    const kind = p && typeof p.kind === 'string' ? p.kind : 'trash';
+    const requestedVisualId = p && typeof p.visualId === 'string' ? p.visualId : null;
+    const descriptor = typeof propkit.resolveVisualDescriptor === 'function'
+      ? propkit.resolveVisualDescriptor(requestedVisualId, kind)
+      : { id: requestedVisualId || `fallback_${kind.replace(/-/g, '_')}`, gameplayKind: kind };
+    const visualId = descriptor.id;
+    const materialVariant = p && typeof p.materialVariant === 'string' ? p.materialVariant : 'default';
+    const golden = !!(p && p.golden);
+    return {
+      key: `${visualId}|${materialVariant}|${golden ? 1 : 0}`,
+      visualId, materialVariant, golden, kind: descriptor.gameplayKind || kind,
+    };
+  }
+
   function disposeGroups() {
     for (const g of groups.values()) {
       scene.remove(g.mesh);
@@ -112,18 +127,21 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad' } = {}
     // allocation is fine; the frame loop must not allocate).
     const counts = new Map();
     for (let i = 0; i < props.length; i += 1) {
-      const p = props[i];
-      const key = `${p.kind}|${p.golden ? 1 : 0}`;
-      counts.set(key, (counts.get(key) || 0) + 1);
+      const identity = identityFor(props[i]);
+      const entry = counts.get(identity.key) || { ...identity, count: 0 };
+      entry.count += 1;
+      counts.set(identity.key, entry);
     }
-    for (const [key, count] of counts) {
-      const sep = key.lastIndexOf('|');
-      const kind = key.slice(0, sep);
-      const golden = key.slice(sep + 1) === '1';
+    for (const [key, entry] of counts) {
+      const {
+        kind, visualId, materialVariant, golden, count,
+      } = entry;
       // Geometry is always baked from the METRO accent (per-part vertex
       // colors); the golden group's jackpot read comes from gold instance
       // colors inside propkit (opts.golden), not a second geometry tint.
-      const mesh = propkit.createInstancedPropField(kind, count, THREE, accent, { golden });
+      const mesh = propkit.createInstancedPropField(kind, count, THREE, accent, {
+        visualId, materialVariant, golden,
+      });
       scene.add(mesh);
       // propkit's instanced geometries are CENTERED on their local origin
       // (its one-time placement matrix bakes the ground lift, but
@@ -133,6 +151,8 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad' } = {}
       const bb = mesh.geometry.boundingBox;
       groups.set(key, {
         kind,
+        visualId,
+        materialVariant,
         golden,
         mesh,
         yOffset: bb && Number.isFinite(bb.min.y) ? -bb.min.y : 0,
@@ -145,8 +165,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad' } = {}
     }
     for (let i = 0; i < props.length; i += 1) {
       const p = props[i];
-      const key = `${p.kind}|${p.golden ? 1 : 0}`;
-      const group = groups.get(key);
+      const group = groups.get(identityFor(p).key);
       const slot = group.nextSlot;
       group.nextSlot += 1;
       group.slots.push(i);
@@ -374,8 +393,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad' } = {}
       propGroup[propIndex] = null;
     } else if (!propGroup[propIndex]) {
       const p = props[propIndex];
-      const key = `${p.kind}|${p.golden ? 1 : 0}`;
-      propGroup[propIndex] = groups.get(key) || null;
+      propGroup[propIndex] = groups.get(identityFor(p).key) || null;
       if (propGroup[propIndex]) writeInstanceMatrix(propIndex);
     }
   }
@@ -400,6 +418,8 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad' } = {}
     setVisible,
     dispose,
     get drawCalls() { return groups.size + (shadowMesh ? 1 : 0); },
+    get groupCount() { return groups.size; },
+    get groupKeys() { return [...groups.keys()].sort(); },
     get count() { return props.length; },
   };
 }

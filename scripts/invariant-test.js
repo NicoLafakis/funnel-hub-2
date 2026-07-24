@@ -1,16 +1,9 @@
-// Invariant suite — the game-design.md §5 "immune system". Asserts all five
-// difficulty invariants across ALL 100 levels, driven by the headless soak
+// Invariant suite — the game-design.md §5 "immune system". Asserts all nine
+// progression floors and ease ceilings across ALL 100 levels, driven by the headless soak
 // bot (scripts/soak-bot.js) playing every level against the real systems
 // (swallow / combo / rivals / districts), not by formula vibes:
-//   1. Reachable mass in 60% of timer >= 1.5x target (bot's actual mass at
-//      the 60%-of-timer probe).
-//   2. Avatar radius at 100% target <= 0.25x world width (radiusFromMass of
-//      the target mass, honoring the world-relative radiusCap main.js sets).
-//   3. Rival hoard at minute 1 <= player's reachable mass by then (sum of
-//      simulated rival masses at t=60 vs the bot's mass at t=60).
-//   4. Capstone edible radius reachable by 90% of timer with <= combo x2
-//      (a second bot run with the combo multiplier clamped to x2).
-//   5. Every level completable by the bot WITHOUT upgrades.
+// The suite also compares all 100 summaries twice for determinism and probes
+// maximum-growth / maximum-utility builds at five campaign checkpoints.
 //
 // Exit criterion from the roadmap: invariant suite passes 100/100. A failing
 // level prints its numbers; per-invariant summaries list the worst offenders.
@@ -35,6 +28,7 @@ async function main() {
   const { generateLevel, LEVEL_COUNT } = await import('../src/data/levels.js');
   const { METROS } = await import('../src/data/metros.js');
   const { radiusFromMass } = await import('../src/data/formulas.js');
+  const { applyBuilds } = await import('../src/meta/upgrades.js');
   const landmarks = await import('../src/content/landmarks.js');
   const THREE = await import('three');
 
@@ -48,7 +42,7 @@ async function main() {
   // --- Determinism gate: same seed twice => byte-identical run summary. ----
   console.log('DETERMINISM:');
   let deterministic = true;
-  for (const n of [1, 50, 100]) {
+  for (let n = 1; n <= LEVEL_COUNT; n += 1) {
     const level = generateLevel(n);
     const lr = landmarkRadiusByType[level.metro.landmarkType];
     const a = JSON.stringify(simulateLevel(n, { landmarkRadius: lr }));
@@ -59,7 +53,7 @@ async function main() {
     }
   }
   console.log(deterministic
-    ? '  ✓ same seed twice => identical run (levels 1, 50, 100)'
+    ? '  ✓ same seed twice => byte-identical summaries (all 100 levels)'
     : '  ✗ FAIL: soak bot is nondeterministic');
 
   // --- Run the bot over all 100 levels ------------------------------------
@@ -74,18 +68,16 @@ async function main() {
     runs.push({ level, runA, runB });
   }
 
-  // --- Evaluate the five invariants ----------------------------------------
-  const results = [[], [], [], [], []]; // per-invariant failure lists
-  const margins = [[], [], [], [], []]; // per-invariant pass margins (for worst-offender reports)
+  // --- Evaluate the nine invariants ----------------------------------------
+  const results = Array.from({ length: 9 }, () => []);
+  const margins = Array.from({ length: 9 }, () => []);
 
   for (const { level, runA, runB } of runs) {
     const n = level.n;
 
-    // 1. Reachable mass in 60% of timer >= 1.5x target.
-    const need1 = 1.5 * level.target;
-    const ratio1 = runA.massAt60PctTimer / need1;
-    if (runA.massAt60PctTimer >= need1) margins[0].push({ n, ratio: ratio1 });
-    else results[0].push({ n, have: runA.massAt60PctTimer, need: need1, ratio: ratio1 });
+    // 1. Bounded normal timer.
+    if (level.time >= 75 && level.time <= 120) margins[0].push({ n, ratio: level.time / 120 });
+    else results[0].push({ n, time: level.time });
 
     // 2. Avatar radius at 100% target <= 0.25x world width.
     const radiusAtTarget = Math.min(radiusFromMass(level.target / level.itemValueMultiplier), level.world * 0.2);
@@ -125,19 +117,89 @@ async function main() {
         stuck: runA.stuck,
       });
     }
+
+    const completion = runA.completionFraction;
+    if (completion !== null && completion >= 0.55 && completion <= 0.80) {
+      margins[5].push({ n, ratio: completion });
+    } else {
+      results[5].push({ n, completionFraction: completion });
+    }
+
+    const budget = runA.budgetConsumptionFraction;
+    if (budget !== null && budget >= 0.45 && budget <= 0.70) {
+      margins[6].push({ n, ratio: budget });
+    } else {
+      results[6].push({ n, budgetConsumptionFraction: budget });
+    }
+
+    if (runA.maxSingleAwardFraction <= 0.15 + 1e-9) {
+      margins[7].push({ n, ratio: runA.maxSingleAwardFraction / 0.15 });
+    } else {
+      results[7].push({ n, maxSingleAwardFraction: runA.maxSingleAwardFraction });
+    }
+
+    if (runA.availableMass.totalAward <= runA.availableMass.limit + 1e-9) {
+      margins[8].push({ n, ratio: runA.availableMass.fraction });
+    } else {
+      results[8].push({ n, availableMass: runA.availableMass });
+    }
   }
 
   const INVARIANT_NAMES = [
-    'Reachable mass in 60% of timer >= 1.5x target (bot simulation)',
+    'Base timer is bounded to 75-120 seconds',
     'Avatar radius at 100% target <= 0.25x world width',
     'Rival hoard at minute 1 <= player reachable mass by then',
     'Capstone edible radius reachable by 90% of timer with <= combo x2',
     'Every level completable by the bot WITHOUT upgrades',
+    'No-upgrade completion lands at 55%-80% of timer',
+    'Completion consumes 45%-70% of route mass budget',
+    'Maximum single award is <=15% of target',
+    'Initial and dynamically spawned mass stay within available-mass budget',
   ];
 
+  const maxGrowthBuild = {
+    1: 'wide-maw', 2: 'greased-axle', 3: 'second-stomach',
+    4: 'turbo-bearings', 5: 'devourer',
+  };
+  const maxUtilityBuild = {
+    1: 'wide-maw', 2: 'magnet-core', 3: 'heavy-breakfast',
+    4: 'vacuum-throat', 5: 'time-bandit',
+  };
+  const maxGoldenBuild = {
+    1: 'wide-maw', 2: 'greased-axle', 3: 'second-stomach',
+    4: 'golden-touch', 5: 'devourer',
+  };
+  const buildFailures = [];
+  for (const n of SPOT_LEVELS) {
+    const level = generateLevel(n);
+    const lr = landmarkRadiusByType[level.metro.landmarkType];
+    for (const [name, build] of [
+      ['growth', maxGrowthBuild],
+      ['utility', maxUtilityBuild],
+      ['golden', maxGoldenBuild],
+    ]) {
+      const stats = applyBuilds({
+        startMass: 0,
+        timeSeconds: level.time,
+        itemValueMultiplier: level.itemValueMultiplier,
+      }, build);
+      const run = simulateLevel(n, { landmarkRadius: lr, buildStats: stats });
+      if (!run.completed || run.completionFraction < 0.25 || run.maxSingleAwardFraction > 0.15 + 1e-9) {
+        buildFailures.push({
+          n,
+          name,
+          completed: run.completed,
+          completionFraction: run.completionFraction,
+          maxSingleAwardFraction: run.maxSingleAwardFraction,
+        });
+      }
+    }
+  }
+
   let totalFails = deterministic ? 0 : 1;
+  totalFails += buildFailures.length;
   console.log('\nINVARIANTS (game-design.md §5, all 100 levels):');
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < INVARIANT_NAMES.length; i += 1) {
     const failures = results[i];
     const passed = LEVEL_COUNT - failures.length;
     totalFails += failures.length;
@@ -156,6 +218,8 @@ async function main() {
       console.log(`       tightest: ${tightest.map((m) => `n=${m.n} (${(m.ratio * 100).toFixed(0)}%)`).join(', ')}`);
     }
   }
+  console.log(`  BUILD CEILING: [${buildFailures.length ? 'FAIL' : 'PASS'}] maximum builds stay >=25% timer and <=15% target/event`);
+  for (const failure of buildFailures) console.log(`       worst: ${JSON.stringify(failure)}`);
 
   // Spot-level detail table (the soak sample from the tech doc).
   console.log('\nSPOT LEVELS (1/25/50/75/100):');
@@ -163,15 +227,17 @@ async function main() {
     const { level, runA, runB } = runs[n - 1];
     console.log(
       `  L${n}:`
-      + ` inv1 ${(runA.massAt60PctTimer / level.target).toFixed(2)}x target by 60%t (need 1.5x)`
+      + ` completion ${(runA.completionFraction * 100).toFixed(0)}%t`
       + ` | inv3 hoard@60 ${Math.round(runA.rivalHoardAt60s)} vs bot ${Math.round(runA.massAt60s)}`
       + ` | inv4 capstone-edible@${runB.capstoneEdibleTime === null ? 'never' : runB.capstoneEdibleTime.toFixed(1) + 's'} (limit ${(0.9 * level.time).toFixed(0)}s)`
-      + ` | inv5 ${runA.completed ? `won in ${runA.completionTime.toFixed(1)}s / ${level.time}s` : 'NOT COMPLETED'}`,
+      + ` | budget ${(runA.budgetConsumptionFraction * 100).toFixed(0)}%`
+      + ` | max-award ${(runA.maxSingleAwardFraction * 100).toFixed(0)}% target`
+      + ` | ${runA.completed ? `won in ${runA.completionTime.toFixed(1)}s / ${level.time}s` : 'NOT COMPLETED'}`,
     );
   }
 
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
-  console.log(`\nRESULT: ${totalFails === 0 ? `ALL 5 INVARIANTS PASS, ${LEVEL_COUNT}/${LEVEL_COUNT} levels` : `${totalFails} invariant failure(s)`} (${seconds}s)`);
+  console.log(`\nRESULT: ${totalFails === 0 ? `ALL 9 INVARIANTS PASS, ${LEVEL_COUNT}/${LEVEL_COUNT} levels` : `${totalFails} invariant failure(s)`} (${seconds}s)`);
   process.exit(totalFails ? 1 : 0);
 }
 

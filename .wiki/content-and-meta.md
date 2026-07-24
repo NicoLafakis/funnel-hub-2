@@ -2,6 +2,12 @@
 
 ## 1. The 100-level curve, re-authored
 
+Each metro now contains two five-level arcs: teach, reinforce, pressure,
+combine, test. Unlocks make mechanics available for authored combinations;
+they no longer force every mechanic into every later district. Normal clocks
+repeat 75/80/85/90/95 seconds. Seed-calibrated ordinary-mass coefficients in
+`formulas.js` keep the no-upgrade route inside 55–80% of the clock.
+
 V1's curve is one formula (1000n²) with per-tier knobs — mathematically
 clean, emotionally flat. Levels blur together because nothing *new* happens
 after level 21 except bigger numbers. V2 keeps the skeleton (10 metros ×
@@ -22,12 +28,13 @@ after level 21 except bigger numbers. V2 keeps the skeleton (10 metros ×
 
 ## 2. Districts with identity (content, not just layout)
 
-Per district, one line of flavor already exists (`districtName`). V2 gives
-each district a **named prop set variation** — 2–3 props reskinned per
-metro via the prop kit's tint/accessory slots (baguettes on bikes in Le
-Vieux, black cabs in Old Fog Town, neon tuk-tuks in Neon District). Cheap
-(tints + one accessory mesh per metro), and the Skyline-opedia gets 10×
-more collectible entries, which feeds the album meta below.
+Per district, one line of flavor already exists (`districtName`). V2 also
+ships 30 immutable visual archetypes per metro through a ten-district reveal
+schedule. Gameplay keeps the same seven mass/radius tiers, while at least 25%
+of each district's initial placements use visual IDs absent from its direct
+predecessor. Procedural silhouette cues are real merged geometry, not palette
+or accessory flags that disappear under instancing. The Skyline-opedia uses
+the same stable IDs, so every collectible entry corresponds to visible content.
 
 ## 3. Meta 2.0 — choices, not tracks
 
@@ -52,6 +59,12 @@ V1: five linear stat tracks you buy in order (D4 — consequence-free).
   people finish and want more.
 
 ## 4. Economy rebalance
+
+- Campaign settlement is progression-aware: first clear pays full star value,
+  improved stars pay only the milestone difference, and replay pays 20%.
+  Existing saves infer claims from saved stars.
+- Stars are objective-aware: completion supplies one star and every district
+  declares two mastery conditions using existing mechanics.
 
 - Coin payout per level flattens (current mass/10 explodes with n²):
   coins = `50 + 25·stars + challenges`, so a level is worth ~75–150 at any

@@ -7,6 +7,7 @@
     "start": "node scripts/serve.js",
     "build": "node scripts/build.js",
     "test": "node scripts/logic-test.js && node scripts/invariant-test.js",
+    "test:district-objects": "node scripts/district-object-report.js",
     "test:e2e": "node scripts/smoke-test.cjs && node scripts/flow-test.cjs",
     "test:golden": "node scripts/golden-test.cjs",
     "ship": "node scripts/ship.js",

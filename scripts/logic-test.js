@@ -50,6 +50,8 @@ async function main() {
   const landmarks = await import('../src/content/landmarks.js');
   const seedsMod = await import('../src/data/seeds.js');
   const districtsMod = await import('../src/content/districts.js');
+  const archetypesMod = await import('../src/content/archetypes.js');
+  const instancingMod = await import('../src/engine/instancing.js');
   const groundtexMod = await import('../src/content/groundtex.js');
   const audioMod = await import('../src/systems/audio.js');
   const comboMod = await import('../src/systems/combo.js');
@@ -57,6 +59,7 @@ async function main() {
   const swallowMod = await import('../src/systems/swallow.js');
   const saveMod = await import('../src/meta/save.js');
   const upgradesMod = await import('../src/meta/upgrades.js');
+  const progressionMod = await import('../src/meta/progression.js');
   const avatarMod = await import('../src/engine/avatar.js');
   const THREE = await import('three');
 
@@ -79,22 +82,33 @@ async function main() {
     check('target(n) === 1000*n*n for n=1..100', allMatch);
   }
 
-  // 2. timeSeconds strictly increasing; worldSize non-decreasing, n=1..100.
+  // 2. timeSeconds stays bounded; worldSize remains non-decreasing.
   {
-    let timeStrictlyIncreasing = true;
+    let timeBounded = true;
     let worldNonDecreasing = true;
     let prevTime = -Infinity;
     let prevWorld = -Infinity;
     for (let n = 1; n <= 100; n += 1) {
       const t = timeSeconds(n);
       const w = worldSize(n);
-      if (!(t > prevTime)) timeStrictlyIncreasing = false;
+      if (!(t >= 75 && t <= 120)) timeBounded = false;
       if (!(w >= prevWorld)) worldNonDecreasing = false;
       prevTime = t;
       prevWorld = w;
     }
-    check('timeSeconds(n) strictly increasing across n=1..100', timeStrictlyIncreasing);
+    check('timeSeconds(n) stays within 75-120 seconds across n=1..100', timeBounded);
     check('worldSize(n) non-decreasing across n=1..100', worldNonDecreasing);
+  }
+
+  {
+    const levels = generateAllLevels();
+    const expected = ['teach', 'reinforce', 'pressure', 'combine', 'test'];
+    check('all 100 levels author a valid five-level progression phase',
+      levels.every((level) => expected.includes(level.progression.phase)));
+    check('every metro contains two teach/reinforce/pressure/combine/test arcs',
+      levels.every((level) => level.progression.phase === expected[(level.levelInChapter - 1) % 5]));
+    check('all levels declare exactly two mastery objectives',
+      levels.every((level) => level.progression.objectives.length === 2));
   }
 
   // 3. chapterOf/levelInChapterOf boundary correctness.
@@ -278,11 +292,11 @@ async function main() {
     const reach = [];
     for (const n of sampleNs) {
       const d = generateDistrict(generateLevel(n));
-      const reachable = reachableMassFraction(n) * d.stats.totalBaseMass;
-      reach.push(`n=${n}:${(reachable / 1000).toFixed(2)}x`);
-      if (reachable < 1.5 * 1000) invariant1 = false;
+      const available = d.stats.totalBaseMass * formulas.ORDINARY_MASS_FRACTION;
+      reach.push(`n=${n}:${(available / 1000).toFixed(2)}x`);
+      if (available < 1.5 * 1000) invariant1 = false;
     }
-    check(`invariant 1: reachable base mass >= 1.5x target at n in {${sampleNs.join(',')}} [${reach.join(' ')}]`, invariant1);
+    check(`difficulty floor: total awarded base mass >= 1.5x target at n in {${sampleNs.join(',')}} [${reach.join(' ')}]`, invariant1);
 
     // game-design.md §2 acceptance: >=5 edible props at spawn on level 1
     // (avatar r=26, size gate 0.78 => edible radius <= 20.28).
@@ -529,6 +543,291 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------
+  console.log('LEVEL PROGRESSION REMEDIATION:');
+  {
+    const objectiveLevel = generateLevel(10);
+    const mastered = progressionMod.starResult(objectiveLevel, {
+      completed: true,
+      completionFraction: 0.65,
+      capstoneEaten: true,
+      peakCombo: 20,
+      goldensEaten: 2,
+      rivalsEaten: 1,
+      usedSecondWind: false,
+    });
+    check('objective-aware stars grant completion plus two mastery stars',
+      mastered.stars === 3 && mastered.mastery.length === 2);
+    const oneStar = progressionMod.starResult(objectiveLevel, {
+      completed: true,
+      completionFraction: 0.95,
+      capstoneEaten: false,
+    });
+    const twoStars = progressionMod.starResult(objectiveLevel, {
+      completed: true,
+      completionFraction: 0.95,
+      capstoneEaten: true,
+    });
+    check('objective fixtures produce distinct 1-star, 2-star, and 3-star outcomes',
+      oneStar.stars === 1 && twoStars.stars === 2 && mastered.stars === 3);
+    check('an incomplete run earns zero stars',
+      progressionMod.starResult(objectiveLevel, { completed: false }).stars === 0);
+
+    const rewardSave = saveMod.defaultSave();
+    const level = generateLevel(1);
+    const first = progressionMod.levelReward(level, { stars: 1 }, rewardSave);
+    const duplicate = progressionMod.levelReward(level, { stars: 1 }, rewardSave);
+    const improved = progressionMod.levelReward(level, { stars: 3 }, rewardSave);
+    const fullReplay = progressionMod.levelReward(level, { stars: 3 }, rewardSave);
+    check('first clear, replay, and star improvement settle distinct rewards',
+      first.kind === 'first-clear'
+        && duplicate.kind === 'replay'
+        && improved.kind === 'star-improvement'
+        && fullReplay.kind === 'replay');
+    check('reward claims make first-clear and star milestones idempotent',
+      first.coins === 75 && duplicate.coins === 15 && improved.coins === 50 && fullReplay.coins === 25);
+    check('level 1 replay pays less per run than advancing to an uncleared level',
+      fullReplay.coins < progressionMod.levelReward(generateLevel(2), { stars: 1 }, rewardSave).coins);
+
+    const oldSave = saveMod.defaultSave();
+    oldSave.stars = { 7: 2 };
+    delete oldSave.rewardClaims;
+    const normalized = saveMod.saveSave(oldSave);
+    check('existing v2 stars infer first-clear and star-milestone reward claims',
+      normalized.rewardClaims.firstClear['7'] === true
+        && normalized.rewardClaims.starMilestones['7'] === 2);
+    const preservedFixture = {
+      ...saveMod.defaultSave(),
+      coins: 321,
+      lifetimeCoins: 654,
+      stars: { 2: 3 },
+      builds: { 1: 'wide-maw' },
+      skins: ['void'],
+      activeSkin: 'void',
+      metroTokens: { fog: 4 },
+      metroPerks: { fog: true },
+      tokenClaims: { 2: true },
+      unlockedLevel: 9,
+      collection: { car: { count: 2, firstSeenAt: 1 } },
+      collectionVariants: { cab: { count: 1, firstSeenAt: 2 } },
+      galleryCards: ['fog'],
+      achievements: ['first'],
+      bestCombo: 12,
+    };
+    const preserved = saveMod.saveSave(preservedFixture);
+    check('old v2 normalization preserves all existing progression fields',
+      preserved.coins === 321
+        && preserved.lifetimeCoins === 654
+        && preserved.stars['2'] === 3
+        && preserved.builds['1'] === 'wide-maw'
+        && preserved.activeSkin === 'void'
+        && preserved.metroTokens.fog === 4
+        && preserved.metroPerks.fog === true
+        && preserved.tokenClaims['2'] === true
+        && preserved.unlockedLevel === 9
+        && preserved.collection.car.count === 2
+        && preserved.collectionVariants.cab.count === 1
+        && preserved.galleryCards[0] === 'fog'
+        && preserved.achievements[0] === 'first'
+        && preserved.bestCombo === 12);
+
+    const lowCombo = { mult: () => 1, onEat() {} };
+    const highCombo = { mult: () => 5, onEat() {} };
+    const avatar = { radius: () => 100, position: { x: 0, z: 0 } };
+    const prop = () => [{ position: { x: 0, z: 0 }, radius: 10, mass: 20 }];
+    const low = swallowMod.checkSwallow(avatar, prop(), lowCombo, 10, 1, target(1));
+    const high = swallowMod.checkSwallow(avatar, prop(), highCombo, 10, 1, target(1));
+    check('combo count changes do not change progression mass', low.massGained === high.massGained);
+    check('single swallow awards are capped at 15% of target',
+      swallowMod.checkSwallow(
+        avatar,
+        [{ position: { x: 0, z: 0 }, radius: 10, mass: 10000, golden: true, elite: true }],
+        lowCombo,
+        10,
+        1,
+        target(1),
+      ).massGained <= target(1) * formulas.MAX_SINGLE_AWARD_FRACTION);
+
+    const sourceProps = [
+      { mass: 10 },
+      { mass: 10, golden: true },
+      { mass: 10, golden: true, elite: true },
+      { mass: 10, mega: true },
+      { mass: 10, storm: true },
+      { mass: 10, crumb: true },
+      { mass: 10, isCapstone: true },
+    ];
+    const sourceReports = sourceProps.map((entry) => formulas.progressionAwardReport(
+      entry, level.itemValueMultiplier, level.progression.ordinaryMassFraction, level.target,
+    ));
+    check('ordinary, golden, elite, mega, storm, crumb, and capstone sources report target fractions',
+      JSON.stringify(sourceReports.map((entry) => entry.source))
+        === JSON.stringify(['ordinary', 'golden', 'elite-golden', 'mega', 'storm', 'crumb', 'capstone'])
+        && sourceReports.every((entry) => Number.isFinite(entry.targetFraction) && entry.targetFraction <= 0.15));
+
+    const layout = districtsMod.generateDistrict(level);
+    const initialProps = layout.props.map((entry) => ({
+      mass: entry.mass,
+      golden: entry.golden,
+      elite: entry.elite,
+      mega: entry.mega,
+    }));
+    initialProps.push({ mass: level.template.at(-1).baseMass * 8, isCapstone: true });
+    const ledger = progressionMod.createAvailableMassLedger(level, initialProps);
+    const overflow = Array.from({ length: 1000 }, () => ({ mass: 10000, storm: true }));
+    ledger.admit(overflow);
+    check('dynamic mass ledger deterministically clamps spawned mass to its declared budget',
+      ledger.totalAward <= ledger.limit + 1e-9
+        && ledger.dynamicAward > 0
+        && ledger.remaining <= 1e-6);
+
+    const startL1 = upgradesMod.applyBuilds(
+      { startMass: 0, itemValueMultiplier: itemValueMultiplier(1) },
+      { 3: 'heavy-breakfast' },
+    ).startMass;
+    const startL100 = upgradesMod.applyBuilds(
+      { startMass: 0, itemValueMultiplier: itemValueMultiplier(100) },
+      { 3: 'heavy-breakfast' },
+    ).startMass;
+    check('starting-mass build retains the same target fraction at levels 1 and 100',
+      approxEqual(startL1 / target(1), startL100 / target(100)));
+
+    const allLevels = generateAllLevels();
+    check('all levels expose a defensive active-mechanic descriptor',
+      allLevels.every((entry) => entry.mechanics
+        && Array.isArray(entry.mechanics.rivals)
+        && typeof entry.mechanics.storms === 'boolean'
+        && typeof entry.mechanics.traffic === 'boolean'));
+    check('mechanic unlock means available, not permanently active',
+      generateLevel(11).mechanics.storms === true
+        && generateLevel(12).mechanics.storms === false
+        && generateLevel(13).mechanics.storms === true);
+  }
+
+  // ---------------------------------------------------------------------
+  console.log('DISTRICT VISUAL REMEDIATION:');
+  {
+    const catalogErrors = archetypesMod.validateArchetypeCatalogs();
+    check('visual registry and all 100 district catalogs validate', catalogErrors.length === 0);
+    check('registry contains exactly 30 immutable archetypes per metro (300 total)',
+      Object.keys(archetypesMod.VISUAL_ARCHETYPES).length === 300);
+    check('Skyline-opedia exposes exactly the 30 visible archetypes per metro',
+      METROS.every((metro) => Array.isArray(propkit.metroVariants[metro.id])
+        && propkit.metroVariants[metro.id].length === 30));
+
+    let noveltyPass = true;
+    let deterministicPass = true;
+    let validPlacementPass = true;
+    let maxGroups = 0;
+    for (let n = 1; n <= 100; n += 1) {
+      const level = generateLevel(n);
+      const a = districtsMod.generateDistrict(level);
+      const b = districtsMod.generateDistrict(level);
+      deterministicPass = deterministicPass && JSON.stringify(a.props.map((p) => p.visualId))
+        === JSON.stringify(b.props.map((p) => p.visualId));
+      validPlacementPass = validPlacementPass && a.props.every((p) => {
+        const descriptor = archetypesMod.VISUAL_ARCHETYPES[p.visualId];
+        return descriptor && descriptor.gameplayKind === p.kind && p.collectionKey === descriptor.collectionKey;
+      });
+      if (level.levelInChapter > 1 && a.stats.novelty.ratio < 0.25) noveltyPass = false;
+
+      const scene = new THREE.Scene();
+      const world = instancingMod.createInstancedWorld({ scene, propkit, accent: level.metro.accent });
+      world.set(a.props.map((p) => ({
+        kind: p.kind,
+        visualId: p.visualId,
+        collectionKey: p.collectionKey,
+        golden: p.golden,
+        position: new THREE.Vector3(p.x, 0, p.z),
+        radius: p.radius,
+        scale: 1,
+        scaleY: 1,
+      })));
+      maxGroups = Math.max(maxGroups, world.groupCount);
+      world.dispose();
+    }
+    check('all 100 levels resolve valid gameplay-kind/visual-ID pairs', validPlacementPass);
+    check('districts 2-10 in every metro meet >=25% direct-predecessor novelty', noveltyPass);
+    check('all 100 visual-ID selections are byte-identical on duplicate generation', deterministicPass);
+    check(`initial opaque instanced groups stay <=24 (observed ${maxGroups})`, maxGroups <= 24);
+    check('all 100 layouts keep building tiers out of the initial chase-camera corridor',
+      generateAllLevels().every((level) => districtsMod.generateDistrict(level).props.every((p) => {
+        if (p.tierIndex < 4 || p.z <= -200 || p.z >= 35) return true;
+        return Math.abs(p.x) >= 90 + p.radius;
+      })));
+    check('Big Bell Plaza keeps bus-sized props outside the avatar spawn footprint',
+      districtsMod.generateDistrict(generateAllLevels()[29]).props.every((p) =>
+        p.tierIndex !== 3 || Math.hypot(p.x, p.z) >= 90));
+    check('all 100 layouts keep the landmark out of the initial chase-camera corridor',
+      generateAllLevels().every((level) => {
+        const landmark = districtsMod.generateDistrict(level).landmark;
+        return landmark.z <= -240 || landmark.z >= 50 || Math.abs(landmark.x) >= 720;
+      }));
+
+    const fallback = archetypesMod.resolveVisualArchetype('missing_saved_path.glb', 'car');
+    check('unknown visual IDs resolve to a safe gameplay-kind fallback',
+      fallback.id === 'fallback_car' && fallback.gameplayKind === 'car');
+
+    const variant = archetypesMod.VISUAL_ARCHETYPES.old_fog_town_black_cab;
+    const baseId = archetypesMod.DISTRICT_CATALOGS['old-fog-town'][1].mixes.car[0];
+    const baseFingerprint = propkit.visualGeometryFingerprint(baseId, 'car', THREE);
+    const variantFingerprint = propkit.visualGeometryFingerprint(variant.id, 'car', THREE);
+    check('a former accessory variant has distinct merged runtime geometry',
+      JSON.stringify(baseFingerprint) !== JSON.stringify(variantFingerprint));
+    {
+      let geometryBuildCalls = 0;
+      const trackedPropkit = {
+        ...propkit,
+        createInstancedPropField(...args) {
+          geometryBuildCalls += 1;
+          return propkit.createInstancedPropField(...args);
+        },
+      };
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog(0, 1, 1000);
+      const world = instancingMod.createInstancedWorld({ scene, propkit: trackedPropkit });
+      const pair = [baseId, variant.id].map((visualId, i) => ({
+        kind: 'car', visualId, position: new THREE.Vector3(i * 5, 0, 0),
+        radius: 2, scale: 1, scaleY: 1, golden: false,
+      }));
+      world.set(pair);
+      const buildsAfterSet = geometryBuildCalls;
+      const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
+      camera.position.set(0, 20, 30);
+      camera.lookAt(0, 0, 0);
+      world.update(1 / 60, camera);
+      check('base and former variant appear as distinct visual-ID runtime groups',
+        world.groupCount === 2
+        && world.groupKeys.some((key) => key.startsWith(`${baseId}|`))
+        && world.groupKeys.some((key) => key.startsWith(`${variant.id}|`)));
+      check('frame update creates no geometry/material groups', geometryBuildCalls === buildsAfterSet);
+      world.dispose();
+    }
+
+    let geometryBudgetsPass = true;
+    for (const descriptor of Object.values(archetypesMod.VISUAL_ARCHETYPES)) {
+      const fingerprint = propkit.visualGeometryFingerprint(descriptor.id, descriptor.gameplayKind, THREE);
+      if (!Number.isFinite(fingerprint.checksum) || fingerprint.triangles > 1500) geometryBudgetsPass = false;
+    }
+    check('all 300 merged geometries are finite and remain <=1500 triangles', geometryBudgetsPass);
+
+    const collectionKeysMod = await import('../src/meta/collection.js');
+    check('legacy display names normalize to permanent visual collection IDs',
+      collectionKeysMod.normalizeCollectionVisualKey('Black Cab') === 'old_fog_town_black_cab'
+      && collectionKeysMod.normalizeCollectionVisualKey('old_fog_town_black_cab') === 'old_fog_town_black_cab');
+    const legacySave = saveMod.saveSave({
+      collection: {
+        'Black Cab': { count: 2, firstSeenAt: 10 },
+        'mystery-prop': { count: 1, firstSeenAt: 20 },
+      },
+    });
+    const normalizedAgain = saveMod.saveSave(legacySave);
+    check('collection normalization is idempotent and preserves unknown legacy keys diagnostically',
+      JSON.stringify(legacySave) === JSON.stringify(normalizedAgain)
+      && legacySave.collection.old_fog_town_black_cab.count === 2
+      && legacySave.legacyCollectionKeys['mystery-prop'].count === 1);
+  }
+
+  // ---------------------------------------------------------------------
   console.log('SCENE GRAPH (propkit + landmarks, real three.js, no GL context):');
   {
     const kindsInTemplates = new Set();
@@ -605,9 +904,8 @@ async function main() {
     check('object out of reach is NOT eaten despite passing the size gate', !result1.eaten.includes(farAway));
     check('golden object is eaten and array is mutated (spliced) in place', result1.eaten.includes(goldenObj) && arr1.length === 2);
 
-    // massGained: edibleClose contributes 10*5*1=50; goldenObj contributes 10*5*1*8=400.
-    const expectedMass1 = 10 * 5 * 1 + 10 * 5 * 1 * GOLDEN_BONUS_MULTIPLIER;
-    check('massGained matches mass*itemValueMultiplier*comboMult, doubled 8x for golden', approxEqual(result1.massGained, expectedMass1));
+    const expectedMass1 = (10 * 5 + 10 * 5 * GOLDEN_BONUS_MULTIPLIER) * formulas.ORDINARY_MASS_FRACTION;
+    check('massGained applies the declared ordinary fraction and golden multiplier', approxEqual(result1.massGained, expectedMass1));
 
     // Combo-multiplier-read-once-per-frame: multiple eats in one call must
     // all use the SAME (start-of-call) multiplier, even though onEat()
@@ -623,8 +921,8 @@ async function main() {
       { position: { x: 3, y: 0, z: 0 }, radius: 10, mass: 8 },
     ];
     const resultMulti = checkSwallow(fakeAvatar, multiEatArr, growingMultCombo, 1);
-    check('mult() is read exactly once per checkSwallow call, not once per eaten object', comboMultReads === 1);
-    check('all objects eaten within one call use that single start-of-frame multiplier', approxEqual(resultMulti.massGained, (4 + 6 + 8) * 3));
+    check('combo multiplier is never read by progression mass calculation', comboMultReads === 0);
+    check('combo count does not alter mass awarded', approxEqual(resultMulti.massGained, (4 + 6 + 8) * formulas.ORDINARY_MASS_FRACTION));
 
     // Capstone gating: a capstone object with a looser gate (0.95) is edible
     // even though its radius (90) would fail the DEFAULT size gate (0.78) a

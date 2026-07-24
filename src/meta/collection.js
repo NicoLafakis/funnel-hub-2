@@ -10,6 +10,29 @@
 // 'building-large'), plus 'billboard' for the environmental ad-panel flavor
 // objects called out in the redesign plan, plus one key per METROS[].landmarkType
 // (src/data/metros.js) for the level-capstone landmark eats.
+import { VISUAL_ARCHETYPES } from '../content/archetypes.js';
+
+const LEGACY_VISUAL_ALIASES = Object.freeze({
+  'Wharf Bike': 'harbor_metropolis_wharf_bike',
+  'Boulangerie Bike': 'vieux_continent_bakery_bike',
+  'Black Cab': 'old_fog_town_black_cab',
+  'Neon Tuk-Tuk': 'neon_district_tuk_tuk',
+  'Gold-Trim Supercar': 'desert_spires_supercar',
+  'Forum Urn': 'coliseum_city_amphora',
+  'Samba Float Bus': 'carnival_coast_samba_float',
+  'Snow Plow': 'red_square_heights_snow_plow',
+  'Surf Bike': 'harbor_opera_bay_surf_bike',
+  'Breeze Courier': 'capital_prime_breeze_courier',
+});
+
+export function normalizeCollectionVisualKey(value) {
+  if (typeof value !== 'string' || !value) return null;
+  const alias = LEGACY_VISUAL_ALIASES[value];
+  if (alias && VISUAL_ARCHETYPES[alias]) return alias;
+  if (VISUAL_ARCHETYPES[value]) return value;
+  return null;
+}
+
 export const CITY_QUIPS = {
   trash: [
     'Cleanup job: complete.',

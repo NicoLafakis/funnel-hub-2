@@ -56,9 +56,6 @@ export const GOLDEN_BONUS_MULTIPLIER = 8;
 // values live in src/data/formulas.js per the V2 module map (lesson B3: never
 // hardcode economy literals) — these readers tolerate the V2 formulas module
 // not having landed yet by falling back to the wiki-specified values.
-function goldenMassMultiplier() {
-  return typeof formulas.GOLDEN_MASS_MULTIPLIER === 'number' ? formulas.GOLDEN_MASS_MULTIPLIER : GOLDEN_BONUS_MULTIPLIER;
-}
 function goldenCoinBonus() {
   if (typeof formulas.goldenCoinBonus === 'function') return formulas.goldenCoinBonus();
   if (typeof formulas.GOLDEN_COIN_BONUS === 'number') return formulas.GOLDEN_COIN_BONUS;
@@ -90,7 +87,15 @@ function goldenCoinBonus() {
  *   payout for this frame (+10 per golden, via src/data/formulas.js when the
  *   V2 economy lands there); callers that don't care can ignore it.
  */
-export function checkSwallow(avatar, propObjects, comboTracker, itemValueMultiplier, reachMultiplier = 1) {
+export function checkSwallow(
+  avatar,
+  propObjects,
+  comboTracker,
+  itemValueMultiplier,
+  reachMultiplier = 1,
+  levelTarget = 0,
+  ordinaryMassFraction = formulas.ORDINARY_MASS_FRACTION,
+) {
   const r = avatar.radius();
   const safeReachMultiplier = typeof reachMultiplier === 'number' && Number.isFinite(reachMultiplier) && reachMultiplier > 0
     ? reachMultiplier
@@ -104,9 +109,8 @@ export function checkSwallow(avatar, propObjects, comboTracker, itemValueMultipl
   // within the same frame uses the multiplier as it stood at the START of
   // that frame, even though combo.count (and therefore next frame's mult)
   // climbs with each eat inside the loop.
-  const mult = comboTracker.mult();
-
   const eaten = [];
+  const awardReports = [];
   let massGained = 0;
   let coinsGained = 0;
 
@@ -123,18 +127,24 @@ export function checkSwallow(avatar, propObjects, comboTracker, itemValueMultipl
 
     propObjects.splice(i, 1);
 
-    let gained = obj.mass * itemValueMultiplier * mult;
+    const awardFraction = Number.isFinite(ordinaryMassFraction) && ordinaryMassFraction > 0
+      ? ordinaryMassFraction
+      : formulas.ORDINARY_MASS_FRACTION;
+    const report = formulas.progressionAwardReport(
+      obj, itemValueMultiplier, awardFraction, levelTarget,
+    );
+    let gained = report.amount;
     if (obj.golden) {
-      gained *= goldenMassMultiplier();
       coinsGained += goldenCoinBonus();
     }
 
     massGained += gained;
     eaten.push(obj);
+    awardReports.push(report);
     comboTracker.onEat();
   }
 
-  return { eaten, massGained, coinsGained };
+  return { eaten, massGained, coinsGained, awardReports };
 }
 
 // ---------------------------------------------------------------------------
@@ -338,13 +348,25 @@ export function createSwallowController(opts = {}) {
    *   wedgeBadges:   too-big props whose lock badge (re-)fired this frame
    *   nearMissed:    stragglers force-vacuumed by the near-miss rule
    */
-  function update(dt, avatar, propObjects, comboTracker, itemValueMultiplier, reachMultiplier = 1) {
+  function update(
+    dt,
+    avatar,
+    propObjects,
+    comboTracker,
+    itemValueMultiplier,
+    reachMultiplier = 1,
+    levelTarget = 0,
+    ordinaryMassFraction = formulas.ORDINARY_MASS_FRACTION,
+  ) {
     clock += dt;
     if (nearMissEnabled && !primed) prime(propObjects);
 
     // 1. Contact eating stays exactly V1 (this also collects vacuumed props
     //    the moment they arrive inside the eat reach).
-    const result = checkSwallow(avatar, propObjects, comboTracker, itemValueMultiplier, reachMultiplier);
+    const result = checkSwallow(
+      avatar, propObjects, comboTracker, itemValueMultiplier, reachMultiplier, levelTarget,
+      ordinaryMassFraction,
+    );
     for (const obj of result.eaten) {
       vacuums.delete(obj);
       wobbles.delete(obj);

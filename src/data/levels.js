@@ -10,7 +10,7 @@
 import {
   chapterOf, levelInChapterOf, target, timeSeconds, worldSize, tierOf,
   rivalCount, rivalComposition, hazardDensity, capstoneGate, itemValueMultiplier,
-  LEVEL_COUNT,
+  ordinaryMassFraction, progressionMassBudget, LEVEL_COUNT,
 } from './formulas.js';
 import { METROS } from './metros.js';
 import { levelSeed } from './seeds.js';
@@ -99,22 +99,61 @@ export const MECHANIC_UNLOCKS = [
 // single object systems/main read to decide what's active this level.
 // All fields are plain data; nothing here spawns anything by itself.
 function mechanicsFor(n) {
+  const arcPosition = (levelInChapterOf(n) - 1) % 5;
+  const available = {
+    rivals: n >= 6,
+    storms: n >= 11,
+    traffic: n >= 21,
+    megaProps: n >= 26,
+    landmarkShield: n >= 61,
+    night: n >= 66,
+    shieldedClusters: n >= 86,
+  };
+  const active = (key) => available[key] && (
+    arcPosition === 0 || arcPosition >= 2 || key === 'rivals'
+  );
   return {
     goldens: true, // from L1
     goldenCount: n >= 46 ? 2 : 1, // double goldens L46
     eliteGoldens: n >= 71, // elite goldens L71 (marked on the golden props)
-    rivals: rivalComposition(n), // [] before L6; Duelist L16, Bandit L51, pairs L41, triples L76
-    storms: n >= 11,
-    hazardDrops: n >= 36, // hazard cargo drops L36
-    stormSurges: n >= 56, // storm surges L56
-    traffic: n >= 21, // moving traffic L21
-    trafficRush: n >= 81, // traffic rush L81 (more/faster movers)
-    megaProps: n >= 26, // mega-props L26
+    rivals: active('rivals') ? rivalComposition(n) : [],
+    storms: active('storms'),
+    hazardDrops: active('storms') && n >= 36,
+    stormSurges: active('storms') && n >= 56,
+    traffic: active('traffic'),
+    trafficRush: active('traffic') && n >= 81,
+    megaProps: active('megaProps'),
     dailyUnlocked: n >= 31, // daily challenge unlock L31 (meta flag)
-    landmarkShield: n >= 61 ? 10 : 0, // eat N props to de-shield the landmark, L61
-    night: n >= 66, // night variants L66
-    shieldedClusters: n >= 86, // shielded clusters L86
+    landmarkShield: active('landmarkShield') ? 10 : 0,
+    night: active('night'),
+    shieldedClusters: active('shieldedClusters'),
     crescendo: n >= 96, // everything-at-once L96-100
+  };
+}
+
+const PROGRESSION_PHASES = ['teach', 'reinforce', 'pressure', 'combine', 'test'];
+
+function progressionFor(n, isCapstone) {
+  const phase = PROGRESSION_PHASES[(levelInChapterOf(n) - 1) % 5];
+  const objectives = [];
+  if (isCapstone) objectives.push({ id: 'capstone' });
+  else if (n >= 6 && phase !== 'teach') objectives.push({ id: 'rival', count: 1 });
+  else objectives.push({ id: 'goldens', count: 1 });
+
+  if (phase === 'pressure' || phase === 'test') {
+    objectives.push({ id: 'fast-finish', maxCompletionFraction: 0.70 });
+  } else if (phase === 'combine') {
+    objectives.push({ id: 'combo', count: 10 });
+  } else {
+    objectives.push({ id: 'no-second-wind' });
+  }
+  return {
+    phase,
+    objectives,
+    targetCompletionRange: [0.55, 0.80],
+    targetBudgetConsumptionRange: [0.45, 0.70],
+    massBudget: progressionMassBudget(n),
+    ordinaryMassFraction: ordinaryMassFraction(n),
   };
 }
 
@@ -153,6 +192,7 @@ export function generateLevel(n) {
     // same layout/props/goldens, in every browser.
     seed: levelSeed(chapter - 1, levelInChapter - 1),
     mechanics: mechanicsFor(n),
+    progression: progressionFor(n, isCapstone),
     // Exactly one intro line on the level that introduces a mechanic
     // (content-and-meta.md §5); '' otherwise.
     introLine: unlock ? unlock.line : '',
