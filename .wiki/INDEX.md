@@ -18,6 +18,11 @@ builds on.
 5. [`content-and-meta.md`](content-and-meta.md) — 100-level unlock cadence,
    district identities, shop-as-builds, daily challenge, onboarding.
 6. [`roadmap.md`](roadmap.md) — 4 phases with exit criteria and risks.
+7. [`economy-balance-audit.md`](economy-balance-audit.md) — 2026-07-24 audit
+   of mass-per-level vs. mass-available vs. accumulation rate. Finding: the
+   combo multiplier is applied to mass at award time but is absent from the
+   4.28x available-mass invariant, so levels are winnable on ~20% of the
+   props in under 17% of the timer.
 
 ## Working agreements (edit as the project evolves)
 
