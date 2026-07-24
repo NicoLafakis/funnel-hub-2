@@ -50,8 +50,10 @@ answers "a vortex/whirlpool," not "a ball."
 
 ## 3. Readability rules (the HUD-free layer)
 
-- **Edible glow:** edible props get a subtle fresnel edge in the metro
-  accent; too-big props are desaturated 30%. The size gate becomes
+- **Edible glow:** edible props get a subtle edge tint in the metro accent;
+  too-big props are desaturated 30%. *(Implemented via per-instance color on
+  the instanced prop meshes — a true fresnel isn't possible per-instance;
+  the tint reads the same at gameplay distance.)* The size gate becomes
   learnable without a tutorial (V1 has zero edibility signaling — you
   learn by bumping).
 - **Tier silhouettes:** the 7 tiers already have distinct silhouettes;

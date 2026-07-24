@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="icon" type="image/png" href="assets/logo-mark.png">
+<meta property="og:title" content="Flywheel — Swallow the CRM">
+<meta property="og:description" content="A rogue flywheel is eating the entire HubSpot platform. 10 Hubs. One flywheel. Zero survivors.">
+<meta property="og:image" content="assets/og-card.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<title>Flywheel — Swallow the CRM</title>
+<style>
+  :root{
+    --orange:#ff5c35; --coral:#ff7a59; --navy:#213343; --navy2:#33475b;
+    --teal:#00a4bd; --cream:#f5f8fa; --gold:#f5c26b;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#101820;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;user-select:none;}
+  #game{display:block;width:100%;height:100%;touch-action:none;}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px;pointer-events:none;z-index:5;}
+  .hud-left,.hud-right{display:flex;flex-direction:column;gap:6px;}
+  .hud-right{align-items:flex-end;}
+  .pill{background:rgba(16,24,32,.72);color:#fff;padding:6px 14px;border-radius:999px;font-size:14px;font-weight:600;letter-spacing:.3px;border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(4px);white-space:nowrap;}
+  .pill b{color:var(--coral);}
+  #levelTag{background:linear-gradient(135deg,var(--orange),var(--coral));border:none;font-size:13px;text-transform:uppercase;letter-spacing:1px;}
+  #timer.warn{color:#ff8a80;animation:pulse 1s infinite;}
+  @keyframes pulse{50%{opacity:.55}}
+  #scorebar{width:min(42vw,340px);height:10px;background:rgba(255,255,255,.14);border-radius:99px;overflow:hidden;border:1px solid rgba(255,255,255,.15);}
+  #scorefill{height:100%;width:0%;background:linear-gradient(90deg,var(--teal),var(--coral),var(--gold));border-radius:99px;transition:width .25s;}
+  #sizehint{font-size:11.5px;color:rgba(255,255,255,.75);padding:3px 10px;background:rgba(16,24,32,.55);border-radius:99px;}
+
+  /* ---------- Banner (big center announcements) ---------- */
+  #banner{position:fixed;top:16%;left:50%;transform:translateX(-50%) scale(.7);font-size:clamp(26px,5vw,52px);font-weight:900;color:#fff;letter-spacing:2px;text-align:center;text-shadow:0 4px 30px rgba(255,92,53,.9),0 0 60px rgba(255,92,53,.5);opacity:0;pointer-events:none;z-index:8;transition:opacity .18s,transform .18s;white-space:nowrap;}
+  #banner.show{opacity:1;transform:translateX(-50%) scale(1);}
+
+  /* ---------- Toasts (achievements) ---------- */
+  #toasts{position:fixed;left:14px;bottom:14px;display:flex;flex-direction:column;gap:8px;z-index:8;pointer-events:none;}
+  .toast{background:linear-gradient(135deg,rgba(33,51,67,.96),rgba(16,24,32,.96));border:1px solid var(--gold);color:#fff;padding:10px 16px;border-radius:12px;font-size:13.5px;box-shadow:0 4px 20px rgba(0,0,0,.55);animation:toastIn .3s cubic-bezier(.2,1.4,.4,1);max-width:300px;}
+  .toast b{color:var(--gold);}
+  @keyframes toastIn{from{transform:translateX(-130%);opacity:0}}
+  .toast.out{animation:toastOut .4s forwards;}
+  @keyframes toastOut{to{transform:translateX(-130%);opacity:0}}
+
+  /* ---------- Fake CRM notifications ---------- */
+  #notifs{position:fixed;right:14px;top:108px;display:flex;flex-direction:column;gap:8px;z-index:8;pointer-events:none;max-width:min(300px,70vw);}
+  .notif{background:rgba(245,248,250,.96);color:#213343;padding:9px 13px;border-radius:10px;font-size:12.5px;line-height:1.35;box-shadow:0 4px 18px rgba(0,0,0,.4);border-left:3px solid var(--orange);animation:notifIn .3s cubic-bezier(.2,1.4,.4,1);}
+  @keyframes notifIn{from{transform:translateX(130%);opacity:0}}
+  .notif.out{animation:notifOut .4s forwards;}
+  @keyframes notifOut{to{transform:translateX(130%);opacity:0}}
+
+  /* ---------- Overlays ---------- */
+  /* B9 fix (tech-architecture.md §6): every overlay is a scrollable flex
+     column — max-height 100dvh + overflow-y auto — so ALL buttons stay
+     reachable at 360x640 and 800x450. `safe center` keeps content centered
+     when it fits but never clips the top when it overflows. */
+  .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:safe center;text-align:center;z-index:10;background:radial-gradient(ellipse at center,rgba(33,51,67,.88),rgba(10,16,22,.96));backdrop-filter:blur(6px);padding:24px;transition:opacity .35s;max-height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .hidden{opacity:0;pointer-events:none;}
+  .logo{font-size:clamp(52px,10vw,96px);font-weight:900;letter-spacing:-2px;line-height:.95;
+    background:linear-gradient(120deg,var(--coral) 20%,var(--gold) 60%,var(--teal));-webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 6px 24px rgba(255,92,53,.35));}
+  .tag{color:#cfe0ea;font-size:clamp(15px,2.4vw,20px);margin-top:14px;max-width:640px;line-height:1.5;}
+  .tag b{color:var(--coral);}
+  .btn{margin-top:30px;background:linear-gradient(135deg,var(--orange),var(--coral));color:#fff;border:none;padding:16px 46px;font-size:19px;font-weight:800;border-radius:999px;cursor:pointer;letter-spacing:.5px;box-shadow:0 8px 28px rgba(255,92,53,.45);transition:transform .15s,box-shadow .15s;}
+  .btn:hover{transform:scale(1.06);box-shadow:0 12px 34px rgba(255,92,53,.6);}
+  .btn:active{transform:scale(.97);}
+  .minilogo{font-size:56px;margin-bottom:8px;animation:bob 2.2s ease-in-out infinite;}
+  @keyframes bob{50%{transform:translateY(-10px)}}
+  .ovtitle{font-size:clamp(30px,5.5vw,48px);font-weight:900;color:#fff;}
+  .ovsub{color:#aFC3d0;margin-top:10px;font-size:clamp(14px,2vw,18px);max-width:560px;line-height:1.55;}
+  .ovsub b{color:var(--gold);}
+  .ovtip{margin-top:14px;color:#7fd9e8;font-size:clamp(12.5px,1.7vw,15px);font-style:italic;max-width:520px;}
+  .levelbadge{display:inline-block;margin-top:6px;background:rgba(0,164,189,.18);border:1px solid var(--teal);color:#7fd9e8;padding:5px 16px;border-radius:99px;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;}
+  .howto{margin-top:26px;display:flex;gap:14px;flex-wrap:wrap;justify-content:center;color:#8fa8b8;font-size:13.5px;max-width:720px;}
+  .howto span{background:rgba(255,255,255,.06);padding:8px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.08);}
+  #finalScore{font-size:clamp(22px,4vw,32px);color:var(--gold);font-weight:800;margin-top:14px;}
+  #achCount{margin-top:10px;color:#8fa8b8;font-size:14px;}
+  #achCount b{color:var(--gold);}
+  .credit{margin-top:34px;color:#5a7184;font-size:12px;letter-spacing:.4px;}
+
+  /* ---------- Generated art (start / win screens) ---------- */
+  #startScreen{background:linear-gradient(rgba(10,16,22,.62),rgba(10,16,22,.86)),url('assets/hero-vortex.png') center/cover no-repeat;}
+  .bgvid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  #startScreen::after{content:'';position:absolute;inset:0;background:linear-gradient(rgba(10,16,22,.45),rgba(10,16,22,.82));pointer-events:none;}
+  #startScreen>*:not(.bgvid){position:relative;z-index:2;}
+  .hubicon{width:min(34vw,150px);border-radius:50%;box-shadow:0 8px 30px rgba(0,0,0,.55),0 0 40px rgba(0,164,189,.2);margin-bottom:14px;}
+  .emblem{width:min(40vw,190px);border-radius:50%;margin-bottom:10px;
+    box-shadow:0 0 60px rgba(255,92,53,.45),0 0 120px rgba(0,164,189,.25);
+    animation:emblemPulse 3s ease-in-out infinite;}
+  @keyframes emblemPulse{50%{transform:scale(1.05);box-shadow:0 0 80px rgba(255,92,53,.6),0 0 140px rgba(0,164,189,.35);}}
+  .winart{width:min(70vw,320px);border-radius:18px;border:2px solid var(--gold);
+    box-shadow:0 12px 44px rgba(0,0,0,.6),0 0 60px rgba(245,194,107,.25);margin-bottom:14px;}
+
+  /* ---------- World map (10 metros x 10 levels) & shop (upgrade tracks) ---------- */
+  #worldMapGrid{display:flex;flex-direction:column;gap:8px;max-width:640px;width:100%;margin-top:22px;max-height:60vh;overflow-y:auto;padding:4px;}
+  .metro-card{border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);overflow:hidden;}
+  .metro-card.locked{opacity:.65;}
+  .metro-header{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;background:transparent;border:none;border-left:4px solid rgba(255,255,255,.25);color:#fff;padding:12px 16px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;text-align:left;}
+  .metro-header:disabled{cursor:not-allowed;}
+  .metro-header:not(:disabled):hover{background:rgba(255,255,255,.06);}
+  .metro-meta{font-size:12.5px;font-weight:600;color:#9fb4c4;white-space:nowrap;}
+  .metro-levels{display:grid;grid-template-columns:repeat(10,1fr);gap:8px;padding:10px 12px;}
+  .levelnode{aspect-ratio:1;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;cursor:pointer;transition:transform .12s,background .12s;}
+  .levelnode:hover{transform:scale(1.08);background:rgba(0,164,189,.28);}
+  .levelnode.locked{opacity:.35;cursor:not-allowed;}
+  .levelnode.done{background:linear-gradient(135deg,var(--orange),var(--coral));border-color:transparent;}
+  #shopTracks{display:flex;flex-direction:column;gap:10px;max-width:520px;width:100%;margin-top:18px;}
+  .shoptrack{display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px 16px;}
+  .shoptrack b{color:var(--gold);}
+  #coinBalance{margin-top:14px;background:linear-gradient(135deg,var(--gold),var(--coral));color:#101820;}
+
+  /* ---------- V2: touch affordances, minimap, telegraph, badges, tutorial ---------- */
+  /* Larger touch targets (tech §6): every primary button is at least 44px tall. */
+  .btn{min-height:44px;min-width:44px;}
+
+  /* Touch zones: left half = virtual stick, right half = camera orbit. Pure
+     visual affordances (pointer-events:none) — engine input owns the actual
+     gestures. They appear only on coarse pointers AND only while the HUD is
+     up (i.e. in play), via the sibling selector — zero JS required. */
+  .touchzone{position:fixed;bottom:0;top:38%;width:50%;z-index:4;pointer-events:none;display:none;align-items:flex-end;justify-content:center;padding-bottom:9vh;color:rgba(255,255,255,.4);font-size:11.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;}
+  #touchStick{left:0;}
+  #touchOrbit{right:0;}
+  .touchzone::before{content:'';position:absolute;bottom:7vh;width:88px;height:88px;border-radius:50%;border:2px dashed rgba(255,255,255,.2);}
+  .touchzone span{position:relative;text-shadow:0 1px 6px rgba(0,0,0,.6);}
+  @media (pointer:coarse){
+    #hud:not(.hidden) ~ .touchzone{display:flex;}
+  }
+
+  /* Screen-space corner minimap (game-design §2). Canvas is injected by
+     src/ui/minimap.js; this styles the container + canvas chrome. */
+  #minimap{position:fixed;right:14px;bottom:14px;width:96px;height:96px;z-index:6;pointer-events:none;transition:opacity .3s;}
+  #minimap canvas{display:block;width:96px;height:96px;border-radius:12px;border:1px solid rgba(255,255,255,.16);box-shadow:0 4px 18px rgba(0,0,0,.45);}
+
+  /* Duelist telegraph (game-design §4): screen-edge arrow, rotated toward the
+     approaching Duelist by overlays.js setDuelistTelegraph(). */
+  #telegraph{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;pointer-events:none;opacity:0;transition:opacity .2s;font-size:30px;color:#ff5c5c;text-shadow:0 0 14px rgba(255,60,60,.85);}
+  #telegraph.show{opacity:1;animation:pulse 0.8s infinite;}
+
+  /* Wedge-wobble lock badge (game-design §3): pinned over a too-big prop. */
+  #lockBadge{position:fixed;left:0;top:0;transform:translate(-50%,-125%);z-index:7;pointer-events:none;opacity:0;transition:opacity .15s;background:rgba(16,24,32,.85);border:1px solid rgba(255,255,255,.25);color:#fff;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap;}
+  #lockBadge.show{opacity:1;}
+
+  /* Level-1 tutorial pointer hand (content §5, beat 1). */
+  #tutHand{position:fixed;left:50%;bottom:32%;transform:translateX(-50%);z-index:7;pointer-events:none;opacity:0;transition:opacity .3s;font-size:46px;filter:drop-shadow(0 4px 12px rgba(0,0,0,.6));}
+  #tutHand.show{opacity:1;animation:pointBob 1s ease-in-out infinite;}
+  @keyframes pointBob{50%{transform:translateX(-50%) translateY(-14px)}}
+
+  /* One transient line, never a modal (content §5). */
+  #oneLiner{position:fixed;left:50%;bottom:20%;transform:translateX(-50%) translateY(8px);z-index:7;pointer-events:none;opacity:0;transition:opacity .25s,transform .25s;background:rgba(16,24,32,.85);border:1px solid var(--teal);color:#fff;font-size:clamp(14px,2.2vw,18px);font-weight:700;padding:10px 22px;border-radius:99px;white-space:nowrap;max-width:92vw;}
+  #oneLiner.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* District-card mechanic intro line (content §5 — one line, never a modal). */
+  .introline{margin-top:12px;color:var(--gold);font-size:clamp(13px,1.9vw,16px);font-weight:700;max-width:520px;line-height:1.4;}
+
+  /* ---------- Small viewports (B9): 360x640 portrait, 800x450 landscape ---------- */
+  @media (max-width:420px){
+    .logo{font-size:46px;}
+    .tag{font-size:13.5px;margin-top:10px;}
+    .howto{font-size:12px;gap:8px;margin-top:18px;}
+    .btn{padding:14px 34px;font-size:16px;margin-top:22px;}
+    .emblem{width:min(34vw,130px);}
+    .ovtitle{font-size:27px;}
+    .metro-levels{grid-template-columns:repeat(5,minmax(0,1fr));}
+  }
+  @media (max-height:480px){
+    .overlay{justify-content:flex-start;padding-top:14px;padding-bottom:14px;}
+    .logo{font-size:38px;}
+    .tag{font-size:12.5px;margin-top:8px;}
+    .howto{display:none;}
+    .minilogo{font-size:34px;margin-bottom:2px;}
+    .emblem{width:76px;margin-bottom:4px;}
+    .winart{width:min(40vw,200px);margin-bottom:8px;}
+    .ovtitle{font-size:24px;}
+    .ovsub{margin-top:6px;font-size:13px;}
+    .btn{margin-top:14px;padding:12px 30px;font-size:15px;}
+    .credit{margin-top:14px;}
+    #worldMapGrid{max-height:46dvh;margin-top:10px;}
+    #shopTracks{margin-top:10px;}
+  }
+
+  /* ---------- prefers-reduced-motion (tech §6): kill shake/slow-mo-flavored
+     animation + the ambient video. overlays.js initResponsiveFlags() mirrors
+     this onto <html data-reduced-motion> so main.js can skip screen shake,
+     slow-mo and the debris stream in JS too. ---------- */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation:none !important;transition:none !important;}
+    .bgvid{display:none;}
+  }
+  html[data-reduced-motion="true"] *,html[data-reduced-motion="true"] *::before,html[data-reduced-motion="true"] *::after{animation:none !important;transition:none !important;}
+  html[data-reduced-motion="true"] .bgvid{display:none;}
+
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="hud-left">
+    <span class="pill" id="levelTag">Level 1 · CRM</span>
+    <div id="scorebar"><div id="scorefill"></div></div>
+    <span id="sizehint">🌀 swallow things smaller than your rim</span>
+  </div>
+  <div class="hud-right">
+    <span class="pill" id="timer">⏱ 60</span>
+    <span class="pill" id="score">Mass <b>0</b> / 100</span>
+  </div>
+</div>
+
+<div id="banner"></div>
+<div id="toasts"></div>
+<div id="notifs"></div>
+
+<!-- V2: touch affordance hints (visible only on coarse pointers while playing) -->
+<div class="touchzone" id="touchStick" aria-hidden="true"><span>Drag — move</span></div>
+<div class="touchzone" id="touchOrbit" aria-hidden="true"><span>Drag — orbit cam</span></div>
+
+<!-- V2: corner minimap (canvas injected by src/ui/minimap.js) -->
+<div id="minimap" class="hidden" aria-hidden="true"></div>
+
+<!-- V2: duelist telegraph / wedge-wobble lock badge / tutorial hand / one-liner -->
+<div id="telegraph" aria-hidden="true">▲</div>
+<div id="lockBadge" aria-hidden="true">🔒 Too big — grow first</div>
+<div id="tutHand" aria-hidden="true">👆</div>
+<div id="oneLiner" aria-live="polite"></div>
+
+<!-- START -->
+<div class="overlay" id="startScreen">
+  <video class="bgvid" autoplay muted loop playsinline preload="auto" poster="assets/hero-vortex.png">
+    <source src="assets/hero-motion.mp4" type="video/mp4">
+  </video>
+  <img class="emblem" src="assets/logo-mark.png" alt="Flywheel emblem">
+  <div class="logo">FLYWHEEL</div>
+  <div class="tag">A rogue flywheel just started spinning inside the <b>HubSpot platform</b> — and it's not flat anymore.<br>
+  Roll it in true 3D, 3rd-person, across <b>10 cities</b> and <b>100 levels</b>, swallowing every record, deal, ticket and workflow (and eventually entire skylines) in your path.<br>
+  <b>Now with 400% more sass, and an actual Z-axis.</b></div>
+  <div class="howto">
+    <span>🖱️ Move — mouse / finger drag</span>
+    <span>⌨️ WASD / arrows also work</span>
+    <span>🔥 Chain eats for combo multipliers</span>
+    <span>⭐ Golden records = JACKPOT</span>
+    <span>🌀 Out-spin rival flywheels, then eat THEM</span>
+    <span>🏙️ Devour landmarks. Yes, THE landmarks.</span>
+    <span>🎵 M — mute · 👾 try the Konami code</span>
+  </div>
+  <button class="btn" id="startBtn">SPIN IT UP</button>
+  <div class="credit">Not affiliated with HubSpot, Inc. · All records were harmed</div>
+</div>
+
+<!-- LEVEL INTRO -->
+<div class="overlay hidden" id="introScreen">
+  <img class="hubicon" id="introIcon" src="assets/hubs/harbor-metropolis.png" alt="">
+  <span class="levelbadge" id="introBadge">Level 1 of 10</span>
+  <div class="ovtitle" id="introTitle">CRM Basics</div>
+  <div class="ovsub" id="introDesc"></div>
+  <div class="introline hidden" id="introLine"></div>
+  <div class="ovtip" id="introTip"></div>
+  <button class="btn" id="goBtn">DIVE IN</button>
+</div>
+
+<!-- LEVEL COMPLETE -->
+<div class="overlay hidden" id="doneScreen">
+  <div class="minilogo">🎉</div>
+  <div class="ovtitle" id="doneTitle">Hub Swallowed!</div>
+  <div class="ovsub" id="doneDesc"></div>
+  <button class="btn" id="nextBtn">NEXT HUB →</button>
+</div>
+
+<!-- FAIL -->
+<div class="overlay hidden" id="failScreen">
+  <img class="winart" src="assets/fail-art.png" alt="The records escaping the migration">
+  <div class="ovtitle">Sync Failed!</div>
+  <div class="ovsub" id="failDesc">Time ran out. The records escaped the migration.</div>
+  <!-- V2 mercy rules (game-design §6): first fail offers a free +15s second
+       wind; 3 fails surfaces the pity-magnet + heatmap note. Wired by
+       overlays.js renderFailMercy(). -->
+  <div class="mercy-box" id="mercyBox">
+    <button class="btn hidden" id="secondWindBtn">🌬️ SECOND WIND — +15s, FREE</button>
+    <div id="mercyNote" class="hidden"></div>
+  </div>
+  <button class="btn" id="retryBtn">RETRY LEVEL</button>
+</div>
+
+<!-- WIN -->
+<div class="overlay hidden" id="winScreen">
+  <video class="winart" autoplay muted loop playsinline preload="auto" poster="assets/win-trophy.png">
+    <source src="assets/win-motion.mp4" type="video/mp4">
+  </video>
+  <div class="ovtitle">PLATFORM CONSUMED</div>
+  <div id="finalScore">Total mass: 0</div>
+  <div id="achCount"></div>
+  <div class="ovsub">You swallowed all 10 Hubs. The entire CRM — every contact, deal, ticket and AI agent — lives in the flywheel now. Somewhere, a sales rep is updating a spreadsheet by hand and crying. Migrations were never this satisfying.</div>
+  <button class="btn" id="againBtn">SWALLOW IT ALL AGAIN</button>
+</div>
+
+<!-- WORLD MAP: 10 metros x 10 levels picker (grid built by a later stage) -->
+<div class="overlay hidden" id="worldMapScreen">
+  <div class="ovtitle">WORLD MAP</div>
+  <div class="ovsub">Pick a city. Pick a level. Then go eat it.</div>
+  <div id="worldMapGrid"></div>
+</div>
+
+<!-- SHOP: build shop between levels (tiers/picks rendered by overlays.js) -->
+<div class="overlay hidden" id="shopScreen">
+  <div class="ovtitle">UPGRADE SHOP</div>
+  <span class="pill" id="coinBalance">🪙 0</span>
+  <div id="shopTracks"></div>
+  <button id="respecBtn" style="display:none">🔁 RESPEC</button>
+  <button class="btn" id="shopContinueBtn">CONTINUE</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./assets/vendor/three.module.js"
+  }
+}
+</script>
+<script type="module" src="src/main.js"></script>
+
+</body>
+</html>

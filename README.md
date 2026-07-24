@@ -10,20 +10,32 @@ first. Every mechanic here is specified and motivated there.
 
 ## Status
 
-Scaffold. See the [roadmap](.wiki/roadmap.md): Phase 1 (Feel) is up first —
-input state machine, camera-relative steering + orbit, district layouts,
-vortex hero, edibility glow.
+Playable V2 build: Phases 1–3 implemented (feel, perf, content/meta) per
+the wiki — camera-relative input state machine + orbit, seeded district
+layouts with streets/zoning/ground texture, instanced rendering + spatial
+hash + pooling, vortex hero, edibility signaling, 100-level unlock cadence,
+rival archetypes (Grazer/Bandit/Duelist) with piñata payoffs, builds shop
+with respec, metro tokens/perks, Skyline-opedia 2.0, daily challenge,
+onboarding beats, mercy rules, minimap, responsive/touch UI.
 
-## Layout (planned — see `.wiki/tech-architecture.md` §4)
+Tests: `npm test` (logic suite + 100-level difficulty-invariant suite),
+`npm run test:e2e` (Playwright boot smoke + scripted flow), `npm run ship`
+(pre-deploy checklist, no deploy). Title/hub art generated via Leonardo
+(`scripts/leonardo.js`).
+
+## Layout (see `.wiki/tech-architecture.md` §4)
 
 ```
-src/engine/   input, camera, scene, avatar, spatialhash, pools, instancing
+src/engine/   input (state machine), camera (orbit+lookahead), scene,
+              avatar (vortex), spatialhash, pools, instancing
 src/systems/  swallow, combo, rivals, storms, achievements, audio
-src/content/  propkit, landmarks, districts, groundtex
+src/content/  propkit, landmarks, districts (layout gen), groundtex
 src/data/     formulas, levels, metros, seeds
-src/meta/     save, upgrades, worldmap, collection, daily
+src/meta/     save, upgrades (builds), worldmap, collection, daily
 src/ui/       overlays, minimap
-scripts/      serve, build, test, vendor-three, e2e
+scripts/      serve, build, logic-test, invariant-test, soak-bot,
+              smoke-test/flow-test/golden-test (e2e), ship, vendor-three,
+              leonardo (art pipeline)
 ```
 
 ## Working agreements

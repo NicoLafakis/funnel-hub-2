@@ -21,10 +21,14 @@ camera swings, your keys no longer match the screen.
   yaw ±120° and pitch 15°–55°. Q/E rotate 45° stepped for keyboard-only
   players. Auto-recenter behind the avatar after 2s of movement with no
   orbit input.
-- **Drag-to-move (touch) stays**, but it sets a *world-space target* (raycast
+- **Drag-to-move (mouse) stays**, but it sets a *world-space target* (raycast
   the pointer onto the ground plane) rather than a screen-center direction —
   the avatar pathfinds straight to it and stops on arrival. Fixes the
   "always driving toward the edge" class of bug structurally (B4).
+  *Resolved in V2 implementation:* on touch devices the tech-arch §6 scheme
+  wins instead — left half = virtual stick, right half = orbit, pinch =
+  pitch — so one-finger drag-target is mouse-only (documented in
+  `src/engine/input.js`).
 - Input layer gets a formal state machine (`idle / key-steer / drag-target /
   orbit`) with enter+exit transitions and unit tests for each.
 

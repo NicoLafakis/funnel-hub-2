@@ -1,0 +1,54 @@
+# Flywheel V2 CI (tech-architecture.md §5): logic + difficulty-invariant
+# suites, build, and headless E2E on every PR and every push to main.
+# game-design.md §5: a level that fails an invariant blocks merge.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # npm ci also runs postinstall -> scripts/vendor-three.js (B1: both
+      # vendored three files must exist for the import map).
+      - run: npm ci
+
+      # Logic suite + the 100-level difficulty-invariant soak.
+      - name: Unit + invariant suites
+        run: npm test
+
+      - name: Build (dist/)
+        run: node scripts/build.js
+
+      # The E2E scripts load the playwright package via
+      # $APPDATA/npm/node_modules/playwright (the Windows npm-global layout,
+      # from the dev machine). Recreate that layout on Linux by linking the
+      # npm-global install into a shim APPDATA dir — no repo changes needed.
+      - name: Install Playwright + chromium
+        run: |
+          npm install -g playwright
+          npx playwright install chromium --with-deps
+          mkdir -p "$HOME/ci-appdata/npm/node_modules"
+          ln -s "$(npm root -g)/playwright" "$HOME/ci-appdata/npm/node_modules/playwright"
+
+      - name: Start dev server (:3003)
+        run: |
+          node scripts/serve.js &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3003/ > /dev/null && exit 0
+            sleep 1
+          done
+          echo "dev server did not come up" && exit 1
+
+      - name: Headless E2E (boot smoke + scripted flow)
+        run: APPDATA="$HOME/ci-appdata" npm run test:e2e

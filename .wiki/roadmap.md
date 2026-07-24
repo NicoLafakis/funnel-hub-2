@@ -1,5 +1,12 @@
 # V2 Roadmap
 
+**Status (2026-07-23): Phases 1–3 implemented and verified.** Phase 4 items
+landed with Wave 4 (metro signatures, capstone twists, elite goldens, night
+variants, capstone gating fix, tint-blend softening). `npm test` = logic
+108/108 + all 5 invariants 100/100 levels; e2e smoke/flow + visual goldens
+green; `npm run ship` 4/4 (deploy intentionally not run). Remaining
+live-ops: prestige/NG+ decision after playtest, content drips.
+
 Four phases, each independently shippable and playable. Ordering principle:
 fix what players touch first (controls/camera/look), then what makes it run
 everywhere (perf), then what makes them stay (content/meta), then polish.

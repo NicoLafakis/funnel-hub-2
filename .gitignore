@@ -4,3 +4,9 @@ assets/vendor/
 .DS_Store
 Thumbs.db
 *.log
+tests/golden/*.actual.png
+
+.vercel
+.env*
+.env.local
+.leonardo-key
