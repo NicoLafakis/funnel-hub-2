@@ -26,10 +26,19 @@ instead of uniform scatter:**
   rivals therefore cannot fill the first gameplay frame without changing
   content budgets. Big Bell Plaza also moves its seed-specific double-decker
   overlap outside the avatar footprint while preserving every prop and mass.
-- **Ground gets a texture**, not a color: procedural asphalt/plaza/grass
-  tinting per block via a canvas-generated texture (no image assets needed —
-  64×64 noise + tint, cheap). The V1 grid overlay dies with this; real
-  streets do its job.
+- **Ground gets a texture**, not a color: the layout bakes to a canvas
+  ground texture with realistic Leonardo-generated surfaces (asphalt,
+  sidewalk, plaza pavers, grass — `assets/textures/`, loaded by
+  `src/content/textures.js`, tiled per zone by `groundtex.js`) plus dashed
+  center-line road markings per street; it falls back to procedural
+  64×64 noise + tints when the images are missing. The V1 grid overlay
+  dies with this; real streets do its job.
+- **Buildings get real facades:** the same Leonardo set provides a facade
+  per building tier (brick storefront / apartment grid / glass tower).
+  propkit's instancing merge keeps the facade box's side-face UVs and maps
+  trim parts onto a swatch corner of the texture, so one material serves a
+  whole merged building and instance-color signaling (edibility, golden)
+  keeps working on top.
 
 **Acceptance:** a screenshot of any level is identifiable as "a city
 district" (not "objects on a plane") by someone who has never seen the

@@ -5,6 +5,7 @@ assets/vendor/
 Thumbs.db
 *.log
 tests/golden/*.actual.png
+shots/
 
 .vercel
 .env*

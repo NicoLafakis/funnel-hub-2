@@ -2,7 +2,11 @@
 // a color"). Bakes a districts.js layout descriptor — streets as dark asphalt
 // strips with curbs, blocks tinted per zone (plaza / grass / built) — into a
 // single canvas texture, so the V1 debug grid overlay can die: real streets
-// do its motion-readability job. No image assets; 64x64 value noise + tints.
+// do its motion-readability job. When opts.textures supplies the Leonardo-
+// generated surfaces (textures.js: asphalt/curb/plaza/grass), zones are
+// filled with the realistic repeating patterns instead of flat tints, and
+// every street gets a dashed center-line marking; otherwise the 64x64 value
+// noise + tints carry the look alone.
 //
 // DOM discipline: document.createElement('canvas') happens ONLY inside
 // bakeGroundTexture(), never at module top level. Headless callers (the logic
@@ -100,20 +104,63 @@ export function bakeGroundTexture(layout, opts = {}) {
   }
 
   const size = opts.size || 512;
-  const { res } = descriptor;
+  const { res, world } = descriptor;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
   const px = size / res;
 
-  // Per-cell zone tint.
+  // Realistic zone surfaces (textures.js, Leonardo-generated): repeating
+  // canvas patterns scaled so one tile spans a believable real-world size.
+  // Any zone without a loaded image falls back to the procedural tint.
+  const TILE_WORLD = { asphalt: 72, curb: 54, plaza: 110, grass: 140 };
+  const patterns = {};
+  if (opts.textures) {
+    for (const zone of Object.keys(TILE_WORLD)) {
+      const src = opts.textures[zone];
+      if (!src) continue;
+      const pattern = ctx.createPattern(src, 'repeat');
+      if (!pattern) continue;
+      if (typeof pattern.setTransform === 'function' && typeof DOMMatrix !== 'undefined') {
+        const tilePx = (TILE_WORLD[zone] / world) * size;
+        pattern.setTransform(new DOMMatrix().scale(tilePx / (src.width || size)));
+      }
+      patterns[zone] = pattern;
+    }
+  }
+
+  // Per-cell zone tint (or realistic surface pattern when available).
   for (let j = 0; j < res; j += 1) {
     for (let i = 0; i < res; i += 1) {
-      const mixSpec = GROUND_ZONE_MIX[descriptor.cells[j * res + i]];
-      ctx.fillStyle = mixHex(ground, mixSpec.target, mixSpec.t);
+      const zone = descriptor.cells[j * res + i];
+      const mixSpec = GROUND_ZONE_MIX[zone];
+      ctx.fillStyle = patterns[zone] || mixHex(ground, mixSpec.target, mixSpec.t);
       ctx.fillRect(i * px, j * px, px + 0.5, px + 0.5);
     }
+  }
+
+  // Road markings: a dashed center line down every street, drawn in the same
+  // canvas space describeGround() rasterizes (canvas x = world x, canvas y =
+  // world z; local +X maps to world (cos rotY, -sin rotY), so the canvas
+  // rotation is -rotY). Cheap realism the procedural tint could never read.
+  if (opts.roadMarkings !== false) {
+    const k = size / world;
+    ctx.strokeStyle = 'rgba(235,228,190,0.5)';
+    ctx.lineWidth = Math.max(1.2, 2.4 * k);
+    ctx.setLineDash([12 * k, 10 * k]);
+    for (const st of layout.streets || []) {
+      if (st.w * k < 30) continue;
+      ctx.save();
+      ctx.translate((st.x + world / 2) * k, (st.z + world / 2) * k);
+      ctx.rotate(-(st.rotY || 0));
+      ctx.beginPath();
+      ctx.moveTo(-st.w * k / 2 + 6 * k, 0);
+      ctx.lineTo(st.w * k / 2 - 6 * k, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.setLineDash([]);
   }
 
   // 64x64 deterministic value noise over everything (art §1's cheap

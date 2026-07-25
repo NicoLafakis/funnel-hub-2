@@ -50,6 +50,7 @@ import * as propkit from './content/propkit.js';
 import { createLandmark } from './content/landmarks.js';
 import { generateDistrict } from './content/districts.js';
 import { bakeGroundTexture } from './content/groundtex.js';
+import { loadCityTextures } from './content/textures.js';
 import { createMetroSignature } from './content/signatures.js';
 
 import { Audio } from './systems/audio.js';
@@ -135,7 +136,7 @@ function disposeObject3D(root) {
   if (root.parent) root.parent.remove(root);
 }
 
-export function main() {
+export async function main() {
   const canvasEl = document.getElementById('game');
   if (!canvasEl) return;
 
@@ -148,6 +149,16 @@ export function main() {
   // -------------------------------------------------------------------------
   const engine = createEngine(canvasEl, THREE);
   const avatar = createAvatar(engine.scene, THREE);
+
+  // Realistic city surfaces (Leonardo-generated, textures.js): facade maps
+  // for the three building tiers + ground zone patterns. Loaded once for the
+  // whole session; null => procedural look (missing files / headless).
+  let cityTextures = null;
+  try {
+    cityTextures = await loadCityTextures(THREE);
+  } catch (e) {
+    cityTextures = null;
+  }
 
   // Light refs for the night-variant lighting shift (L66+) — scene.js owns
   // the fixtures; main only dims/restores them per level.
@@ -446,7 +457,13 @@ export function main() {
     // curbs, zone tints — art §1). V1's flat color + debug GridHelper is dead.
     const groundGeo = new THREE.PlaneGeometry(level.world, level.world);
     const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, roughness: 0.95, metalness: 0.02 });
-    const baked = bakeGroundTexture(layout, { metro });
+    const baked = bakeGroundTexture(layout, {
+      metro,
+      textures: cityTextures ? cityTextures.ground : null,
+      // Higher bake resolution when realistic surfaces + road markings are
+      // in play — at 512 the dashed center lines alias away.
+      size: cityTextures && cityTextures.ground ? 1024 : 512,
+    });
     if (baked.canvas) {
       const tex = new THREE.CanvasTexture(baked.canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -501,7 +518,9 @@ export function main() {
       }
     }
 
-    state.world = createInstancedWorld({ scene: engine.scene, propkit, accent: metro.accent });
+    state.world = createInstancedWorld({
+      scene: engine.scene, propkit, accent: metro.accent, textures: cityTextures,
+    });
     state.world.set(worldProps);
     worldProps.forEach((p, i) => state.worldIndex.set(p, i));
     // Night variant: emissive window-glow on the building kinds (cheap — no

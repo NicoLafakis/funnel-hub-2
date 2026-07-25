@@ -44,7 +44,7 @@ const EDIBILITY_TOO_BIG = 2;
  *     gold read now comes from propkit's opts.golden instance colors
  * }} opts
  */
-export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad' } = {}) {
+export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textures = null } = {}) {
   // groups: key `${kind}|${golden ? 1 : 0}` ->
   //   { kind, golden, mesh, slots: [propIndex per slot], baseColors: [Color] }
   const groups = new Map();
@@ -139,8 +139,11 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad' } = {}
       // Geometry is always baked from the METRO accent (per-part vertex
       // colors); the golden group's jackpot read comes from gold instance
       // colors inside propkit (opts.golden), not a second geometry tint.
+      // Building kinds additionally get their realistic facade texture
+      // (textures.js) when the loader provided one for this kind.
+      const facadeMap = textures && textures.facades ? textures.facades[kind] : null;
       const mesh = propkit.createInstancedPropField(kind, count, THREE, accent, {
-        visualId, materialVariant, golden,
+        visualId, materialVariant, golden, map: facadeMap || undefined,
       });
       scene.add(mesh);
       // propkit's instanced geometries are CENTERED on their local origin

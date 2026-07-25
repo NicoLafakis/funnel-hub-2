@@ -15,6 +15,7 @@
 import {
   DISTRICT_CATALOGS, VISUAL_ARCHETYPES, resolveVisualArchetype,
 } from './archetypes.js';
+import { TRIM_UV } from './textures.js';
 
 const DEFAULT_ACCENT = '#9aa3ad';
 
@@ -317,6 +318,12 @@ function buildBuilding(THREE, accent, dim, opts = {}) {
 
   const base = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d), wallMat);
   base.position.set(0, dim.h / 2, 0);
+
+  // Tagged so the instancing merge (mergedKindGeometry) knows THIS box carries
+  // the realistic facade texture: its side faces keep their 0..1 box UVs while
+  // every other part (window bands, setback, antenna) is mapped onto the
+  // texture's trim swatch at TRIM_UV (see textures.js).
+  base.userData.facade = true;
   group.add(base);
 
   // Window band(s): thin, slightly larger boxes tinted lighter/emissive so
@@ -501,11 +508,11 @@ export function createVisualPropMesh(visualId, kind, THREE, accentColorHex) {
 // per-instance paths (brightness jitter, edibility tint, golden) keep working
 // unchanged. Small local merge — no three/examples BufferGeometryUtils (B1:
 // only the vendored core files exist).
-const mergedGeometryCache = new Map(); // `${visualId}|${accent}` -> BufferGeometry
+const mergedGeometryCache = new Map(); // `${visualId}|${accent}|tex|plain` -> BufferGeometry
 
-function mergedKindGeometry(THREE, kind, accentColorHex, visualId) {
+function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
   const descriptor = resolveVisualArchetype(visualId, kind);
-  const key = `${descriptor.id}|${accentColorHex}`;
+  const key = `${descriptor.id}|${accentColorHex}|${opts.facadeTextured ? 'tex' : 'plain'}`;
   const cached = mergedGeometryCache.get(key);
   if (cached) return cached;
 
@@ -515,6 +522,7 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId) {
   const positions = [];
   const normals = [];
   const colors = [];
+  const uvs = [];
   const indices = [];
   let vertexOffset = 0;
   const v = new THREE.Vector3();
@@ -528,6 +536,12 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId) {
     const posAttr = geo.attributes.position;
     const normAttr = geo.attributes.normal;
     const color = (node.material && node.material.color) || white;
+    // Facade-textured builds (textures.js): the tagged base box keeps its box
+    // UVs on the SIDE faces (roof/ground faces and every other part sample
+    // the texture's trim swatch) and its vertex color stays white so the
+    // facade art shows true colors instead of being multiplied by the accent.
+    const isFacade = opts.facadeTextured === true && node.userData.facade === true;
+    const uvAttr = geo.attributes.uv || null;
     normalMatrix.getNormalMatrix(node.matrixWorld);
     for (let i = 0; i < posAttr.count; i += 1) {
       v.fromBufferAttribute(posAttr, i).applyMatrix4(node.matrixWorld);
@@ -538,7 +552,10 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId) {
       } else {
         normals.push(0, 1, 0);
       }
-      colors.push(color.r, color.g, color.b);
+      if (isFacade) colors.push(1, 1, 1);
+      else colors.push(color.r, color.g, color.b);
+      if (isFacade && uvAttr && Math.abs(n.y) < 0.7) uvs.push(uvAttr.getX(i), uvAttr.getY(i));
+      else uvs.push(TRIM_UV[0], TRIM_UV[1]);
     }
     if (geo.index) {
       for (let i = 0; i < geo.index.count; i += 1) indices.push(geo.index.getX(i) + vertexOffset);
@@ -552,6 +569,7 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId) {
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   merged.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  merged.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   merged.setIndex(indices);
   // Note: instancing.js dispose() may dispose() this geometry at level
   // teardown — that only releases GPU buffers; the cached CPU-side data is
@@ -579,11 +597,18 @@ export function kindHeight(kind) {
 export function createInstancedPropField(kind, count, THREE, accentColorHex, opts = {}) {
   const safeCount = Math.max(0, Math.floor(Number(count) || 0));
   const descriptor = resolveVisualArchetype(opts.visualId, kind);
-  const geometry = mergedKindGeometry(THREE, kind, accentColorHex, descriptor.id);
+  const geometry = mergedKindGeometry(THREE, kind, accentColorHex, descriptor.id, {
+    facadeTextured: !!opts.map,
+  });
   // White base material: the real per-part colors live in the vertex colors;
   // instance colors multiply on top (jitter / edibility / golden).
   const material = standardMat(THREE, 0xffffff, { roughness: 0.7, metalness: 0.1 });
   material.vertexColors = true;
+  // Realistic facade texture (textures.js, building kinds only): the merged
+  // geometry's uv attribute maps the facade box's side faces onto the image
+  // and everything else onto its trim swatch. Instance colors (jitter /
+  // edibility / golden) still multiply on top, unchanged.
+  if (opts.map) material.map = opts.map;
 
   const mesh = new THREE.InstancedMesh(geometry, material, safeCount);
   mesh.name = `props-${descriptor.id}${opts.golden ? '-golden' : ''}`;

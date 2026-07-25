@@ -38,7 +38,12 @@ import map, **no bundler, no backend**, localStorage saves, static deploy.
 - `npm run build` / `npm run ship` — dist build / pre-deploy checklist
   (ship never deploys by default)
 - `node scripts/leonardo.js` — art pipeline (key from `.leonardo-key`,
-  gitignored; never print it)
+  gitignored; never print it). Generated city surfaces live in
+  `assets/textures/` (building facades per tier + ground zones) and are
+  loaded at runtime by `src/content/textures.js` — the game must keep
+  working with those files missing (procedural fallback).
+- `node scripts/screenshot-city.cjs` — visual check: boots level 1 (dev
+  server must be running) and writes gameplay screenshots to `shots/`.
 
 ## Conventions
 
