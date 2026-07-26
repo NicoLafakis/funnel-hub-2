@@ -15,7 +15,7 @@ Three.js (vendored as an ES module, no bundler) rendered via `<script type="modu
 - `src/main.js` — the only file that touches `document`/`window` at call time; bootstraps the engine once, wires every system together, and drives the screen flow (start → world map → level intro → play → done/fail → shop → next/win).
 - `src/engine/` — `scene.js` (renderer/camera/clock), `avatar.js` (player growth/movement, `radius() = 26 + sqrt(mass)*1.9`), `camera.js` (chase cam with obstacle-avoidance raycast), `input.js` (keyboard/pointer → normalized axes).
 - `src/data/` — `formulas.js` (`target(n) = 1000*n²` and every other per-level curve: time, world size, tier, rival count, hazard density, capstone gate, item-value multiplier), `metros.js` (the 10 metros + landmarks), `levels.js` (`generateLevel(n)`/`generateAllLevels()`).
-- `src/content/` — `propkit.js`/`landmarks.js`: procedural Three.js geometry (no external model downloads) for props and landmark capstones.
+- `src/content/` — `propkit.js`/`landmarks.js`: procedural Three.js geometry (no external model downloads) for props and landmark capstones; `citylayout.js`: the deterministic, authored level-1 city (street grid, zoned blocks, park/parking-lot/plaza, street furniture) — pure data, no THREE import.
 - `src/systems/` — `audio.js`, `combo.js`, `achievements.js`, `swallow.js` (eat-gate math), `rivals.js`, `storms.js` — ported faithfully from the original 2D game (recoverable via `git show 97c9024:index.html`) and adapted to the 100-level economy.
 - `src/meta/` — `save.js` (localStorage + in-memory fallback), `upgrades.js` (5 tracks: size/speed/magnet/time/growth), `collection.js`, `worldmap.js`.
 - `src/ui/` — `overlays.js`: generic overlay show/hide, the shop renderer, and `updateHUD()`.
@@ -27,14 +27,14 @@ Three.js (vendored as an ES module, no bundler) rendered via `<script type="modu
 ```bash
 npm install                  # postinstall vendors three.module.js into assets/vendor/
 npm start                    # serves at http://localhost:3003
-npm test                     # 53-check headless suite (formulas, levels, save/upgrades, scene graph, swallow math, achievements/combo, audio)
+npm test                     # 60-check headless suite (formulas, levels, save/upgrades, scene graph, city layout, swallow math, achievements/combo, audio)
 npm run build                # copies index.html + assets/ + src/ into dist/
 ```
 
 ## Hard rules
 
 - **Never commit `.leonardo-key`.** It's gitignored. The Leonardo AI API key comes only from the `LEONARDO_API_KEY` env var or that gitignored file — never hardcode it anywhere, including scripts or commit messages.
-- **Run `npm test` before committing** any change under `src/` or to `index.html`. All 53 checks must pass. The suite imports the real modules directly (`import()` in plain Node) — it no longer regex-extracts a script tag, so splitting logic across files is expected and fine.
+- **Run `npm test` before committing** any change under `src/` or to `index.html`. All 60 checks must pass. The suite imports the real modules directly (`import()` in plain Node) — it no longer regex-extracts a script tag, so splitting logic across files is expected and fine.
 - **Run `npm run build` before pushing** — it now also copies `src/` into `dist/`, so a missing/renamed file under `src/` will surface there.
 - **Static-only.** Don't introduce a backend, database, or server-side dependency. Persistence is `localStorage` only, client-side.
 - **Keep THREE as dependency-injected**, not re-imported per module. `src/main.js` does the single `import * as THREE from 'three'` and passes that instance into every factory (`createEngine`, `createAvatar`, `createPropMesh`, etc.) — don't add a second `import * as THREE from 'three'` inside a new module.

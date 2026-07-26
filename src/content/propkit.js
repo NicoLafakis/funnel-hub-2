@@ -11,6 +11,12 @@
 // Exact `kind` strings are a CONTRACT with src/data/levels.js's LEVEL_TEMPLATE
 // — keep in sync: 'trash' | 'bike' | 'car' | 'bus' | 'building-small' |
 // 'building-medium' | 'building-large'.
+//
+// Additional kinds used by src/content/citylayout.js (the level-1 authored
+// city): 'tree' | 'streetlight' | 'bench' | 'mailbox' | 'hydrant' |
+// 'speed-bump' | 'apartment' | 'office'. These use fixed real-world palettes
+// (a hydrant is red, a mailbox is blue) rather than the metro accent, so the
+// level-1 city reads as a real city; the 7 template kinds stay accent-tinted.
 
 const DEFAULT_ACCENT = '#9aa3ad';
 
@@ -60,6 +66,15 @@ const DIMENSIONS = {
   'building-small': { w: 7, h: 11, d: 7 },
   'building-medium': { w: 11, h: 24, d: 11 },
   'building-large': { w: 15, h: 42, d: 15 },
+  // Level-1 authored-city kinds (src/content/citylayout.js).
+  tree: { w: 3.2, h: 6.5, d: 3.2 },
+  streetlight: { w: 0.9, h: 6.2, d: 0.9 },
+  bench: { w: 2.4, h: 1.0, d: 0.9 },
+  mailbox: { w: 1.0, h: 1.4, d: 0.8 },
+  hydrant: { w: 0.9, h: 1.2, d: 0.9 },
+  'speed-bump': { w: 3.2, h: 0.35, d: 0.9 },
+  apartment: { w: 11, h: 24, d: 11 },
+  office: { w: 15, h: 42, d: 15 },
 };
 
 function buildTrash(THREE, accent) {
@@ -239,6 +254,291 @@ function buildBuilding(THREE, accent, dim, opts = {}) {
   return group;
 }
 
+// ---------------------------------------------------------------------------
+// Level-1 authored-city builders (src/content/citylayout.js). Fixed real-world
+// palettes — these read as specific street objects, not metro-tinted clutter.
+// ---------------------------------------------------------------------------
+
+function buildTree(THREE) {
+  const group = new THREE.Group();
+  const dim = DIMENSIONS.tree;
+
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(dim.w * 0.09, dim.w * 0.13, dim.h * 0.42, 7),
+    standardMat(THREE, 0x6b4a2f, { roughness: 0.95 })
+  );
+  trunk.position.set(0, dim.h * 0.21, 0);
+  group.add(trunk);
+
+  // Two stacked foliage blobs for a lumpy deciduous silhouette.
+  const foliageMat = standardMat(THREE, 0x3e7d3a, { roughness: 0.9 });
+  const foliageDark = standardMat(THREE, 0x2f6230, { roughness: 0.9 });
+  const lower = new THREE.Mesh(new THREE.SphereGeometry(dim.w * 0.46, 8, 6), foliageDark);
+  lower.position.set(0, dim.h * 0.55, 0);
+  lower.scale.set(1, 0.85, 1);
+  group.add(lower);
+  const upper = new THREE.Mesh(new THREE.SphereGeometry(dim.w * 0.36, 8, 6), foliageMat);
+  upper.position.set(0, dim.h * 0.78, 0);
+  group.add(upper);
+
+  return group;
+}
+
+function buildStreetlight(THREE) {
+  const group = new THREE.Group();
+  const dim = DIMENSIONS.streetlight;
+
+  const poleMat = standardMat(THREE, 0x3a3f45, { metalness: 0.5, roughness: 0.5 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(dim.w * 0.16, dim.w * 0.22, dim.h * 0.92, 6), poleMat);
+  pole.position.set(0, dim.h * 0.46, 0);
+  group.add(pole);
+
+  // Curved-arm stand-in: a horizontal box reaching out over the road (+z),
+  // with a warm emissive lamp head at its tip.
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.18, dim.w * 0.18, dim.h * 0.3), poleMat);
+  arm.position.set(0, dim.h * 0.9, dim.h * 0.13);
+  group.add(arm);
+
+  const lampMat = standardMat(THREE, 0xffe6a8, { emissive: 0xffd88a, emissiveIntensity: 0.9, roughness: 0.4 });
+  const lamp = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.42, dim.w * 0.2, dim.h * 0.12), lampMat);
+  lamp.position.set(0, dim.h * 0.88, dim.h * 0.26);
+  group.add(lamp);
+
+  return group;
+}
+
+function buildBench(THREE) {
+  const group = new THREE.Group();
+  const dim = DIMENSIONS.bench;
+
+  const woodMat = standardMat(THREE, 0x8a6239, { roughness: 0.85 });
+  const ironMat = standardMat(THREE, 0x2e3236, { metalness: 0.5, roughness: 0.5 });
+
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h * 0.14, dim.d * 0.62), woodMat);
+  seat.position.set(0, dim.h * 0.45, 0);
+  group.add(seat);
+
+  const back = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h * 0.42, dim.d * 0.12), woodMat);
+  back.position.set(0, dim.h * 0.72, -dim.d * 0.38);
+  back.rotation.x = -0.15;
+  group.add(back);
+
+  for (const x of [-dim.w * 0.42, dim.w * 0.42]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.07, dim.h * 0.45, dim.d * 0.7), ironMat);
+    leg.position.set(x, dim.h * 0.225, 0);
+    group.add(leg);
+  }
+
+  return group;
+}
+
+function buildMailbox(THREE) {
+  const group = new THREE.Group();
+  const dim = DIMENSIONS.mailbox;
+
+  const blueMat = standardMat(THREE, 0x2b4f9e, { metalness: 0.3, roughness: 0.5 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h * 0.62, dim.d), blueMat);
+  body.position.set(0, dim.h * 0.38, 0);
+  group.add(body);
+
+  // Rounded top: squashed sphere cap, the classic relay-box silhouette.
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(dim.w * 0.5, 8, 6), blueMat);
+  cap.position.set(0, dim.h * 0.69, 0);
+  cap.scale.set(1, 0.55, dim.d / dim.w);
+  group.add(cap);
+
+  const slot = new THREE.Mesh(
+    new THREE.BoxGeometry(dim.w * 0.7, dim.h * 0.06, dim.d * 0.1),
+    standardMat(THREE, 0x14181f, { roughness: 0.6 })
+  );
+  slot.position.set(0, dim.h * 0.58, dim.d * 0.48);
+  group.add(slot);
+
+  for (const x of [-dim.w * 0.32, dim.w * 0.32]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.1, dim.h * 0.12, dim.w * 0.1), blueMat);
+    leg.position.set(x, dim.h * 0.06, 0);
+    group.add(leg);
+  }
+
+  return group;
+}
+
+function buildHydrant(THREE) {
+  const group = new THREE.Group();
+  const dim = DIMENSIONS.hydrant;
+
+  const redMat = standardMat(THREE, 0xc03325, { metalness: 0.25, roughness: 0.5 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(dim.w * 0.3, dim.w * 0.36, dim.h * 0.62, 8), redMat);
+  body.position.set(0, dim.h * 0.36, 0);
+  group.add(body);
+
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(dim.w * 0.3, 8, 6), redMat);
+  dome.position.set(0, dim.h * 0.67, 0);
+  group.add(dome);
+
+  const bonnet = new THREE.Mesh(new THREE.CylinderGeometry(dim.w * 0.08, dim.w * 0.08, dim.h * 0.14, 6), redMat);
+  bonnet.position.set(0, dim.h * 0.85, 0);
+  group.add(bonnet);
+
+  // Side nozzles.
+  const nozzleMat = standardMat(THREE, 0x8f2318, { metalness: 0.35, roughness: 0.45 });
+  for (const sign of [-1, 1]) {
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(dim.w * 0.12, dim.w * 0.12, dim.w * 0.25, 6), nozzleMat);
+    nozzle.rotation.z = Math.PI / 2;
+    nozzle.position.set(sign * dim.w * 0.36, dim.h * 0.45, 0);
+    group.add(nozzle);
+  }
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(dim.w * 0.42, dim.w * 0.46, dim.h * 0.1, 8), redMat);
+  base.position.set(0, dim.h * 0.05, 0);
+  group.add(base);
+
+  return group;
+}
+
+function buildSpeedBump(THREE) {
+  const group = new THREE.Group();
+  const dim = DIMENSIONS['speed-bump'];
+
+  // Low half-cylinder ridge, yellow with two dark hazard bands across the top.
+  const ridge = new THREE.Mesh(
+    new THREE.CylinderGeometry(dim.h, dim.h, dim.w, 10, 1, false, 0, Math.PI),
+    standardMat(THREE, 0xd9a713, { roughness: 0.8 })
+  );
+  ridge.rotation.z = Math.PI / 2;
+  ridge.rotation.x = Math.PI / 2;
+  ridge.position.set(0, 0, 0);
+  group.add(ridge);
+
+  const bandMat = standardMat(THREE, 0x2b2b2b, { roughness: 0.85 });
+  for (const x of [-dim.w * 0.25, dim.w * 0.25]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.14, dim.h * 0.5, dim.d * 0.9), bandMat);
+    band.position.set(x, dim.h * 0.7, 0);
+    group.add(band);
+  }
+
+  return group;
+}
+
+// Brick mid-rise with per-floor window strips and a parapet — the residential
+// filler of the level-1 blocks (gameplay slot of 'building-medium').
+function buildApartment(THREE) {
+  const group = new THREE.Group();
+  const dim = DIMENSIONS.apartment;
+
+  const wallMat = standardMat(THREE, 0x9a6b52, { roughness: 0.9, metalness: 0.02 });
+  const trimMat = standardMat(THREE, 0x7d5340, { roughness: 0.9 });
+  const windowColor = new THREE.Color(0xffe2b0);
+  const windowMat = standardMat(THREE, windowColor, {
+    roughness: 0.35,
+    emissive: windowColor,
+    emissiveIntensity: 0.25,
+  });
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d), wallMat);
+  base.position.set(0, dim.h / 2, 0);
+  group.add(base);
+
+  // One window strip every ~3.4 units of height reads as "one floor each".
+  const floors = Math.max(3, Math.floor(dim.h / 3.4));
+  for (let i = 0; i < floors; i += 1) {
+    const y = dim.h * ((i + 0.7) / (floors + 0.4));
+    for (const rot of [0, Math.PI / 2]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.9, dim.h * 0.045, dim.d * 1.015), windowMat);
+      strip.rotation.y = rot;
+      strip.position.set(0, y, 0);
+      group.add(strip);
+    }
+  }
+
+  const parapet = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 1.04, dim.h * 0.05, dim.d * 1.04), trimMat);
+  parapet.position.set(0, dim.h * 1.01, 0);
+  group.add(parapet);
+
+  // Rooftop water tank — the instant "apartment building" tell.
+  const tank = new THREE.Mesh(
+    new THREE.CylinderGeometry(dim.w * 0.14, dim.w * 0.14, dim.h * 0.12, 8),
+    standardMat(THREE, 0x6e4f35, { roughness: 0.9 })
+  );
+  tank.position.set(dim.w * 0.22, dim.h * 1.1, dim.d * 0.18);
+  group.add(tank);
+
+  return group;
+}
+
+// Glass-curtain tower — the downtown slot filler (gameplay slot of
+// 'building-large'). Cool glazing, vertical mullion strips, setback + antenna.
+function buildOffice(THREE) {
+  const group = new THREE.Group();
+  const dim = DIMENSIONS.office;
+
+  const glassColor = new THREE.Color(0x7fb2c9);
+  const glassMat = standardMat(THREE, glassColor, {
+    roughness: 0.25,
+    metalness: 0.35,
+    emissive: glassColor,
+    emissiveIntensity: 0.12,
+  });
+  const coreMat = standardMat(THREE, 0x4c5a66, { roughness: 0.7, metalness: 0.2 });
+
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d), glassMat);
+  slab.position.set(0, dim.h / 2, 0);
+  group.add(slab);
+
+  // Horizontal floor bands so the curtain wall reads as stories, not a monolith.
+  const bandMat = standardMat(THREE, 0x33414c, { roughness: 0.5, metalness: 0.4 });
+  const bands = Math.max(4, Math.floor(dim.h / 4.5));
+  for (let i = 1; i < bands; i += 1) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 1.015, dim.h * 0.02, dim.d * 1.015), bandMat);
+    band.position.set(0, dim.h * (i / bands), 0);
+    group.add(band);
+  }
+
+  const setbackH = dim.h * 0.18;
+  const setback = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.62, setbackH, dim.d * 0.62), coreMat);
+  setback.position.set(0, dim.h + setbackH / 2, 0);
+  group.add(setback);
+
+  const antennaH = dim.h * 0.22;
+  const antenna = new THREE.Mesh(
+    new THREE.CylinderGeometry(dim.w * 0.03, dim.w * 0.03, antennaH, 6),
+    standardMat(THREE, 0x8a8f96, { metalness: 0.6, roughness: 0.4 })
+  );
+  antenna.position.set(0, dim.h + setbackH + antennaH / 2, 0);
+  group.add(antenna);
+
+  const beacon = new THREE.Mesh(
+    new THREE.SphereGeometry(dim.w * 0.045, 6, 6),
+    standardMat(THREE, 0xff3b30, { emissive: 0xff3b30, emissiveIntensity: 1 })
+  );
+  beacon.position.set(0, dim.h + setbackH + antennaH, 0);
+  group.add(beacon);
+
+  return group;
+}
+
+// Visual-scale helper for the level-1 authored city. The template's gameplay
+// radii (16-90, see LEVEL_TEMPLATE in src/data/levels.js) were never meant to
+// equal mesh footprints (1-15 world units) — under the old random scatter the
+// mismatch went unnoticed, but an authored street grid makes it glaring (a
+// "car" 10x smaller than the player ball). scaleForRadius returns the uniform
+// mesh scale that makes a prop's visual size match its swallow radius, so
+// "looks smaller than your rim" and "passes the size gate" agree on screen.
+//   - footprint mode (default): scale so max(w, d) fills 2*radius*FILL —
+//     right for blobby props (trash, cars, buildings, trees).
+//   - height mode: scale so h becomes 2*radius*FILL — right for thin poles
+//     (streetlights), where footprint-matching would blow the pole up to a
+//     30-unit-wide column.
+const SCALE_FILL = 0.85;
+const SCALE_MODE = { streetlight: 'height' };
+
+export function scaleForRadius(kind, radius) {
+  const dim = DIMENSIONS[kind] || { w: 2, h: 2, d: 2 };
+  const target = 2 * Math.max(1, radius || 1) * SCALE_FILL;
+  const basis = SCALE_MODE[kind] === 'height' ? dim.h : Math.max(dim.w, dim.d);
+  return target / basis;
+}
+
 export function createPropMesh(kind, THREE, accentColorHex) {
   const accent = resolveColor(THREE, accentColorHex);
   switch (kind) {
@@ -256,6 +556,22 @@ export function createPropMesh(kind, THREE, accentColorHex) {
       return buildBuilding(THREE, accent, DIMENSIONS['building-medium'], { tiers: true });
     case 'building-large':
       return buildBuilding(THREE, accent, DIMENSIONS['building-large'], { tiers: true });
+    case 'tree':
+      return buildTree(THREE);
+    case 'streetlight':
+      return buildStreetlight(THREE);
+    case 'bench':
+      return buildBench(THREE);
+    case 'mailbox':
+      return buildMailbox(THREE);
+    case 'hydrant':
+      return buildHydrant(THREE);
+    case 'speed-bump':
+      return buildSpeedBump(THREE);
+    case 'apartment':
+      return buildApartment(THREE);
+    case 'office':
+      return buildOffice(THREE);
     default: {
       // Defensive fallback for an unrecognized kind: a plain tinted box so
       // callers never get a throw for a typo'd/future kind string.

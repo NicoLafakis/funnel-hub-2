@@ -8,8 +8,11 @@
 // Object-kind keys match src/data/levels.js LEVEL_TEMPLATE's `kind` values
 // exactly ('trash', 'bike', 'car', 'bus', 'building-small', 'building-medium',
 // 'building-large'), plus 'billboard' for the environmental ad-panel flavor
-// objects called out in the redesign plan, plus one key per METROS[].landmarkType
-// (src/data/metros.js) for the level-capstone landmark eats.
+// objects called out in the redesign plan, plus the level-1 authored-city
+// kinds from src/content/citylayout.js ('tree', 'streetlight', 'bench',
+// 'mailbox', 'hydrant', 'speed-bump', 'apartment', 'office'), plus one key
+// per METROS[].landmarkType (src/data/metros.js) for the level-capstone
+// landmark eats.
 export const CITY_QUIPS = {
   trash: [
     'Cleanup job: complete.',
@@ -50,6 +53,47 @@ export const CITY_QUIPS = {
     'Skyline swallowed. Rent stabilized.',
     'Portal instance: ported to the flywheel.',
     'The building filed for bankruptcy. Then filed itself into the flywheel.',
+  ],
+  // Level-1 authored-city kinds (src/content/citylayout.js).
+  tree: [
+    'Deforestation, one gulp at a time.',
+    'That tree had roots. Had.',
+    'Shade: discontinued.',
+  ],
+  streetlight: [
+    'The city that never sleeps just got darker.',
+    'Light pole? Light snack.',
+    'Watt went that? Gone.',
+  ],
+  bench: [
+    'Take a seat. On second thought, take the whole bench.',
+    'Park bench: permanently reserved. By the void.',
+    'No more sitting. Only swallowing.',
+  ],
+  mailbox: [
+    'Return to sender: the flywheel.',
+    "You've got mail. Had mail. It's inside a flywheel now.",
+    'Last pickup: final.',
+  ],
+  hydrant: [
+    'Water pressure: released. Briefly.',
+    'The fire department has questions.',
+    'Hydrant? More like hi-gone.',
+  ],
+  'speed-bump': [
+    'Speed bump: consumed at full speed.',
+    'Slow down? No. Swallow faster.',
+    'The bump has been flattened. By eating it.',
+  ],
+  apartment: [
+    'Eviction notice: served to an entire building.',
+    'Rent-controlled. Now flywheel-controlled.',
+    'Every tenant got the same moving notice: gone.',
+  ],
+  office: [
+    'The whole company got acquired. By a flywheel.',
+    'Corner office? Consumed first.',
+    'Open floor plan, meet open flywheel.',
   ],
   // One flavor quip set per METROS[].landmarkType (src/data/metros.js) — the
   // level-capstone landmark eat for each of the 10 metros/chapters.

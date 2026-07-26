@@ -26,8 +26,9 @@ import { createInput } from './engine/input.js';
 import { METROS } from './data/metros.js';
 import { generateLevel, LEVEL_COUNT } from './data/levels.js';
 
-import { createPropMesh } from './content/propkit.js';
+import { createPropMesh, scaleForRadius } from './content/propkit.js';
 import { createLandmark } from './content/landmarks.js';
+import { generateCityLayout } from './content/citylayout.js';
 
 import { Audio } from './systems/audio.js';
 import { createComboTracker, COMBO_TIERS } from './systems/combo.js';
@@ -239,12 +240,48 @@ export function main() {
     ground.rotation.x = -Math.PI / 2;
     root.add(ground);
 
+    // Level 1 gets an authored city (street grid, park, parking lot, plaza)
+    // from src/content/citylayout.js instead of the generic scatter below.
+    const cityLayout = level.n === 1 ? generateCityLayout(level) : null;
+
     // Street grid: without any visual reference on the ground, a flat-colored
     // plane gives zero sense of motion ("couldn't see the floor, looked like
     // nothing was there" — live player report). A subtle grid, tinted from
     // the metro's accent, restores speed/position readability. Cells ~110u,
-    // matching the old 2D game's grid step.
-    {
+    // matching the old 2D game's grid step. (Level 1's city layout renders
+    // real roads/blocks instead, which serve the same purpose.)
+    if (cityLayout) {
+      // Block pads: sidewalk-tinted planes covering each block, so the ground
+      // plane showing through between them reads as asphalt streets. Park /
+      // lot / plaza blocks get their own surface colors.
+      const PAD_COLORS = {
+        park: '#4a7d44',
+        lot: '#2f3840',
+        plaza: '#7b858e',
+        mixed: '#55606a',
+        downtown: '#55606a',
+        residential: '#5d6850',
+      };
+      for (const b of cityLayout.blocks) {
+        const pad = new THREE.Mesh(
+          new THREE.PlaneGeometry(b.w, b.d),
+          new THREE.MeshStandardMaterial({ color: PAD_COLORS[b.type] || '#55606a', roughness: 0.95, metalness: 0.02 })
+        );
+        pad.rotation.x = -Math.PI / 2;
+        pad.position.set(b.x, 0.5, b.z);
+        root.add(pad);
+      }
+      // Road center lines.
+      for (const road of cityLayout.roads) {
+        const line = new THREE.Mesh(
+          road.axis === 'x' ? new THREE.PlaneGeometry(level.world, 1.4) : new THREE.PlaneGeometry(1.4, level.world),
+          new THREE.MeshBasicMaterial({ color: '#c9b458' })
+        );
+        line.rotation.x = -Math.PI / 2;
+        line.position.set(road.axis === 'x' ? 0 : road.at, 0.3, road.axis === 'x' ? road.at : 0);
+        root.add(line);
+      }
+    } else {
       const grid = new THREE.GridHelper(level.world, Math.round(level.world / 110), metro.accent, metro.accent);
       grid.material.transparent = true;
       grid.material.opacity = 0.18;
@@ -254,6 +291,7 @@ export function main() {
     }
 
     const obstacleMeshes = [];
+    const CITY_BUILDING_KINDS = ['building-small', 'building-medium', 'building-large', 'apartment', 'office'];
 
     // Props: spawn level.template scaled by level.itemValueMultiplier per
     // src/content/propkit.js's `kind` contract with src/data/levels.js.
@@ -264,29 +302,56 @@ export function main() {
     // start so the first 10-15s guarantees visible growth; mid tiers get a
     // smaller share; everything else scatters as before. (An earlier 120-550
     // ring at 60% was too thin — blind drives from spawn regularly ate 0.)
-    level.template.forEach((tier) => {
-      const nearShare = tier.tierIndex <= 1 ? 0.75 : tier.tierIndex <= 3 ? 0.3 : 0;
-      for (let i = 0; i < tier.baseCount; i += 1) {
-        const mesh = createPropMesh(tier.kind, THREE, metro.accent);
-        const pos = Math.random() < nearShare
-          ? randomRingPos(80, 380, tier.baseRadius * 1.3 + 20)
-          : randomGroundPos(level.world, tier.baseRadius * 1.3 + 20);
-        mesh.position.set(pos.x, 0, pos.z);
-        mesh.rotation.y = Math.random() * Math.PI * 2;
+    if (cityLayout) {
+      // Authored placement: every template tier keeps its exact count/radius/
+      // mass (the layout consumes level.template directly), positioned on the
+      // street grid, plus the street-furniture kinds. `color` overrides the
+      // metro accent for per-instance paint (cars/buses).
+      for (const p of cityLayout.props) {
+        const mesh = createPropMesh(p.kind, THREE, p.color || metro.accent);
+        // Visual size matches the swallow radius so "fits your rim" reads on
+        // screen (see propkit.js scaleForRadius).
+        mesh.scale.setScalar(scaleForRadius(p.kind, p.radius));
+        mesh.position.set(p.x, 0, p.z);
+        mesh.rotation.y = p.rotY;
         root.add(mesh);
-        if (tier.kind === 'building-small' || tier.kind === 'building-medium' || tier.kind === 'building-large') {
+        if (CITY_BUILDING_KINDS.includes(p.kind)) {
           obstacleMeshes.push(mesh);
         }
         state.propObjects.push({
           object3D: mesh,
           position: mesh.position,
-          radius: tier.baseRadius,
-          mass: tier.baseMass,
-          kind: tier.kind,
+          radius: p.radius,
+          mass: p.mass,
+          kind: p.kind,
           golden: false,
         });
       }
-    });
+    } else {
+      level.template.forEach((tier) => {
+        const nearShare = tier.tierIndex <= 1 ? 0.75 : tier.tierIndex <= 3 ? 0.3 : 0;
+        for (let i = 0; i < tier.baseCount; i += 1) {
+          const mesh = createPropMesh(tier.kind, THREE, metro.accent);
+          const pos = Math.random() < nearShare
+            ? randomRingPos(80, 380, tier.baseRadius * 1.3 + 20)
+            : randomGroundPos(level.world, tier.baseRadius * 1.3 + 20);
+          mesh.position.set(pos.x, 0, pos.z);
+          mesh.rotation.y = Math.random() * Math.PI * 2;
+          root.add(mesh);
+          if (CITY_BUILDING_KINDS.includes(tier.kind)) {
+            obstacleMeshes.push(mesh);
+          }
+          state.propObjects.push({
+            object3D: mesh,
+            position: mesh.position,
+            radius: tier.baseRadius,
+            mass: tier.baseMass,
+            kind: tier.kind,
+            golden: false,
+          });
+        }
+      });
+    }
 
     // Guaranteed opening bite: a small inner ring of tier-0 props right at
     // the spawn point, so ANY first move (even a blind one) eats within a
@@ -296,6 +361,7 @@ export function main() {
       const biteTier = level.template[0];
       for (let i = 0; i < 10; i += 1) {
         const mesh = createPropMesh(biteTier.kind, THREE, metro.accent);
+        if (cityLayout) mesh.scale.setScalar(scaleForRadius(biteTier.kind, biteTier.baseRadius));
         const pos = randomRingPos(50, 130, biteTier.baseRadius * 1.3 + 20);
         mesh.position.set(pos.x, 0, pos.z);
         mesh.rotation.y = Math.random() * Math.PI * 2;
@@ -320,6 +386,7 @@ export function main() {
     for (let i = 0; i < nGold; i += 1) {
       const tier = midTiers[Math.floor(Math.random() * midTiers.length)];
       const mesh = createPropMesh(tier.kind, THREE, '#ffd54a');
+      if (cityLayout) mesh.scale.setScalar(scaleForRadius(tier.kind, tier.baseRadius));
       const pos = randomGroundPos(level.world, tier.baseRadius * 1.3 + 20);
       mesh.position.set(pos.x, 0, pos.z);
       root.add(mesh);
@@ -340,7 +407,11 @@ export function main() {
     // metro's 10th/final level counts as "clearing the metro" for the
     // metroCleared achievement (see checkCapstoneEaten below).
     const landmark = createLandmark(metro.landmarkType, THREE, metro.accent);
-    const capstonePos = randomGroundPos(level.world, landmark.boundingRadius * 1.2 + 30);
+    // Level 1's landmark anchors the city layout's plaza block; every other
+    // level keeps the random placement.
+    const capstonePos = cityLayout && cityLayout.plaza
+      ? cityLayout.plaza
+      : randomGroundPos(level.world, landmark.boundingRadius * 1.2 + 30);
     landmark.position.set(capstonePos.x, 0, capstonePos.z);
     root.add(landmark);
     obstacleMeshes.push(landmark);

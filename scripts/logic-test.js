@@ -48,6 +48,7 @@ async function main() {
   const levelsMod = await import('../src/data/levels.js');
   const propkit = await import('../src/content/propkit.js');
   const landmarks = await import('../src/content/landmarks.js');
+  const citylayoutMod = await import('../src/content/citylayout.js');
   const audioMod = await import('../src/systems/audio.js');
   const comboMod = await import('../src/systems/combo.js');
   const achMod = await import('../src/systems/achievements.js');
@@ -289,6 +290,82 @@ async function main() {
       if (!isObject3D || !hasBoundingRadius || !isFiniteBox(group) || !hasMeshChild(group)) allLandmarksValid = false;
     }
     check('createLandmark returns a valid, finite, mesh-bearing Object3D for all 10 landmarkTypes', allLandmarksValid);
+  }
+
+  // ---------------------------------------------------------------------
+  console.log('CITY LAYOUT (level-1 authored city):');
+  {
+    const { generateCityLayout } = citylayoutMod;
+    const level1 = generateLevel(1);
+    const layout = generateCityLayout(level1);
+
+    // Determinism: same level in -> byte-identical layout out.
+    const again = generateCityLayout(generateLevel(1));
+    check('generateCityLayout is deterministic (seeded, reproducible)', JSON.stringify(layout) === JSON.stringify(again));
+
+    // Gameplay contract: the template's 7 tiers keep their exact counts —
+    // building-medium spawns as 'apartment' meshes, building-large as
+    // 'office' meshes (the layout's skin swap, per its header comment).
+    const counts = {};
+    layout.props.forEach((p) => { counts[p.kind] = (counts[p.kind] || 0) + 1; });
+    const expectedCounts = {
+      trash: 126, bike: 90, car: 60, bus: 42, 'building-small': 27, apartment: 15, office: 9,
+    };
+    check(
+      'template tier counts preserved (building-medium->apartment, building-large->office)',
+      Object.entries(expectedCounts).every(([k, c]) => counts[k] === c)
+    );
+
+    // Template mass preserved through the skin swap.
+    const TEMPLATE_DERIVED = ['trash', 'bike', 'car', 'bus', 'building-small', 'apartment', 'office'];
+    const layoutMass = layout.props
+      .filter((p) => TEMPLATE_DERIVED.includes(p.kind))
+      .reduce((sum, p) => sum + p.mass, 0);
+    check('template base mass fully preserved in the layout', layoutMass === levelsMod.LEVEL_TEMPLATE_MASS_SUM);
+
+    // Every prop finite, in-bounds, and with positive swallow stats.
+    const half = level1.world / 2;
+    check(
+      'every laid-out prop is finite, in world bounds, with positive radius/mass',
+      layout.props.every((p) => (
+        Number.isFinite(p.x) && Number.isFinite(p.z)
+        && Math.abs(p.x) <= half && Math.abs(p.z) <= half
+        && p.radius > 0 && p.mass > 0
+      ))
+    );
+
+    // The street furniture the level-1 city exists for is actually present.
+    check(
+      'street furniture kinds all present (tree/streetlight/bench/mailbox/hydrant/speed-bump)',
+      ['tree', 'streetlight', 'bench', 'mailbox', 'hydrant', 'speed-bump'].every((k) => (counts[k] || 0) > 0)
+    );
+
+    // Buildings stand inside blocks, never on the roads.
+    check(
+      'every building stands inside a block rectangle (never on a road)',
+      layout.props
+        .filter((p) => ['building-small', 'apartment', 'office'].includes(p.kind))
+        .every((p) => layout.blocks.some((b) => p.x >= b.x0 && p.x <= b.x1 && p.z >= b.z0 && p.z <= b.z1))
+    );
+
+    // The new kinds build into valid meshes (same validity bar as the
+    // template-kind check in SCENE GRAPH above).
+    function isFiniteBox2(obj) {
+      obj.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(obj);
+      if (box.isEmpty()) return false;
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      return Number.isFinite(size.x) && Number.isFinite(size.y) && Number.isFinite(size.z);
+    }
+    let cityMeshesValid = true;
+    for (const kind of ['tree', 'streetlight', 'bench', 'mailbox', 'hydrant', 'speed-bump', 'apartment', 'office']) {
+      const mesh = propkit.createPropMesh(kind, THREE, '#8fb8d9');
+      let hasMesh = false;
+      mesh.traverse((node) => { if (node.isMesh) hasMesh = true; });
+      if (!(mesh instanceof THREE.Object3D) || !hasMesh || !isFiniteBox2(mesh)) cityMeshesValid = false;
+    }
+    check('createPropMesh returns valid meshes for all 8 city-layout kinds', cityMeshesValid);
   }
 
   // ---------------------------------------------------------------------
