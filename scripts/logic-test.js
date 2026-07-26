@@ -309,6 +309,22 @@ async function main() {
       d1.props.filter((p) => p.golden).length === 1
         && generateDistrict(generateLevel(46)).props.filter((p) => p.golden).length === 2);
 
+    // Street props (trees/people/lamps, levels.js STREET_PROP_TIERS): every
+    // level scatters every kind, stats.streetProps reports the exact counts,
+    // and every one is edible at the level-1 spawn gate (avatar r=26, size
+    // gate 0.78 => radius <= 20.28) — they are the opening food chain.
+    let streetPropsOk = true;
+    for (let n = 1; n <= 100; n += 1) {
+      const d = generateDistrict(generateLevel(n));
+      for (const tier of levelsMod.STREET_PROP_TIERS) {
+        const placed = d.props.filter((p) => p.kind === tier.kind);
+        if (placed.length === 0) streetPropsOk = false;
+        if ((d.stats.streetProps[tier.kind] || 0) !== placed.length) streetPropsOk = false;
+        if (placed.some((p) => p.radius > 26 * 0.78 || p.golden || p.mega)) streetPropsOk = false;
+      }
+    }
+    check('every level scatters tree/person/streetlamp street props, all spawn-edible and counted', streetPropsOk);
+
     // Every prop stays inside the playable world (B7 coordinate contract).
     let allInside = true;
     const bound = d1.world / 2;
@@ -337,6 +353,9 @@ async function main() {
         && ['trash', 'bike', 'car', 'bus', 'building-small', 'building-medium', 'building-large'].includes(m.propVariant.kind)));
     check('every metro has an authored capstoneTwist ({id, description, params})',
       METROS.every((m) => m.capstoneTwist && m.capstoneTwist.id && m.capstoneTwist.description && m.capstoneTwist.params));
+    check('every metro declares street-prop density flags (vegetation/pedestrians/lamps) as non-negative numbers',
+      METROS.every((m) => m.streetProps
+        && ['vegetation', 'pedestrians', 'lamps'].every((k) => Number.isFinite(m.streetProps[k]) && m.streetProps[k] >= 0)));
 
     // The unlock cadence lands exactly one intro line on each unlock level,
     // and the capstone twist only surfaces on each metro's 10th district.
@@ -708,8 +727,8 @@ async function main() {
   {
     const catalogErrors = archetypesMod.validateArchetypeCatalogs();
     check('visual registry and all 100 district catalogs validate', catalogErrors.length === 0);
-    check('registry contains exactly 30 immutable archetypes per metro (300 total)',
-      Object.keys(archetypesMod.VISUAL_ARCHETYPES).length === 300);
+    check('registry contains exactly 30 immutable archetypes per metro (300 total) plus the shared street-prop archetypes',
+      Object.keys(archetypesMod.VISUAL_ARCHETYPES).length === 300 + archetypesMod.STREET_PROP_ARCHETYPE_IDS.length);
     check('Skyline-opedia exposes exactly the 30 visible archetypes per metro',
       METROS.every((metro) => Array.isArray(propkit.metroVariants[metro.id])
         && propkit.metroVariants[metro.id].length === 30));
@@ -808,7 +827,7 @@ async function main() {
       const fingerprint = propkit.visualGeometryFingerprint(descriptor.id, descriptor.gameplayKind, THREE);
       if (!Number.isFinite(fingerprint.checksum) || fingerprint.triangles > 1500) geometryBudgetsPass = false;
     }
-    check('all 300 merged geometries are finite and remain <=1500 triangles', geometryBudgetsPass);
+    check('all merged geometries (300 catalog + street props) are finite and remain <=1500 triangles', geometryBudgetsPass);
 
     const collectionKeysMod = await import('../src/meta/collection.js');
     check('legacy display names normalize to permanent visual collection IDs',

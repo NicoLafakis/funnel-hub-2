@@ -2,7 +2,7 @@
 const path = require('path');
 const { chromium } = require(process.env.APPDATA + '/npm/node_modules/playwright');
 
-const OUT = 'C:/Users/Nico/AppData/Local/Temp';
+const OUT = require('os').tmpdir();
 
 function isNoise(text) {
   return /preload|AbortError|net::ERR_ABORTED|hero-motion|win-motion|favicon/i.test(text);

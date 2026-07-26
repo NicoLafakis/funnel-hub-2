@@ -68,6 +68,22 @@ const LEVEL_TEMPLATE = [
 export const LEVEL_TEMPLATE_MASS_SUM = LEVEL_TEMPLATE.reduce((sum, t) => sum + t.baseMass * t.baseCount, 0);
 
 // ---------------------------------------------------------------------------
+// STREET PROP TIERS (Hole.io staple street food: trees, pedestrians, lamps).
+// These sit OUTSIDE the 7 template tiers on purpose: the 1.35x tier step and
+// the template mass budget stay sacred, and the archetype catalogs (30 per
+// metro) don't list them. They are sub-tier-0 snacks — every radius is edible
+// at the level-1 spawn gate (avatar r=26, size gate 0.78 => radius <= 20.28).
+// districts.js scatters them from its own seeded stream; per-metro density
+// multipliers come from metros.js `streetProps[densityFlag]` (missing = 1).
+// baseMass here is content tuning data (like LEVEL_TEMPLATE above), never a
+// formula — awards still flow through formulas.progressionAwardReport.
+export const STREET_PROP_TIERS = [
+  { kind: 'tree', baseRadius: TIER_RADII[0], baseMass: 2, baseCount: 40, densityFlag: 'vegetation' },
+  { kind: 'person', baseRadius: 8, baseMass: 1, baseCount: 56, densityFlag: 'pedestrians' },
+  { kind: 'streetlamp', baseRadius: 12, baseMass: 2, baseCount: 28, densityFlag: 'lamps' },
+];
+
+// ---------------------------------------------------------------------------
 // The V2 unlock cadence (content-and-meta.md §1) as authored data. Each entry
 // introduces exactly one mechanic at its level and carries the ONE intro line
 // the district card may show for it (§5: one line, never a modal). The

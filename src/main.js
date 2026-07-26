@@ -30,7 +30,7 @@
 import * as THREE from 'three';
 
 import { createEngine } from './engine/scene.js';
-import { createAvatar, SKINS } from './engine/avatar.js';
+import { createAvatar, createHoleVisual, SKINS } from './engine/avatar.js';
 import { createChaseCamera } from './engine/camera.js';
 import { createInput } from './engine/input.js';
 import { createSpatialHash } from './engine/spatialhash.js';
@@ -51,6 +51,7 @@ import { createLandmark } from './content/landmarks.js';
 import { generateDistrict } from './content/districts.js';
 import { bakeGroundTexture } from './content/groundtex.js';
 import { loadCityTextures } from './content/textures.js';
+import { loadModelKit } from './content/modelkit.js';
 import { createMetroSignature } from './content/signatures.js';
 
 import { Audio } from './systems/audio.js';
@@ -81,7 +82,7 @@ import {
   showOverlay, hideOverlay, updateHUD, renderBuildShop,
   initResponsiveFlags, isReducedMotion, applyIntroLine, showOneLiner,
   showOnboardingBeat, hideOnboarding, renderFailMercy,
-  setDuelistTelegraph, setLockBadge, positionTutorialHand,
+  setDuelistTelegraph, setLockBadge, positionTutorialHand, setSizePill,
 } from './ui/overlays.js';
 import { createMinimap } from './ui/minimap.js';
 
@@ -102,12 +103,14 @@ const FAIL_LINES = [
 // Konami code — EXACT sequence ported from the original (lowercased keys).
 const KONAMI = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'];
 
-// Rival body colors per archetype (game-design §4): you should read WHO is
-// coming at you from across the district.
+// Rival hole colors per archetype (game-design §4): you should read WHO is
+// coming at you from across the district. Rivals wear the same ground-flush
+// funnel + thick rim look as the player (engine/avatar.js createHoleVisual),
+// with the archetype's signature hue as the bright rim over a dark throat.
 const RIVAL_COLORS = {
-  grazer: { color: 0xe74c3c, emissive: 0x330505 },
-  bandit: { color: 0x9b59b6, emissive: 0x2a1638 },
-  duelist: { color: 0xff8c1a, emissive: 0x3a1c00 },
+  grazer: { rim: 0xe74c3c, colorA: 0x0c0405, colorB: 0x7a1f14, swirl: 1.0 },
+  bandit: { rim: 0x9b59b6, colorA: 0x070410, colorB: 0x4a2a72, swirl: 0.9 },
+  duelist: { rim: 0xff8c1a, colorA: 0x0d0603, colorB: 0x8a4a10, swirl: 1.1 },
 };
 
 // Star rating for a completed level — scales with how much of the clock was
@@ -160,14 +163,19 @@ export async function main() {
     cityTextures = null;
   }
 
-  // Light refs for the night-variant lighting shift (L66+) — scene.js owns
-  // the fixtures; main only dims/restores them per level.
-  let ambientLight = null;
-  let sunLight = null;
-  engine.scene.traverse((node) => {
-    if (node.isAmbientLight) ambientLight = node;
-    else if (node.isDirectionalLight) sunLight = node;
-  });
+  // Blender prop pack (modelkit.js): authored low-poly trees/people/lamps/car
+  // decoded into BufferGeometries and handed to propkit, which prefers them
+  // over the procedural bakes (normalized to the same footprints). null =>
+  // procedural props everywhere — the game boots identically without the files.
+  try {
+    propkit.setModelKit(await loadModelKit(THREE));
+  } catch (e) {
+    propkit.setModelKit(null);
+  }
+
+  // Per-level lighting mood (metro palette + night dimming) goes through
+  // engine.setMood() — scene.js owns the fixtures; main never pokes light
+  // intensities directly.
 
   // Camera look-ahead (game-design §2): the dominant EDIBLE cluster near the
   // player, from the edible-only hash. Returns null when nothing qualifies —
@@ -304,6 +312,28 @@ export async function main() {
     container.appendChild(el);
     setTimeout(() => el.classList.add('out'), 4400);
     setTimeout(() => el.remove(), 4900);
+  }
+
+  // Virtual joystick visual (Hole.io-style white base + nub): renders the
+  // input machine's touch-stick state each frame. Two divs, transform-only
+  // updates; CSS gates visibility to coarse pointers AND an up HUD, so this
+  // only ever toggles the .show class + moves transforms.
+  const stickBaseEl = document.getElementById('stickBase');
+  const stickNubEl = document.getElementById('stickNub');
+  let stickVisualOn = false;
+  function updateStickVisual() {
+    if (!stickBaseEl) return;
+    const s = input.stick;
+    if (s) {
+      if (!stickVisualOn) { stickBaseEl.classList.add('show'); stickVisualOn = true; }
+      stickBaseEl.style.transform = `translate(${s.originX}px, ${s.originY}px) translate(-50%, -50%)`;
+      if (stickNubEl) {
+        stickNubEl.style.transform = `translate(-50%, -50%) translate(${s.dx}px, ${s.dy}px)`;
+      }
+    } else if (stickVisualOn) {
+      stickBaseEl.classList.remove('show');
+      stickVisualOn = false;
+    }
   }
 
   // Unlocks `key` (if not already), toasts it, and persists it into the save.
@@ -445,8 +475,9 @@ export async function main() {
     const fogFar = level.world * (night ? 0.7 : 0.95);
     engine.scene.fog = new THREE.Fog(skyColor.getHex(), fogNear, fogFar);
     state.baseFog = { near: fogNear, far: fogFar };
-    if (ambientLight) ambientLight.intensity = night ? 0.28 : 0.55;
-    if (sunLight) sunLight.intensity = night ? 0.45 : 0.9;
+    if (typeof engine.setMood === 'function') {
+      engine.setMood({ sky: metro.sky, ground: metro.ground, night });
+    }
 
     const root = new THREE.Group();
     root.name = `level-${level.n}`;
@@ -520,6 +551,7 @@ export async function main() {
 
     state.world = createInstancedWorld({
       scene: engine.scene, propkit, accent: metro.accent, textures: cityTextures,
+      seed: layout.seed,
     });
     state.world.set(worldProps);
     worldProps.forEach((p, i) => state.worldIndex.set(p, i));
@@ -612,16 +644,12 @@ export async function main() {
       rival.massDivisor = level.itemValueMultiplier;
       rival.hoardCap = hoardCap;
       const colors = RIVAL_COLORS[archetype] || RIVAL_COLORS.grazer;
-      const rivalMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 20, 16),
-        new THREE.MeshStandardMaterial({
-          color: colors.color,
-          emissive: colors.emissive,
-          emissiveIntensity: 0.7,
-          roughness: 0.4,
-        })
-      );
-      rival.object3D.add(rivalMesh);
+      // Same ground-flush funnel + thick rim as the player (art §2). The
+      // group lives unscaled inside rival.object3D, which rivals.js scales
+      // to the rival's world radius — exactly the avatar's convention, so
+      // the hole fills the same footprint the old sphere did.
+      rival.holeVisual = createHoleVisual(THREE, { ...colors, ringOpacity: 0.95 });
+      rival.object3D.add(rival.holeVisual.group);
       root.add(rival.object3D);
       state.rivals.push(rival);
     });
@@ -719,6 +747,7 @@ export async function main() {
   // lock badge over it for a second (game-design §3's "not yet" read).
   const lockBadgeVec = new THREE.Vector3();
   const tutHandVec = new THREE.Vector3();
+  const sizePillVec = new THREE.Vector3();
 
   // Beat-1 cleanup: the pulse writes instance colors outside edibilityState,
   // so the edibility tint is force re-applied to every spawn-feast prop when
@@ -1408,6 +1437,7 @@ export async function main() {
     chaseCamera.stepOrbit(orb.steps);
     const mv = input.moveVector(chaseCamera.yaw);
     avatar.setMoveInput(mv.dx, mv.dz);
+    updateStickVisual();
 
     avatar.update(gdt);
     const r = avatar.radius();
@@ -1646,6 +1676,10 @@ export async function main() {
         hoardCap: rival.hoardCap,
         speedMultiplier: state.rivalSpeedMultiplier,
       });
+      // Animate the hole (swirl + rim pulse + ground-flush heights). The
+      // radius passed is the scale rivals.js just applied, so a dead rival
+      // mid-respawn keeps its last footprint instead of snapping to base.
+      rival.holeVisual.update(gdt, Math.max(1, rival.object3D.scale.x));
       for (const obj of events.ateProps) {
         removePropRoster(obj);
       }
@@ -1801,6 +1835,26 @@ export async function main() {
         avatarRadius: r,
         targetRadius: state.targetRadius,
       });
+    }
+
+    // Hole.io-style "Size N" pill riding under the player hole: same
+    // world→screen projection pattern as pinLockBadge — project the avatar
+    // ground center, then estimate the on-screen rim radius by projecting a
+    // point one radius away, and pin the pill just below the rim. The size
+    // tier is a cosmetic 1-15 readout of growth toward this level's target
+    // radius (radiusFromMass(0) is the level-invariant starting radius).
+    sizePillVec.set(avatar.position.x, 0, avatar.position.z).project(engine.camera);
+    if (sizePillVec.z < 1) {
+      const centerPx = (sizePillVec.x * 0.5 + 0.5) * window.innerWidth;
+      const centerPy = (-sizePillVec.y * 0.5 + 0.5) * window.innerHeight;
+      sizePillVec.set(avatar.position.x + r, 0, avatar.position.z).project(engine.camera);
+      const rimPx = Math.abs((sizePillVec.x * 0.5 + 0.5) * window.innerWidth - centerPx);
+      const baseRadius = radiusFromMass(0);
+      const span = Math.max(1, (state.targetRadius || baseRadius) - baseRadius);
+      const size = Math.max(1, Math.min(15, 1 + Math.floor(14 * (r - baseRadius) / span)));
+      setSizePill({ x: centerPx, y: centerPy + rimPx + 10, size, visible: true });
+    } else {
+      setSizePill({ visible: false });
     }
 
     updateHUD({

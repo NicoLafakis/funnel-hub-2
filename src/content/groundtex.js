@@ -4,9 +4,10 @@
 // single canvas texture, so the V1 debug grid overlay can die: real streets
 // do its motion-readability job. When opts.textures supplies the Leonardo-
 // generated surfaces (textures.js: asphalt/curb/plaza/grass), zones are
-// filled with the realistic repeating patterns instead of flat tints, and
-// every street gets a dashed center-line marking; otherwise the 64x64 value
-// noise + tints carry the look alone.
+// filled with the realistic repeating patterns washed toward the zone tints
+// (GROUND_ZONE_MIX.wash) so dark texture art keeps the Hole.io-bright look,
+// and every street gets a dashed center-line marking; otherwise the 64x64
+// value noise + tints carry the look alone.
 //
 // DOM discipline: document.createElement('canvas') happens ONLY inside
 // bakeGroundTexture(), never at module top level. Headless callers (the logic
@@ -16,13 +17,18 @@ import { mulberry32 } from '../data/seeds.js';
 
 // Zone palette: each ground class is the metro's ground color mixed toward a
 // target, so districts stay on-palette per metro while reading as asphalt /
-// curb / plaza / lawn at a glance.
+// curb / plaza / lawn at a glance. Hole.io-style targets: warm LIGHT grey
+// asphalt, beige sidewalk/plaza, saturated cartoon grass — the near-black
+// V1 asphalt made every metro read as night. `wash` applies when a Leonardo
+// texture fills the zone: the tint is overlaid at that alpha so the baked
+// result stays as bright as the procedural path even when the source texture
+// art is dark (asphalt.png is near-black).
 export const GROUND_ZONE_MIX = {
-  asphalt: { target: '#14161a', t: 0.7 },
-  curb: { target: '#c9cdd2', t: 0.35 },
-  plaza: { target: '#9a948a', t: 0.5 },
-  grass: { target: '#3f7a3a', t: 0.65 },
-  block: { target: '#ffffff', t: 0.06 },
+  asphalt: { target: '#8a8f98', t: 0.7, wash: 0.6 },
+  curb: { target: '#d9cfae', t: 0.35, wash: 0.25 },
+  plaza: { target: '#e8e0cc', t: 0.5, wash: 0.3 },
+  grass: { target: '#63c74d', t: 0.65, wash: 0.25 },
+  block: { target: '#ffffff', t: 0.06, wash: 0 },
 };
 
 const CURB_WIDTH = 9; // world units of curb ring around each street
@@ -130,13 +136,27 @@ export function bakeGroundTexture(layout, opts = {}) {
     }
   }
 
-  // Per-cell zone tint (or realistic surface pattern when available).
+  // Per-cell zone tint (or realistic surface pattern when available — washed
+  // toward the zone tint per GROUND_ZONE_MIX.wash so dark texture art stays
+  // as bright as the procedural path).
   for (let j = 0; j < res; j += 1) {
     for (let i = 0; i < res; i += 1) {
       const zone = descriptor.cells[j * res + i];
       const mixSpec = GROUND_ZONE_MIX[zone];
-      ctx.fillStyle = patterns[zone] || mixHex(ground, mixSpec.target, mixSpec.t);
-      ctx.fillRect(i * px, j * px, px + 0.5, px + 0.5);
+      const tint = mixHex(ground, mixSpec.target, mixSpec.t);
+      if (patterns[zone]) {
+        ctx.fillStyle = patterns[zone];
+        ctx.fillRect(i * px, j * px, px + 0.5, px + 0.5);
+        if (mixSpec.wash > 0) {
+          ctx.globalAlpha = mixSpec.wash;
+          ctx.fillStyle = tint;
+          ctx.fillRect(i * px, j * px, px + 0.5, px + 0.5);
+          ctx.globalAlpha = 1;
+        }
+      } else {
+        ctx.fillStyle = tint;
+        ctx.fillRect(i * px, j * px, px + 0.5, px + 0.5);
+      }
     }
   }
 

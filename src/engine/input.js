@@ -119,6 +119,10 @@ export function axesFromKeys(keys) {
  * Outputs:
  *   get state()           one of INPUT_STATES
  *   get move()            smoothed screen-space intent {x, z}, |move| <= 1
+ *   get stick()           virtual-stick visual state, or null when no touch
+ *                         stick is down: {originX, originY, dx, dy} in CSS
+ *                         pixels, dx/dy clamped to STICK_MAX_RADIUS_PX — the
+ *                         UI layer renders the joystick from this (DOM-free).
  *   consumeOrbit()        -> {yaw, pitch, steps} accumulated since last call,
  *                         and zeroes the accumulators (steps = Q/E presses)
  */
@@ -413,6 +417,21 @@ export function createInputMachine({ toGround = null } = {}) {
     get state() { return state; },
     get move() { return smoothed; },
     get orbitSteps() { return orbitSteps; },
+    // Visual state for the on-screen joystick (see the contract above):
+    // origin = where the finger landed, dx/dy = clamped nub deflection.
+    get stick() {
+      if (stickPointerId === null) return null;
+      const rec = pointers.get(stickPointerId);
+      if (!rec) return null;
+      let dx = rec.x - rec.originX;
+      let dy = rec.y - rec.originY;
+      const mag = Math.hypot(dx, dy);
+      if (mag > STICK_MAX_RADIUS_PX) {
+        dx = (dx / mag) * STICK_MAX_RADIUS_PX;
+        dy = (dy / mag) * STICK_MAX_RADIUS_PX;
+      }
+      return { originX: rec.originX, originY: rec.originY, dx, dy };
+    },
   };
 }
 
@@ -506,6 +525,9 @@ export function createInput({ screenToGround = null, canvas = null } = {}) {
     // World-space move vector for the avatar: screen-space intent rotated by
     // the camera yaw (game-design §1).
     moveVector(cameraYaw) { return cameraRelativeMove(machine.move, cameraYaw); },
+    // Virtual-stick visual state for the on-screen joystick (null when the
+    // touch stick is not down). DOM-free; main.js renders it.
+    get stick() { return machine.stick; },
     dispose,
   };
 }

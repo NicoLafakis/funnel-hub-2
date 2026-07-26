@@ -102,10 +102,11 @@ function ensureShopStyles(doc) {
     .shoptrack-desc{color:#9fb4c2;font-size:12px;}
     .shoptrack-pips{display:flex;gap:4px;margin-top:4px;}
     .tier-pip{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.18);
-      border:1px solid rgba(255,255,255,.3);}
-    .tier-pip.filled{background:var(--gold,#f5c26b);border-color:var(--gold,#f5c26b);}
-    .shoptrack-buy{flex:0 0 auto;background:linear-gradient(135deg,var(--orange,#ff5c35),var(--coral,#ff7a59));
-      color:#fff;border:none;padding:9px 18px;font-size:13px;font-weight:800;border-radius:999px;
+      border:1.5px solid rgba(28,39,51,.55);}
+    .tier-pip.filled{background:var(--gold,#f5c26b);border-color:#1c2733;}
+    .shoptrack-buy{flex:0 0 auto;background:linear-gradient(180deg,var(--coral,#ff7a59),var(--orange,#ff5c35));
+      color:#fff;border:2.5px solid #1c2733;box-shadow:0 3px 0 rgba(28,39,51,.35);padding:9px 18px;
+      font-size:13px;font-weight:800;letter-spacing:.3px;border-radius:999px;
       cursor:pointer;white-space:nowrap;transition:transform .12s,opacity .12s;}
     .shoptrack-buy:hover:not(:disabled){transform:scale(1.05);}
     .shoptrack-buy:disabled{opacity:.4;cursor:not-allowed;background:rgba(255,255,255,.15);}
@@ -273,6 +274,8 @@ export function updateHUD(state = {}) {
 //     an approaching bigger Duelist (game-design §4).
 //   - setLockBadge({x, y} | null) — wedge-wobble "not yet" lock badge
 //     (game-design §3), positioned in CSS pixels.
+//   - setSizePill({x, y, size, visible}) — the Hole.io-style "Size N" pill
+//     pinned under the player hole, positioned in CSS pixels.
 
 function ensureV2Styles(doc) {
   const STYLE_ID = 'overlays-v2-injected-styles';
@@ -289,17 +292,17 @@ function ensureV2Styles(doc) {
     .buildtier-locktag{color:var(--gold,#f5c26b);font-size:11.5px;}
     .buildtier-picks{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
     .buildpick{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;text-align:left;
-      background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:10px;
+      background:rgba(255,255,255,.05);border:2px solid rgba(255,255,255,.16);border-radius:12px;
       color:#fff;padding:9px 12px;font-family:inherit;cursor:pointer;transition:background .12s,border-color .12s;}
     .buildpick:hover:not(:disabled){background:rgba(0,164,189,.2);}
     .buildpick:disabled{opacity:.45;cursor:not-allowed;}
-    .buildpick.picked{border-color:var(--gold,#f5c26b);background:rgba(245,194,107,.12);opacity:1;}
+    .buildpick.picked{border-color:#1c2733;background:rgba(245,194,107,.16);opacity:1;}
     .buildpick-icon{font-size:18px;flex:0 0 auto;}
     .buildpick-text{display:flex;flex-direction:column;gap:1px;min-width:0;}
     .buildpick-name{font-weight:700;font-size:13.5px;}
     .buildpick-desc{color:#9fb4c2;font-size:12px;line-height:1.3;}
     #respecBtn{margin-top:12px;min-height:44px;background:transparent;color:#7fd9e8;
-      border:1px solid var(--teal,#00a4bd);padding:9px 22px;font-size:13px;font-weight:700;
+      border:2.5px solid var(--teal,#00a4bd);padding:9px 22px;font-size:13px;font-weight:700;
       border-radius:999px;cursor:pointer;transition:background .12s,opacity .12s;}
     #respecBtn:hover:not(:disabled){background:rgba(0,164,189,.15);}
     #respecBtn:disabled{opacity:.35;cursor:not-allowed;}
@@ -593,5 +596,28 @@ export function setLockBadge(pos) {
   }
   el.style.left = `${pos.x}px`;
   el.style.top = `${pos.y}px`;
+  el.classList.add('show');
+}
+
+// ---------------------------------------------------------------------------
+// Size pill (Hole.io "Size N" readout under the player hole)
+// ---------------------------------------------------------------------------
+
+// Pins the blue "Size N" pill at {x, y} in CSS pixels (main.js projects the
+// avatar's rim each frame, same pattern as setLockBadge). Pass
+// {visible:false} — or no position — to hide. Visibility is additionally
+// gated in CSS on the HUD being up (#hud.hidden ~ #sizePill), so nothing
+// needs to call this when leaving play mode.
+export function setSizePill(opts = {}) {
+  const el = document.getElementById('sizePill');
+  if (!el) return;
+  const { x, y, size, visible } = opts;
+  if (!visible || typeof x !== 'number' || typeof y !== 'number') {
+    el.classList.remove('show');
+    return;
+  }
+  if (typeof size === 'number') el.textContent = `Size ${size}`;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
   el.classList.add('show');
 }

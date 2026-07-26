@@ -24,9 +24,29 @@ export function createEngine(canvasEl, THREE) {
   const ambient = new THREE.AmbientLight(0xffffff, 0.55);
   scene.add(ambient);
 
-  const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+  // Hemisphere fill (Hole.io-style bright world): cool sky-blue from above,
+  // warm ground bounce from below — kills the flat monochrome look the bare
+  // ambient+directional pair gave. Colors/intensity are per-mood adjustable
+  // via setMood() below.
+  const hemi = new THREE.HemisphereLight(0xbfe3ff, 0xc9b28a, 0.7);
+  scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xfff2dd, 0.9); // warm-tinted midday sun
   sun.position.set(120, 220, 80);
   scene.add(sun);
+
+  // Single entry point for per-level lighting mood (metro palette + night
+  // variants). Callers pass hex colors for the hemisphere sky/ground bounce
+  // and `night: true` to dim every fixture — main.js's night dimming must go
+  // through here, never by poking light intensities directly.
+  function setMood({ sky, ground, night } = {}) {
+    if (sky !== undefined) hemi.color.set(sky);
+    if (ground !== undefined) hemi.groundColor.set(ground);
+    const dim = !!night;
+    ambient.intensity = dim ? 0.28 : 0.55;
+    sun.intensity = dim ? 0.45 : 0.9;
+    hemi.intensity = dim ? 0.3 : 0.7;
+  }
 
   const clock = new THREE.Clock();
 
@@ -52,5 +72,5 @@ export function createEngine(canvasEl, THREE) {
     renderer.render(scene, camera);
   }
 
-  return { scene, camera, renderer, clock, resize, render };
+  return { scene, camera, renderer, clock, resize, render, setMood };
 }

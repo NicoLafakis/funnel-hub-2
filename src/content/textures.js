@@ -21,6 +21,14 @@
 // Shared-THREE pattern: THREE is passed in by the caller (main.js); this
 // module never imports 'three' itself (content/ convention).
 
+// Master switch for the texture overlay. Currently OFF: the photorealistic
+// set clashed with the flat Hole.io art direction (art-direction.md §1) and
+// was moved to assets/textures/photoreal/ pending a flat-cartoon regen via
+// scripts/leonardo.js. Keeping this false skips the fetches entirely, so
+// missing files don't spam 404s into the console (and the e2e smoke).
+// Flip to true once a flat-style set lands back in assets/textures/.
+export const CITY_TEXTURES_ENABLED = false;
+
 // Building kind -> facade image; ground zone -> surface image. Paths are
 // relative to index.html (same convention as assets/hubs/<metro>.png).
 // `crop` trims illustration margins (edge fractions l/t/r/b) so the facade
@@ -102,6 +110,7 @@ function cropGroundSource(img, size) {
  *   null when there is no DOM or not a single image loaded.
  */
 export async function loadCityTextures(THREE, opts = {}) {
+  if (!CITY_TEXTURES_ENABLED) return null;
   if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
   const size = opts.size || 512;
 

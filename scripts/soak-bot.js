@@ -173,12 +173,17 @@ export function simulateLevel(n, opts = {}) {
 
     // Rivals — same composition, spawn spread, warmup, caps and hoardCap as
     // main.js (the hoardCap corridor model at t=60s, game-design §5 inv. 3).
+    // The hoardCap uses the EFFECTIVE ordinary fraction (the calibration
+    // override included) so tuning runs mirror a real table change.
+    const effAwardFraction = typeof opts.ordinaryMassFraction === 'number'
+      ? opts.ordinaryMassFraction
+      : level.progression.ordinaryMassFraction;
     const comp = (level.mechanics && Array.isArray(level.mechanics.rivals) && level.mechanics.rivals.length)
       ? level.mechanics.rivals
       : rivalComposition(level.n);
     const reachFraction = Math.min(1, (PLAYER_BASE_SPEED * 60 * REACH_SWEEP_WIDTH) / (level.world * level.world));
     const hoardCap = RIVAL_HOARD_SAFETY * reachFraction * (layout.stats.totalBaseMass || 0)
-      * ivm * level.progression.ordinaryMassFraction / Math.max(1, comp.length);
+      * ivm * effAwardFraction / Math.max(1, comp.length);
     const rivals = comp.map((archetype) => {
       const angle = rng() * Math.PI * 2;
       const dist = level.world * (0.3 + rng() * 0.15);

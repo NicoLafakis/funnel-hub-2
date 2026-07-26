@@ -10,14 +10,29 @@
 //
 // Exact `kind` strings are a CONTRACT with src/data/levels.js's LEVEL_TEMPLATE
 // — keep in sync: 'trash' | 'bike' | 'car' | 'bus' | 'building-small' |
-// 'building-medium' | 'building-large'.
+// 'building-medium' | 'building-large'. Three more kinds live outside the
+// template tiers: 'tree' | 'person' | 'streetlamp' — the shared street-prop
+// food chain (src/data/levels.js STREET_PROP_TIERS, src/content/archetypes.js
+// STREET_PROP_KINDS). Their per-variant identity colors arrive via the
+// descriptor's `tint`/`flavor` fields (see createVisualPropMesh), not via the
+// metro accent.
 
 import {
   DISTRICT_CATALOGS, VISUAL_ARCHETYPES, resolveVisualArchetype,
 } from './archetypes.js';
 import { TRIM_UV } from './textures.js';
+import { PROP_MODELS } from './modelkit.js';
+import { mulberry32, hashStr } from '../data/seeds.js';
 
 const DEFAULT_ACCENT = '#9aa3ad';
+
+// Blender prop pack (modelkit.js): decoded BufferGeometries injected once at
+// boot by main.js via setModelKit(). Null = procedural bakes everywhere (the
+// silent fallback when assets/models/ is missing, e.g. tests/headless).
+let blenderModelKit = null;
+export function setModelKit(kit) {
+  blenderModelKit = kit || null;
+}
 
 export function resolveVisualDescriptor(visualId, kind) {
   return resolveVisualArchetype(visualId, kind);
@@ -151,6 +166,46 @@ function shade(THREE, color, deltaL, deltaS = 0) {
   return out;
 }
 
+// --- Per-metro pastel palette (Hole.io-style per-prop hue variety) -----------
+// Derives `count` companion hues from the metro accent: seeded hue rotations
+// around the accent (entry 0 keeps the accent hue so the metro's identity
+// survives), pushed to candy-pastel lightness (~0.6-0.75) with mid-high
+// saturation. Seeded via mulberry32 — same (accent, seed) ⇒ identical palette
+// in every browser; instancing.js picks per-instance colors from this.
+const PALETTE_HUE_SPREAD = [0, 0.09, -0.09, 0.18, -0.18, 0.5];
+
+// Kinds whose instanced geometry bakes with a neutral white accent so
+// per-instance palette picks (instancing.js) carry the full body hue.
+// Small clutter (trash, bikes) keeps accent-derived vertex colors.
+export const PALETTE_BASE_KINDS = new Set([
+  'building-small', 'building-medium', 'building-large', 'car', 'bus',
+]);
+
+// Fixed DETAIL colors for palette-base (white) bakes: glass/trim must stay
+// non-white or a pastel instance hue x white detail renders as a flat slab
+// with zero window contrast. Chosen so (any pastel pick) x (fixed tint)
+// still reads as cool glass / dark trim against the body hue.
+const PALETTE_GLASS_TINT = '#a8c4d4'; // cool light blue-grey "window glass"
+const PALETTE_TRIM_TINT = '#5f6b7a'; // darker neutral — rooftop cues / trim
+
+export function metroPalette(THREE, accentColorHex, seed, count = 6) {
+  const base = resolveColor(THREE, accentColorHex);
+  const hsl = { h: 0, s: 0, l: 0 };
+  base.getHSL(hsl);
+  const rng = mulberry32(
+    (typeof seed === 'number' ? seed >>> 0 : hashStr(String(accentColorHex))) >>> 0,
+  );
+  const palette = [];
+  for (let i = 0; i < count; i += 1) {
+    const h = (hsl.h + PALETTE_HUE_SPREAD[i % PALETTE_HUE_SPREAD.length]
+      + (rng() - 0.5) * 0.05 + 1) % 1;
+    const s = Math.min(0.8, Math.max(0.45, hsl.s + (rng() - 0.5) * 0.15));
+    const l = 0.6 + rng() * 0.15;
+    palette.push(new THREE.Color().setHSL(h, s, l));
+  }
+  return palette;
+}
+
 function standardMat(THREE, color, opts = {}) {
   return new THREE.MeshStandardMaterial({
     color,
@@ -176,6 +231,13 @@ const DIMENSIONS = {
   'building-small': { w: 7, h: 11, d: 7 },
   'building-medium': { w: 11, h: 24, d: 11 },
   'building-large': { w: 15, h: 42, d: 15 },
+  // Street-prop food chain (tier-0 snacks, spawn-edible — Hole.io staples).
+  // Person is a chibi on purpose (big head, tiny body): render scale is
+  // footprint-normalized to the gameplay radius, so honest 1.7m proportions
+  // would blow up to building height (same reason the bike is squat here).
+  tree: { w: 2.4, h: 3.2, d: 2.4 },
+  person: { w: 0.5, h: 0.7, d: 0.35 },
+  streetlamp: { w: 1.4, h: 2.9, d: 0.6 },
 };
 
 function buildTrash(THREE, accent) {
@@ -243,12 +305,14 @@ function buildWheel(THREE, radius, width, material) {
   return wheelMesh;
 }
 
-function buildCar(THREE, accent) {
+function buildCar(THREE, accent, opts = {}) {
   const group = new THREE.Group();
   const dim = DIMENSIONS.car;
 
   const bodyMat = standardMat(THREE, accent, { metalness: 0.35, roughness: 0.45 });
-  const cabinMat = standardMat(THREE, shade(THREE, accent, 0.2), { metalness: 0.2, roughness: 0.3 });
+  const cabinMat = standardMat(THREE, opts.paletteBase
+    ? resolveColor(THREE, PALETTE_GLASS_TINT)
+    : shade(THREE, accent, 0.2), { metalness: 0.2, roughness: 0.3 });
   const wheelMat = standardMat(THREE, 0x141414, { roughness: 0.9 });
 
   const wheelRadius = dim.h * 0.26;
@@ -275,12 +339,14 @@ function buildCar(THREE, accent) {
   return group;
 }
 
-function buildBus(THREE, accent) {
+function buildBus(THREE, accent, opts = {}) {
   const group = new THREE.Group();
   const dim = DIMENSIONS.bus;
 
   const bodyMat = standardMat(THREE, accent, { metalness: 0.25, roughness: 0.55 });
-  const stripeMat = standardMat(THREE, shade(THREE, accent, 0.3), { roughness: 0.4 });
+  const stripeMat = standardMat(THREE, opts.paletteBase
+    ? resolveColor(THREE, PALETTE_GLASS_TINT)
+    : shade(THREE, accent, 0.3), { roughness: 0.4 });
   const wheelMat = standardMat(THREE, 0x141414, { roughness: 0.9 });
 
   const wheelRadius = dim.h * 0.16;
@@ -308,7 +374,9 @@ function buildBuilding(THREE, accent, dim, opts = {}) {
   const group = new THREE.Group();
 
   const wallMat = standardMat(THREE, accent, { roughness: 0.85, metalness: 0.05 });
-  const windowColor = shade(THREE, accent, 0.35);
+  const windowColor = opts.paletteBase
+    ? resolveColor(THREE, PALETTE_GLASS_TINT)
+    : shade(THREE, accent, 0.35);
   const windowMat = standardMat(THREE, windowColor, {
     roughness: 0.3,
     metalness: 0.1,
@@ -336,6 +404,20 @@ function buildBuilding(THREE, accent, dim, opts = {}) {
     group.add(band);
   }
 
+  // Street-level door: a proud darker box on the front (+z) face — the third
+  // value step (wall / glass / trim) that keeps small tier-less buildings
+  // readable under any palette hue, Hole.io-style.
+  const doorColor = opts.paletteBase
+    ? resolveColor(THREE, PALETTE_TRIM_TINT)
+    : shade(THREE, accent, -0.2);
+  const doorH = dim.h * 0.3;
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(dim.w * 0.22, doorH, 0.12),
+    standardMat(THREE, doorColor, { roughness: 0.6, metalness: 0.05 }),
+  );
+  door.position.set(0, doorH / 2, dim.d / 2 + 0.03);
+  group.add(door);
+
   if (opts.tiers) {
     const setbackH = dim.h * 0.22;
     const setback = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.6, setbackH, dim.d * 0.6), wallMat);
@@ -361,7 +443,124 @@ function buildBuilding(THREE, accent, dim, opts = {}) {
   return group;
 }
 
-// Builds one accessory part (see PROP_ACCESSORIES) as a primitive mesh.
+// --- Street-prop builders (tree / person / streetlamp) -----------------------
+// Unlike the template tiers, these ignore the metro accent for identity: the
+// shared street archetypes carry their own `tint` (canopy / shirt / pole
+// color — see archetypes.js STREET_PROP_CATALOG), which arrives here as the
+// resolved `accent`. Trunk/skin/bulb colors are fixed so the food chain reads
+// the same in every metro, exactly like the Hole.io references.
+
+// `flavor` picks the canopy silhouette: 'blob' (round park tree), 'cone'
+// (stacked-cone pine), 'lollipop' (tall trunk + ball). Missing/unknown
+// flavors fall back to 'blob'.
+function buildTree(THREE, accent, flavor) {
+  const group = new THREE.Group();
+  const trunkMat = standardMat(THREE, 0x8a5a3b, { roughness: 0.9, metalness: 0 });
+  const canopyMat = standardMat(THREE, accent, { roughness: 0.85, metalness: 0 });
+  // A slightly lighter secondary cluster keeps the canopy from reading as a
+  // single flat balloon — cheap per-part variation (baked into vertex colors).
+  const canopyLightMat = standardMat(THREE, shade(THREE, accent, 0.07), { roughness: 0.85, metalness: 0 });
+
+  if (flavor === 'cone') {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.28, 0.9, 7), trunkMat);
+    trunk.position.set(0, 0.45, 0);
+    group.add(trunk);
+
+    const lower = new THREE.Mesh(new THREE.ConeGeometry(1.25, 1.5, 8), canopyMat);
+    lower.position.set(0, 1.5, 0);
+    group.add(lower);
+
+    const upper = new THREE.Mesh(new THREE.ConeGeometry(0.85, 1.2, 8), canopyLightMat);
+    upper.position.set(0, 2.4, 0);
+    group.add(upper);
+  } else if (flavor === 'lollipop') {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.6, 7), trunkMat);
+    trunk.position.set(0, 0.8, 0);
+    group.add(trunk);
+
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(0.95, 8, 6), canopyMat);
+    crown.position.set(0, 2.3, 0);
+    group.add(crown);
+
+    const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.55, 7, 5), canopyLightMat);
+    tuft.position.set(0.45, 2.75, 0.2);
+    group.add(tuft);
+  } else {
+    // 'blob' (default): classic Hole.io round park tree.
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 1.0, 7), trunkMat);
+    trunk.position.set(0, 0.5, 0);
+    group.add(trunk);
+
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(1.15, 8, 6), canopyMat);
+    crown.position.set(0, 1.9, 0);
+    crown.scale.set(1, 0.85, 1);
+    group.add(crown);
+
+    const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.7, 7, 5), canopyLightMat);
+    tuft.position.set(0.55, 2.35, 0.3);
+    group.add(tuft);
+  }
+
+  return group;
+}
+
+// Chibi pedestrian: darker legs, bright shirt (accent = the archetype's shirt
+// tint), skin-toned head. ~0.7 raw units tall (see DIMENSIONS note above).
+function buildPerson(THREE, accent) {
+  const group = new THREE.Group();
+  const legsMat = standardMat(THREE, shade(THREE, accent, -0.4, -0.1), { roughness: 0.8, metalness: 0 });
+  const shirtMat = standardMat(THREE, accent, { roughness: 0.75, metalness: 0 });
+  const headMat = standardMat(THREE, 0xf2c89b, { roughness: 0.7, metalness: 0 });
+
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.28, 0.2), legsMat);
+  legs.position.set(0, 0.14, 0);
+  group.add(legs);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.3, 0.26), shirtMat);
+  torso.position.set(0, 0.43, 0);
+  group.add(torso);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 7, 6), headMat);
+  head.position.set(0, 0.66, 0);
+  group.add(head);
+
+  return group;
+}
+
+// Curved-arm street lamp: dark grey-blue pole (accent = the archetype's pole
+// tint), a quarter-torus arm overhanging the road, and a pale warm head.
+// Vertex colors only — the merged instanced material carries no per-part
+// emissive, so the head reads via its pale color, not a glow.
+function buildStreetlamp(THREE, accent) {
+  const group = new THREE.Group();
+  const poleMat = standardMat(THREE, accent, { roughness: 0.55, metalness: 0.4 });
+  const baseMat = standardMat(THREE, shade(THREE, accent, -0.12), { roughness: 0.6, metalness: 0.35 });
+  const headMat = standardMat(THREE, 0xfff3c4, { roughness: 0.4, metalness: 0 });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.25, 8), baseMat);
+  base.position.set(0, 0.125, 0);
+  group.add(base);
+
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 2.4, 8), poleMat);
+  pole.position.set(0, 1.2, 0);
+  group.add(pole);
+
+  // Curved arm: a quarter torus arcing from the pole top (tangent +Y) out to
+  // horizontal (tangent +X), so the lamp overhangs the road edge.
+  const arm = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.07, 6, 10, Math.PI / 2), poleMat);
+  arm.position.set(0.45, 2.4, 0);
+  arm.rotation.z = Math.PI / 2;
+  group.add(arm);
+
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.24, 8), headMat);
+  head.position.set(0.9, 2.75, 0);
+  head.rotation.x = Math.PI; // opening faces the street below
+  group.add(head);
+
+  return group;
+}
+
+
 function buildAccessoryPart(THREE, part) {
   const material = standardMat(THREE, resolveColor(THREE, part.color), { roughness: 0.6, metalness: 0.15 });
   let geometry;
@@ -399,9 +598,16 @@ function applyAccessory(group, THREE, accessoryKey) {
 // `variant` (optional, V2 — content-and-meta.md §2): a metro prop reskin
 // `{ tint?, accessory? }` from metros.js's `propVariant`. tint overrides the
 // metro accent for this prop; accessory attaches a PROP_ACCESSORIES mesh set.
-// Callers passing no variant get byte-identical V1 behavior.
-export function createPropMesh(kind, THREE, accentColorHex, variant) {
+// Street-prop kinds (tree/person/streetlamp) additionally read `flavor` (the
+// tree canopy silhouette; see archetypes.js STREET_PROP_CATALOG). Callers
+// passing no variant get byte-identical V1 behavior.
+// `opts.paletteBase` (optional): the caller is baking this geometry for the
+// per-instance pastel palette (white body) — detail parts (glass/trim) use
+// the fixed PALETTE_GLASS_TINT / PALETTE_TRIM_TINT colors instead of accent
+// shades so windows stay visible under any instance hue.
+export function createPropMesh(kind, THREE, accentColorHex, variant, opts = {}) {
   const accent = resolveColor(THREE, variant && variant.tint ? variant.tint : accentColorHex);
+  const detail = { paletteBase: !!opts.paletteBase };
   let mesh;
   switch (kind) {
     case 'trash':
@@ -411,19 +617,28 @@ export function createPropMesh(kind, THREE, accentColorHex, variant) {
       mesh = buildBike(THREE, accent);
       break;
     case 'car':
-      mesh = buildCar(THREE, accent);
+      mesh = buildCar(THREE, accent, detail);
       break;
     case 'bus':
-      mesh = buildBus(THREE, accent);
+      mesh = buildBus(THREE, accent, detail);
       break;
     case 'building-small':
-      mesh = buildBuilding(THREE, accent, DIMENSIONS['building-small']);
+      mesh = buildBuilding(THREE, accent, DIMENSIONS['building-small'], detail);
       break;
     case 'building-medium':
-      mesh = buildBuilding(THREE, accent, DIMENSIONS['building-medium'], { tiers: true });
+      mesh = buildBuilding(THREE, accent, DIMENSIONS['building-medium'], { tiers: true, ...detail });
       break;
     case 'building-large':
-      mesh = buildBuilding(THREE, accent, DIMENSIONS['building-large'], { tiers: true });
+      mesh = buildBuilding(THREE, accent, DIMENSIONS['building-large'], { tiers: true, ...detail });
+      break;
+    case 'tree':
+      mesh = buildTree(THREE, accent, variant && variant.flavor);
+      break;
+    case 'person':
+      mesh = buildPerson(THREE, accent);
+      break;
+    case 'streetlamp':
+      mesh = buildStreetlamp(THREE, accent);
       break;
     default: {
       // Defensive fallback for an unrecognized kind: a plain tinted box so
@@ -439,12 +654,14 @@ export function createPropMesh(kind, THREE, accentColorHex, variant) {
 
 // Adds one strong, low-poly silhouette cue to the sacred gameplay-tier base.
 // The cue is baked into merged geometry, so it remains visible when instanced.
-function applyVisualRecipe(group, THREE, descriptor, accent) {
+function applyVisualRecipe(group, THREE, descriptor, accent, opts = {}) {
   if (!descriptor || descriptor.recipe === 'base' || descriptor.family === 'legacy_fallback') return;
   const dim = DIMENSIONS[descriptor.gameplayKind] || DIMENSIONS.trash;
   const index = descriptor.recipeIndex || 0;
   const phase = (index % 5) / 5;
-  const material = standardMat(THREE, shade(THREE, accent, 0.18 - phase * 0.12), {
+  const material = standardMat(THREE, opts.paletteBase
+    ? resolveColor(THREE, PALETTE_TRIM_TINT)
+    : shade(THREE, accent, 0.18 - phase * 0.12), {
     roughness: 0.62,
     metalness: descriptor.recipe === 'mast' ? 0.35 : 0.08,
   });
@@ -487,11 +704,18 @@ function applyVisualRecipe(group, THREE, descriptor, accent) {
   group.add(cue);
 }
 
-export function createVisualPropMesh(visualId, kind, THREE, accentColorHex) {
+export function createVisualPropMesh(visualId, kind, THREE, accentColorHex, opts = {}) {
   const descriptor = resolveVisualArchetype(visualId, kind);
   const accent = resolveColor(THREE, accentColorHex);
-  const group = createPropMesh(descriptor.gameplayKind, THREE, accentColorHex);
-  applyVisualRecipe(group, THREE, descriptor, accent);
+  // Street-prop archetypes (trees/people/lamps) carry their identity color on
+  // the descriptor (`tint`) instead of the metro accent, plus an optional
+  // `flavor` (tree canopy silhouette). The merge cache key includes the
+  // descriptor id, so each tint/flavor bakes its own geometry.
+  const variant = descriptor.tint !== undefined || descriptor.flavor !== undefined
+    ? { tint: descriptor.tint, flavor: descriptor.flavor }
+    : undefined;
+  const group = createPropMesh(descriptor.gameplayKind, THREE, accentColorHex, variant, opts);
+  applyVisualRecipe(group, THREE, descriptor, accent, opts);
   group.userData.visualId = descriptor.id;
   group.userData.gameplayKind = descriptor.gameplayKind;
   return group;
@@ -508,15 +732,124 @@ export function createVisualPropMesh(visualId, kind, THREE, accentColorHex) {
 // per-instance paths (brightness jitter, edibility tint, golden) keep working
 // unchanged. Small local merge — no three/examples BufferGeometryUtils (B1:
 // only the vendored core files exist).
-const mergedGeometryCache = new Map(); // `${visualId}|${accent}|tex|plain` -> BufferGeometry
+const mergedGeometryCache = new Map(); // `${visualId}|${accent}|tex|plain|palette|kit|proc` -> BufferGeometry
+
+// World-space bounding box of a built prop group (matrices must be updated).
+function groupBounds(group, THREE) {
+  const box = new THREE.Box3();
+  const tmp = new THREE.Box3();
+  group.traverse((node) => {
+    if (!node.isMesh || !node.geometry || !node.geometry.attributes.position) return;
+    if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+    tmp.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld);
+    box.union(tmp);
+  });
+  return box;
+}
+
+// Adapts a Blender model geometry (modelkit.js) into merged-part arrays that
+// drop into the same instancing contract as the procedural bake:
+//   - NORMALIZED to the procedural build's exact bounding box (per-axis), so
+//     render scale, footprint radius, blob shadows, and the edibility math —
+//     all derived from the gameplay radius — are byte-identical either way.
+//   - GREYSCALE vertex colors are multiplied by the effective tint (the
+//     archetype's `tint` for street props, the bake accent — white for
+//     palette-base kinds like the car — otherwise), keeping the
+//     vertexColors x instanceColor contract intact.
+// Normals are inverse-transpose scaled (diagonal scale => divide + normalize).
+function bakeModelPart(THREE, modelGeo, targetBox, tintHex) {
+  const pos = modelGeo.attributes.position.array;
+  const nrm = modelGeo.attributes.normal ? modelGeo.attributes.normal.array : null;
+  const col = modelGeo.attributes.color ? modelGeo.attributes.color.array : null;
+  const src = modelGeo.boundingBox;
+  const sx = (targetBox.max.x - targetBox.min.x) / Math.max(1e-6, src.max.x - src.min.x);
+  const sy = (targetBox.max.y - targetBox.min.y) / Math.max(1e-6, src.max.y - src.min.y);
+  const sz = (targetBox.max.z - targetBox.min.z) / Math.max(1e-6, src.max.z - src.min.z);
+  const tint = resolveColor(THREE, tintHex);
+
+  const count = pos.length / 3;
+  const positions = new Array(pos.length);
+  const normals = new Array(pos.length);
+  const colors = new Array(pos.length);
+  for (let i = 0; i < count; i += 1) {
+    positions[i * 3] = targetBox.min.x + (pos[i * 3] - src.min.x) * sx;
+    positions[i * 3 + 1] = targetBox.min.y + (pos[i * 3 + 1] - src.min.y) * sy;
+    positions[i * 3 + 2] = targetBox.min.z + (pos[i * 3 + 2] - src.min.z) * sz;
+    if (nrm) {
+      const nx = nrm[i * 3] / sx;
+      const ny = nrm[i * 3 + 1] / sy;
+      const nz = nrm[i * 3 + 2] / sz;
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      normals[i * 3] = nx / len;
+      normals[i * 3 + 1] = ny / len;
+      normals[i * 3 + 2] = nz / len;
+    } else {
+      normals[i * 3] = 0;
+      normals[i * 3 + 1] = 1;
+      normals[i * 3 + 2] = 0;
+    }
+    if (col) {
+      const r = col[i * 3];
+      const g = col[i * 3 + 1];
+      const b = col[i * 3 + 2];
+      if (Math.abs(r - g) < 0.02 && Math.abs(g - b) < 0.02) {
+        colors[i * 3] = r * tint.r;
+        colors[i * 3 + 1] = r * tint.g;
+        colors[i * 3 + 2] = r * tint.b;
+      } else {
+        colors[i * 3] = r;
+        colors[i * 3 + 1] = g;
+        colors[i * 3 + 2] = b;
+      }
+    } else {
+      colors[i * 3] = tint.r;
+      colors[i * 3 + 1] = tint.g;
+      colors[i * 3 + 2] = tint.b;
+    }
+  }
+  const indices = modelGeo.index ? Array.from(modelGeo.index.array) : null;
+  return { count, positions, normals, colors, indices };
+}
 
 function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
   const descriptor = resolveVisualArchetype(visualId, kind);
-  const key = `${descriptor.id}|${accentColorHex}|${opts.facadeTextured ? 'tex' : 'plain'}`;
+  // Blender prop pack: prefer the authored model when this descriptor maps to
+  // one AND the kit loaded (main.js setModelKit); otherwise the procedural
+  // bake — silent fallback, identical gameplay.
+  const modelName = blenderModelKit
+    ? (PROP_MODELS.byVisualId[descriptor.id] || PROP_MODELS.byKind[descriptor.gameplayKind] || null)
+    : null;
+  const modelGeo = modelName ? blenderModelKit[modelName] || null : null;
+  const key = `${descriptor.id}|${accentColorHex}|${opts.facadeTextured ? 'tex' : 'plain'}|${opts.paletteBase ? 'palette' : 'accent'}|${modelGeo ? 'kit' : 'proc'}`;
   const cached = mergedGeometryCache.get(key);
   if (cached) return cached;
 
-  const group = createVisualPropMesh(descriptor.id, kind, THREE, accentColorHex);
+  let group;
+  let modelPart = null;
+  if (modelGeo) {
+    // Measure the procedural BASE build (no recipe cue) to get the exact
+    // footprint/height the gameplay math was tuned against, then normalize
+    // the model onto it. The archetype's recipe cue (car cap/bar/mast...) is
+    // still merged on top from an otherwise-empty group, so metro variant
+    // silhouettes survive the model swap.
+    const variant = descriptor.tint !== undefined || descriptor.flavor !== undefined
+      ? { tint: descriptor.tint, flavor: descriptor.flavor }
+      : undefined;
+    const procBase = createPropMesh(descriptor.gameplayKind, THREE, accentColorHex, variant, {
+      paletteBase: !!opts.paletteBase,
+    });
+    procBase.updateMatrixWorld(true);
+    const tintHex = descriptor.tint !== undefined ? descriptor.tint : accentColorHex;
+    modelPart = bakeModelPart(THREE, modelGeo, groupBounds(procBase, THREE), tintHex);
+    group = new THREE.Group();
+    applyVisualRecipe(group, THREE, descriptor, resolveColor(THREE, accentColorHex), {
+      paletteBase: !!opts.paletteBase,
+    });
+  } else {
+    group = createVisualPropMesh(descriptor.id, kind, THREE, accentColorHex, {
+      paletteBase: !!opts.paletteBase,
+    });
+  }
   group.updateMatrixWorld(true);
 
   const positions = [];
@@ -565,6 +898,21 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
     vertexOffset += posAttr.count;
   });
 
+  if (modelPart) {
+    for (let i = 0; i < modelPart.positions.length; i += 1) {
+      positions.push(modelPart.positions[i]);
+      normals.push(modelPart.normals[i]);
+      colors.push(modelPart.colors[i]);
+    }
+    for (let i = 0; i < modelPart.count; i += 1) uvs.push(TRIM_UV[0], TRIM_UV[1]);
+    if (modelPart.indices) {
+      for (let i = 0; i < modelPart.indices.length; i += 1) indices.push(modelPart.indices[i] + vertexOffset);
+    } else {
+      for (let i = 0; i < modelPart.count; i += 1) indices.push(i + vertexOffset);
+    }
+    vertexOffset += modelPart.count;
+  }
+
   const merged = new THREE.BufferGeometry();
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
@@ -597,8 +945,18 @@ export function kindHeight(kind) {
 export function createInstancedPropField(kind, count, THREE, accentColorHex, opts = {}) {
   const safeCount = Math.max(0, Math.floor(Number(count) || 0));
   const descriptor = resolveVisualArchetype(opts.visualId, kind);
-  const geometry = mergedKindGeometry(THREE, kind, accentColorHex, descriptor.id, {
+  // Palette-base kinds (buildings/vehicles) bake their geometry with a WHITE
+  // accent: the Hole.io-style per-instance pastel palette (instancing.js)
+  // then supplies the full body color through instance colors, instead of a
+  // clamped accent-ratio that collapsed every pick back to the accent hue.
+  // Detail parts keep FIXED non-white colors (paletteBase bakes windows/glass
+  // as PALETTE_GLASS_TINT, rooftop cues as PALETTE_TRIM_TINT, wheels stay
+  // dark) so a pastel instance hue still shows window/trim contrast.
+  const paletteBase = PALETTE_BASE_KINDS.has(kind);
+  const bakeAccent = paletteBase ? '#ffffff' : accentColorHex;
+  const geometry = mergedKindGeometry(THREE, kind, bakeAccent, descriptor.id, {
     facadeTextured: !!opts.map,
+    paletteBase,
   });
   // White base material: the real per-part colors live in the vertex colors;
   // instance colors multiply on top (jitter / edibility / golden).

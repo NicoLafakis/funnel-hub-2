@@ -17,8 +17,9 @@
 // local +Z maps to world (sin rotY, cos rotY). Streets always carry their
 // LENGTH in w (long axis = local X).
 import { mulberry32 } from '../data/seeds.js';
+import { STREET_PROP_TIERS } from '../data/levels.js';
 import {
-  districtCatalog, resolveVisualArchetype,
+  districtCatalog, resolveVisualArchetype, streetPropArchetypeIds,
 } from './archetypes.js';
 
 export const ARCHETYPES = ['grid', 'radial', 'organic'];
@@ -565,6 +566,70 @@ export function generateDistrict(level, opts = {}) {
     if (mechanics.eliteGoldens) midTierProps[i].elite = true;
   }
 
+  // --- Street props (trees / pedestrians / lamps) ---------------------------
+  // The Hole.io staple tier-0 food chain: a generous seeded scatter over the
+  // sidewalk/park/plaza site pools (whatever the template tiers left behind).
+  // Trees favor parks (grass) and plaza edges, people stroll the sidewalks
+  // and plazas, lamps line the road edges (sidewalk sites sit between block
+  // and street). Placed AFTER every rngProps consumer above and drawn from a
+  // dedicated stream, so the template-tier layout stays byte-identical to
+  // before street props existed; they never join traffic/mega/golden picks.
+  // Counts come from STREET_PROP_TIERS (levels.js) scaled by the metro's
+  // streetProps density flags (metros.js) — read defensively: missing or
+  // invalid flag = 1 (default on), 0 = off, negatives clamp to 0.
+  const streetFlags = (level.metro && typeof level.metro.streetProps === 'object' && level.metro.streetProps) || {};
+  const streetDensity = (flag) => {
+    const v = Number(streetFlags[flag]);
+    if (!Number.isFinite(v)) return 1;
+    return Math.max(0, v);
+  };
+  const rngStreet = mulberry32((seed ^ 0x57EE7C0D) >>> 0);
+  const STREET_PROP_POOLS = {
+    // Trees: mostly grass (parks) and plaza edges, some sidewalk rows.
+    tree: [{ sites: parks, share: 0.5, zone: 'park' }, { sites: plazas, share: 0.2, zone: 'plaza' }, { sites: sidewalks, share: 0.3, zone: 'sidewalk' }],
+    // People: strolling sidewalks and plazas, a few in the parks.
+    person: [{ sites: sidewalks, share: 0.6, zone: 'sidewalk' }, { sites: plazas, share: 0.3, zone: 'plaza' }, { sites: parks, share: 0.1, zone: 'park' }],
+    // Lamps: along road edges (sidewalk sites), a few lighting the plazas.
+    streetlamp: [{ sites: sidewalks, share: 0.8, zone: 'sidewalk' }, { sites: plazas, share: 0.2, zone: 'plaza' }],
+  };
+  const streetPropCounts = {};
+  for (const tier of STREET_PROP_TIERS) {
+    const count = Math.round(tier.baseCount * streetDensity(tier.densityFlag));
+    const variants = streetPropArchetypeIds(tier.kind);
+    const plan = STREET_PROP_POOLS[tier.kind];
+    if (count <= 0 || !variants.length || !plan) {
+      streetPropCounts[tier.kind] = 0;
+      continue;
+    }
+    const sites = fillFromPools(count, plan.map((p) => ({ sites: p.sites, share: p.share })), rngStreet, world);
+    for (const site of sites) {
+      const descriptor = resolveVisualArchetype(
+        variants[Math.floor(rngStreet() * variants.length)], tier.kind,
+      );
+      props.push({
+        kind: tier.kind,
+        tierIndex: 0,
+        x: site.x,
+        z: site.z,
+        rotY: rngStreet() * Math.PI * 2,
+        radius: tier.baseRadius,
+        mass: tier.baseMass,
+        golden: false,
+        elite: false,
+        variant: null,
+        zone: plan[0].zone,
+        onRoad: false,
+        moving: null,
+        mega: false,
+        scaleMult: 1,
+        spawnFeast: false,
+        visualId: descriptor.id,
+        collectionKey: descriptor.collectionKey,
+      });
+    }
+    streetPropCounts[tier.kind] = sites.length;
+  }
+
   const totalBaseMass = props.reduce((sum, p) => sum + p.mass, 0);
 
   // Keep every placement inside the playable square (lesson B7's coordinate
@@ -618,6 +683,7 @@ export function generateDistrict(level, opts = {}) {
       propCount: props.length,
       totalBaseMass,
       perTier,
+      streetProps: streetPropCounts,
       novelty,
     },
   };

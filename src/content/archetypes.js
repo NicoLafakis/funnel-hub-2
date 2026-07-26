@@ -7,6 +7,36 @@ export const GAMEPLAY_KINDS = [
   'building-small', 'building-medium', 'building-large',
 ];
 
+// Street-prop kinds (trees / pedestrians / street lamps): the Hole.io staple
+// tier-0 food chain. Deliberately OUTSIDE GAMEPLAY_KINDS — they are not
+// template tiers (the sacred 7-tier 1.35x economy is untouched) and not part
+// of the 30-per-metro collectible catalogs; every metro shares the same set.
+export const STREET_PROP_KINDS = ['tree', 'person', 'streetlamp'];
+
+// The shared street-prop roster. `tint` is the variant's identity color
+// (canopy / shirt / pole) — propkit bakes it into vertex colors in place of
+// the metro accent; `flavor` selects the tree canopy silhouette. People come
+// in the bright shirt hues of the Hole.io references; trees in vivid greens.
+const STREET_PROP_CATALOG = [
+  { id: 'street_tree_blob', gameplayKind: 'tree', tint: '#3fae4a', flavor: 'blob', footprint: 1.4, height: 3.2, silhouette: 'blob-canopy park tree' },
+  { id: 'street_tree_cone', gameplayKind: 'tree', tint: '#57c256', flavor: 'cone', footprint: 1.4, height: 3.1, silhouette: 'cone-canopy pine' },
+  { id: 'street_tree_lollipop', gameplayKind: 'tree', tint: '#2f9e44', flavor: 'lollipop', footprint: 1.2, height: 3.2, silhouette: 'lollipop street tree' },
+  { id: 'street_person_red', gameplayKind: 'person', tint: '#e0483a', footprint: 0.3, height: 0.7, silhouette: 'pedestrian in red' },
+  { id: 'street_person_yellow', gameplayKind: 'person', tint: '#f2c230', footprint: 0.3, height: 0.7, silhouette: 'pedestrian in yellow' },
+  { id: 'street_person_blue', gameplayKind: 'person', tint: '#3fa9f5', footprint: 0.3, height: 0.7, silhouette: 'pedestrian in blue' },
+  { id: 'street_person_pink', gameplayKind: 'person', tint: '#ff6fb3', footprint: 0.3, height: 0.7, silhouette: 'pedestrian in pink' },
+  { id: 'street_person_teal', gameplayKind: 'person', tint: '#2ec8b8', footprint: 0.3, height: 0.7, silhouette: 'pedestrian in teal' },
+  { id: 'street_lamp_classic', gameplayKind: 'streetlamp', tint: '#3a4a5a', footprint: 0.8, height: 2.9, silhouette: 'curved-arm street lamp' },
+];
+
+// Frozen id list (test suites read this to size the registry expectations).
+export const STREET_PROP_ARCHETYPE_IDS = Object.freeze(STREET_PROP_CATALOG.map((a) => a.id));
+
+// Registered variant ids for one street-prop kind (placement picks per prop).
+export function streetPropArchetypeIds(kind) {
+  return STREET_PROP_CATALOG.filter((a) => a.gameplayKind === kind).map((a) => a.id);
+}
+
 const KIND_COUNTS = [6, 4, 5, 3, 5, 4, 3]; // 30 archetypes per metro.
 
 const METRO_FAMILIES = {
@@ -215,6 +245,37 @@ for (const [metroId, names] of Object.entries(METRO_FAMILIES)) {
   allCatalogs[metroId] = Object.freeze(built.districts);
 }
 
+// Shared street props: full descriptors with the same field contract as the
+// metro archetypes (validateArchetypeCatalogs checks every registry entry),
+// but introducedAt fixed at 1 and no district catalog membership — they are
+// placed by districts.js's street-prop scatter, not the novelty mixes.
+for (const entry of STREET_PROP_CATALOG) {
+  allArchetypes[entry.id] = Object.freeze({
+    id: entry.id,
+    gameplayKind: entry.gameplayKind,
+    family: entry.gameplayKind === 'streetlamp' ? 'street_lamp' : `street_${entry.gameplayKind}`,
+    recipe: 'base',
+    recipeIndex: 0,
+    materialRole: entry.id,
+    collectionKey: entry.id,
+    silhouette: entry.silhouette,
+    environmentalFunction: `${entry.silhouette} street clutter`,
+    silhouetteShapes: ['stable base', 'vertical accent'],
+    baseMaterial: entry.gameplayKind === 'tree' ? 'foliage and wood' : 'painted metal and cloth',
+    roughness: entry.gameplayKind === 'streetlamp' ? 0.55 : 0.75,
+    metalness: entry.gameplayKind === 'streetlamp' ? 0.4 : 0.05,
+    groundContrast: 'silhouette and value contrast',
+    footprint: entry.footprint,
+    height: entry.height,
+    triangleBudget: 250,
+    nonColorDistinction: `${entry.silhouette} profile cue`,
+    tint: entry.tint,
+    flavor: entry.flavor,
+    introducedAt: 1,
+    returnDistricts: Object.freeze([]),
+  });
+}
+
 export const VISUAL_ARCHETYPES = Object.freeze(allArchetypes);
 export const DISTRICT_CATALOGS = Object.freeze(allCatalogs);
 
@@ -225,6 +286,12 @@ export function fallbackVisualId(kind) {
 export function resolveVisualArchetype(visualId, kind) {
   const found = typeof visualId === 'string' ? VISUAL_ARCHETYPES[visualId] : null;
   if (found && (!kind || found.gameplayKind === kind)) return found;
+  // Street-prop kinds fall back to their kind's baseline shared archetype
+  // (always a registered id), never to a synthetic fallback_* id.
+  if (STREET_PROP_KINDS.includes(kind)) {
+    const baseline = STREET_PROP_CATALOG.find((a) => a.gameplayKind === kind);
+    if (baseline) return VISUAL_ARCHETYPES[baseline.id];
+  }
   const safeKind = GAMEPLAY_KINDS.includes(kind) ? kind : 'trash';
   return Object.freeze({
     id: fallbackVisualId(safeKind),
@@ -248,7 +315,9 @@ export function validateArchetypeCatalogs() {
   const idPattern = /^[a-z0-9_]+$/;
   for (const [id, descriptor] of Object.entries(VISUAL_ARCHETYPES)) {
     if (!idPattern.test(id) || descriptor.id !== id) errors.push(`invalid visual id: ${id}`);
-    if (!GAMEPLAY_KINDS.includes(descriptor.gameplayKind)) errors.push(`invalid gameplay kind: ${id}`);
+    if (!GAMEPLAY_KINDS.includes(descriptor.gameplayKind) && !STREET_PROP_KINDS.includes(descriptor.gameplayKind)) {
+      errors.push(`invalid gameplay kind: ${id}`);
+    }
     if (descriptor.collectionKey !== id) errors.push(`unstable collection key: ${id}`);
     if (!(descriptor.footprint > 0) || !(descriptor.height > 0)) errors.push(`invalid dimensions: ${id}`);
     if (!(descriptor.introducedAt >= 1 && descriptor.introducedAt <= 10)) errors.push(`invalid introduction: ${id}`);

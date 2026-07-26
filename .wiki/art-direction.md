@@ -18,7 +18,11 @@ instead of uniform scatter:**
 - **Zoned prop placement:** trash/bikes along sidewalks, cars/buses on
   roads, buildings on block corners facing streets, parks = dense small-prop
   clusters (the feast), the landmark on the largest plaza. Placement reads
-  from the layout, not from `Math.random()`.
+  from the layout, not from `Math.random()`. On top of the seven template
+  tiers, every district scatters the shared street-prop food chain —
+  **trees** (mostly parks/plaza edges), **pedestrians** (sidewalks/plazas),
+  and **street lamps** (road edges) — all spawn-edible tier-0 snacks, with
+  per-metro density multipliers (`streetProps` in metros.js).
 - **Spawn framing corridor:** building tiers are deterministically displaced
   from the initial chase-camera sightline behind spawn, the complete landmark
   silhouette is shifted laterally when it intersects that corridor, and seeded
@@ -27,51 +31,74 @@ instead of uniform scatter:**
   content budgets. Big Bell Plaza also moves its seed-specific double-decker
   overlap outside the avatar footprint while preserving every prop and mass.
 - **Ground gets a texture**, not a color: the layout bakes to a canvas
-  ground texture with realistic Leonardo-generated surfaces (asphalt,
+  ground texture with flat cartoon mobile-game surfaces (asphalt,
   sidewalk, plaza pavers, grass — `assets/textures/`, loaded by
   `src/content/textures.js`, tiled per zone by `groundtex.js`) plus dashed
   center-line road markings per street; it falls back to procedural
   64×64 noise + tints when the images are missing. The V1 grid overlay
   dies with this; real streets do its job.
-- **Buildings get real facades:** the same Leonardo set provides a facade
-  per building tier (brick storefront / apartment grid / glass tower).
+- **Buildings get facades:** the same generated set provides a facade
+  per building tier (brick storefront / apartment grid / glass tower) —
+  bold, flat-color reads, not photorealism.
   propkit's instancing merge keeps the facade box's side-face UVs and maps
   trim parts onto a swatch corner of the texture, so one material serves a
   whole merged building and instance-color signaling (edibility, golden)
   keeps working on top.
+- **Blender prop pack:** the street-prop food chain (blob/cone/lollipop
+  trees, chibi pedestrians, curved-arm lamps) and cars use authored
+  low-poly Blender meshes with beveled edges, exported to
+  `assets/models/*.glb` by `scripts/blender/build_props.py` and converted
+  to plain JS data modules (`assets/models/*.js`) by
+  `scripts/glb-to-js.js` — no glTF loader at runtime. `src/content/
+  modelkit.js` decodes them; propkit normalizes each model onto the
+  procedural build's exact bounding box, so gameplay/invariants are
+  unaffected, and falls back to the procedural bake when the files are
+  missing. Regen: `npm run models` (or
+  `"/c/Program Files/Blender Foundation/Blender 5.1/blender.exe" -b --factory-startup --python scripts/blender/build_props.py && node scripts/glb-to-js.js`).
 
 **Acceptance:** a screenshot of any level is identifiable as "a city
 district" (not "objects on a plane") by someone who has never seen the
 game. Motion readability without the debug grid.
 
-## 2. The hero — a flywheel, not a ball
+## 2. The hero — a vortex, not a ball
 
 **V1:** purple sphere + wireframe shell. "It was a ball" (D3, direct
 player quote).
 
-**V2:**
-- **Form:** keep the sphere silhouette (it reads at any size) but make it a
-  *vortex*: an emissive swirl shader on the core (rotating spiral UV, 20
-  lines of GLSL — V1 deferred this as "nice-to-have"), rim energy ring
-  lying flat on the ground like a suction disc, and a debris stream of the
-  last-eaten props orbiting briefly before being absorbed.
-- **Motion:** squash-and-stretch on eats (2% scale pop, 80ms), banking into
-  turns (roll ±10° from lateral velocity), a ground wake (darkened trail +
-  dust puffs at speed) so movement reads on the floor.
-- **Identity skins** stay (V1 has 5) but get material differences (matte /
-  metallic / emissive), not just rim recolors.
+**V2:** the hero is a **ground-flush vortex disc** (Hole.io reference,
+`assets/references/`) — a hole in the ground, not a body on it:
+- **Form:** a shallow concave funnel (paraboloid lathe) sitting flush
+  with the ground plane. The interior is a near-black radial gradient
+  with the spiral-swirl GLSL (~20 lines, V1 deferred this as
+  "nice-to-have") adapted to disc/polar UVs so the vortex visibly
+  rotates in the ground plane — the concavity is painted, the dish
+  itself is shallow enough to never clip through the ground. Around it,
+  a THICK unlit rim ring in a vivid cyan-blue (#29b6f6 default) that
+  reads as glowing, with a gentle ±3% pulse. Last-eaten props skim the
+  disc as a debris stream before absorption.
+- **Motion:** squash-and-stretch on eats (2% scale pop, 80ms), a ground
+  wake (darkened trail + dust puffs at speed) so movement reads on the
+  floor. No floating bob, no banking — a hole in the ground does not
+  lean.
+- **Identity skins** stay (V1 has 5, same ids) but are now a bright rim
+  hue over a near-black interior: blue default, plus purple, magenta,
+  orange, acid-green.
 
 **Acceptance:** 3-playtester squint test: "what is the player character?"
-answers "a vortex/whirlpool," not "a ball."
+answers "a vortex/whirlpool," not "a ball." Surfaces across the game aim
+for the flat cartoon mobile-game look of the reference, not photorealism.
 
 ## 3. Readability rules (the HUD-free layer)
 
 - **Edible glow:** edible props get a subtle edge tint in the metro accent;
-  too-big props are desaturated 30%. *(Implemented via per-instance color on
+  too-big props are dimmed 30%. *(Implemented via per-instance color on
   the instanced prop meshes — a true fresnel isn't possible per-instance;
-  the tint reads the same at gameplay distance.)* The size gate becomes
-  learnable without a tutorial (V1 has zero edibility signaling — you
-  learn by bumping).
+  the tint reads the same at gameplay distance. Instance colors also carry
+  the seeded per-metro pastel palette: buildings/vehicles bake with white
+  vertex colors and each instance picks one of 6 accent-derived pastel hues,
+  Hole.io-style; the edibility tint is modulated on top of that pick.)* The
+  size gate becomes learnable without a tutorial (V1 has zero edibility
+  signaling — you learn by bumping).
 - **Tier silhouettes:** the 7 tiers already have distinct silhouettes;
   enforce a 1.35× size step in the prop kit and keep it sacred.
 - **District vocabulary:** every metro owns 30 low-poly visual archetypes.

@@ -16,24 +16,32 @@
     --teal:#00a4bd; --cream:#f5f8fa; --gold:#f5c26b;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  html,body{width:100%;height:100%;overflow:hidden;background:#101820;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;user-select:none;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#101820;font-family:'Trebuchet MS','Segoe UI',system-ui,sans-serif;user-select:none;}
   #game{display:block;width:100%;height:100%;touch-action:none;}
 
   /* ---------- HUD ---------- */
   #hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px;pointer-events:none;z-index:5;}
   .hud-left,.hud-right{display:flex;flex-direction:column;gap:6px;}
   .hud-right{align-items:flex-end;}
-  .pill{background:rgba(16,24,32,.72);color:#fff;padding:6px 14px;border-radius:999px;font-size:14px;font-weight:600;letter-spacing:.3px;border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(4px);white-space:nowrap;}
-  .pill b{color:var(--coral);}
-  #levelTag{background:linear-gradient(135deg,var(--orange),var(--coral));border:none;font-size:13px;text-transform:uppercase;letter-spacing:1px;}
-  #timer.warn{color:#ff8a80;animation:pulse 1s infinite;}
+  /* Chunky Hole.io-style chrome: bright rounded-full pills, thick dark
+     outline, subtle inner highlight, cartoon type. */
+  .pill{background:#fff;color:#1c2733;padding:7px 16px;border-radius:999px;font-size:14px;font-weight:800;letter-spacing:.5px;border:3px solid #1c2733;box-shadow:inset 0 2px 0 rgba(255,255,255,.65),0 3px 0 rgba(28,39,51,.35);white-space:nowrap;}
+  .pill b{color:var(--orange);}
+  #levelTag{background:linear-gradient(180deg,var(--coral),var(--orange));color:#fff;font-size:13px;text-transform:uppercase;letter-spacing:1.2px;text-shadow:0 1.5px 0 rgba(28,39,51,.5);}
+  #timer{font-variant-numeric:tabular-nums;}
+  #timer.warn{color:#e02020;animation:pulse 1s infinite;}
   @keyframes pulse{50%{opacity:.55}}
-  #scorebar{width:min(42vw,340px);height:10px;background:rgba(255,255,255,.14);border-radius:99px;overflow:hidden;border:1px solid rgba(255,255,255,.15);}
-  #scorefill{height:100%;width:0%;background:linear-gradient(90deg,var(--teal),var(--coral),var(--gold));border-radius:99px;transition:width .25s;}
-  #sizehint{font-size:11.5px;color:rgba(255,255,255,.75);padding:3px 10px;background:rgba(16,24,32,.55);border-radius:99px;}
+  #scorebar{width:min(42vw,340px);height:16px;background:#1c2733;border-radius:99px;overflow:hidden;border:3px solid #1c2733;box-shadow:0 3px 0 rgba(28,39,51,.35);}
+  #scorefill{height:100%;width:0%;background:linear-gradient(90deg,#7ee236,#d8f53c);border-radius:99px;transition:width .25s;box-shadow:inset 0 2px 0 rgba(255,255,255,.5);}
+  #sizehint{font-size:11.5px;font-weight:700;letter-spacing:.3px;color:#1c2733;padding:4px 12px;background:#fff;border:2px solid #1c2733;border-radius:99px;box-shadow:0 2px 0 rgba(28,39,51,.3);}
 
   /* ---------- Banner (big center announcements) ---------- */
-  #banner{position:fixed;top:16%;left:50%;transform:translateX(-50%) scale(.7);font-size:clamp(26px,5vw,52px);font-weight:900;color:#fff;letter-spacing:2px;text-align:center;text-shadow:0 4px 30px rgba(255,92,53,.9),0 0 60px rgba(255,92,53,.5);opacity:0;pointer-events:none;z-index:8;transition:opacity .18s,transform .18s;white-space:nowrap;}
+  /* Objective speech bubble (Hole.io "Grow to Size 15!" style): white rounded
+     bubble, dark outline, little tail. ::before is the outline half of the
+     tail, ::after the white fill half. */
+  #banner{position:fixed;top:16%;left:50%;transform:translateX(-50%) scale(.7);font-size:clamp(18px,3.2vw,30px);font-weight:900;color:#1c2733;letter-spacing:.5px;text-align:center;background:#fff;padding:12px 26px;border-radius:20px;border:3px solid #1c2733;box-shadow:0 4px 0 rgba(28,39,51,.3);opacity:0;pointer-events:none;z-index:8;transition:opacity .18s,transform .18s;white-space:nowrap;max-width:92vw;}
+  #banner::before{content:'';position:absolute;left:50%;bottom:-17px;transform:translateX(-50%);width:0;height:0;border:10px solid transparent;border-top:14px solid #1c2733;}
+  #banner::after{content:'';position:absolute;left:50%;bottom:-10px;transform:translateX(-50%);width:0;height:0;border:8px solid transparent;border-top:11px solid #fff;}
   #banner.show{opacity:1;transform:translateX(-50%) scale(1);}
 
   /* ---------- Toasts (achievements) ---------- */
@@ -116,22 +124,39 @@
   .btn{min-height:44px;min-width:44px;}
 
   /* Touch zones: left half = virtual stick, right half = camera orbit. Pure
-     visual affordances (pointer-events:none) — engine input owns the actual
-     gestures. They appear only on coarse pointers AND only while the HUD is
-     up (i.e. in play), via the sibling selector — zero JS required. */
-  .touchzone{position:fixed;bottom:0;top:38%;width:50%;z-index:4;pointer-events:none;display:none;align-items:flex-end;justify-content:center;padding-bottom:9vh;color:rgba(255,255,255,.4);font-size:11.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;}
+     text affordances (pointer-events:none) — engine input owns the actual
+     gestures and the real joystick visual (#stickBase/#stickNub below).
+     They appear only on coarse pointers AND only while the HUD is up (i.e.
+     in play), via the sibling selector — zero JS required. */
+  .touchzone{position:fixed;bottom:0;top:38%;width:50%;z-index:4;pointer-events:none;display:none;align-items:flex-end;justify-content:center;padding-bottom:9vh;color:rgba(255,255,255,.55);font-size:11.5px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;}
   #touchStick{left:0;}
   #touchOrbit{right:0;}
-  .touchzone::before{content:'';position:absolute;bottom:7vh;width:88px;height:88px;border-radius:50%;border:2px dashed rgba(255,255,255,.2);}
-  .touchzone span{position:relative;text-shadow:0 1px 6px rgba(0,0,0,.6);}
+  .touchzone span{position:relative;text-shadow:0 2px 0 rgba(28,39,51,.6);}
   @media (pointer:coarse){
     #hud:not(.hidden) ~ .touchzone{display:flex;}
   }
 
+  /* Virtual joystick (Hole.io-style white base ring + solid nub): appears
+     where the left-half finger lands and follows the drag. Driven per-frame
+     from src/engine/input.js's stick state by main.js — coarse pointers
+     only, desktop never sees it. */
+  #stickBase{position:fixed;left:0;top:0;width:110px;height:110px;border-radius:50%;background:rgba(255,255,255,.16);border:3px solid rgba(255,255,255,.6);box-shadow:0 2px 14px rgba(0,0,0,.3);z-index:5;pointer-events:none;display:none;}
+  #stickNub{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:#fff;border:3px solid rgba(28,39,51,.3);box-shadow:0 2px 8px rgba(0,0,0,.35),inset 0 2px 0 rgba(255,255,255,.9);}
+  @media (pointer:coarse){
+    #hud:not(.hidden) ~ #stickBase.show{display:block;}
+  }
+
+  /* "Size N" pill pinned under the player hole (blue gradient, white bold
+     text, dark outline) — positioned each frame by overlays.js setSizePill()
+     from the avatar's projected rim. Hidden whenever the HUD is. */
+  #sizePill{position:fixed;left:0;top:0;transform:translateX(-50%);z-index:6;pointer-events:none;opacity:0;transition:opacity .15s;background:linear-gradient(180deg,#4fc3ff,#1e88e5);color:#fff;font-size:14px;font-weight:900;letter-spacing:.5px;padding:5px 16px;border-radius:999px;border:3px solid #1c2733;box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 3px 0 rgba(28,39,51,.35);white-space:nowrap;text-shadow:0 1.5px 0 rgba(28,39,51,.55);}
+  #sizePill.show{opacity:1;}
+  #hud.hidden ~ #sizePill{opacity:0 !important;}
+
   /* Screen-space corner minimap (game-design §2). Canvas is injected by
      src/ui/minimap.js; this styles the container + canvas chrome. */
   #minimap{position:fixed;right:14px;bottom:14px;width:96px;height:96px;z-index:6;pointer-events:none;transition:opacity .3s;}
-  #minimap canvas{display:block;width:96px;height:96px;border-radius:12px;border:1px solid rgba(255,255,255,.16);box-shadow:0 4px 18px rgba(0,0,0,.45);}
+  #minimap canvas{display:block;width:96px;height:96px;border-radius:14px;border:3px solid #1c2733;box-shadow:0 4px 0 rgba(28,39,51,.35);}
 
   /* Duelist telegraph (game-design §4): screen-edge arrow, rotated toward the
      approaching Duelist by overlays.js setDuelistTelegraph(). */
@@ -139,7 +164,7 @@
   #telegraph.show{opacity:1;animation:pulse 0.8s infinite;}
 
   /* Wedge-wobble lock badge (game-design §3): pinned over a too-big prop. */
-  #lockBadge{position:fixed;left:0;top:0;transform:translate(-50%,-125%);z-index:7;pointer-events:none;opacity:0;transition:opacity .15s;background:rgba(16,24,32,.85);border:1px solid rgba(255,255,255,.25);color:#fff;font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap;}
+  #lockBadge{position:fixed;left:0;top:0;transform:translate(-50%,-135%);z-index:7;pointer-events:none;opacity:0;transition:opacity .15s;background:#fff;border:3px solid #1c2733;color:#1c2733;font-size:12px;font-weight:800;padding:4px 11px;border-radius:99px;box-shadow:0 2px 0 rgba(28,39,51,.3);white-space:nowrap;}
   #lockBadge.show{opacity:1;}
 
   /* Level-1 tutorial pointer hand (content §5, beat 1). */
@@ -147,8 +172,9 @@
   #tutHand.show{opacity:1;animation:pointBob 1s ease-in-out infinite;}
   @keyframes pointBob{50%{transform:translateX(-50%) translateY(-14px)}}
 
-  /* One transient line, never a modal (content §5). */
-  #oneLiner{position:fixed;left:50%;bottom:20%;transform:translateX(-50%) translateY(8px);z-index:7;pointer-events:none;opacity:0;transition:opacity .25s,transform .25s;background:rgba(16,24,32,.85);border:1px solid var(--teal);color:#fff;font-size:clamp(14px,2.2vw,18px);font-weight:700;padding:10px 22px;border-radius:99px;white-space:nowrap;max-width:92vw;}
+  /* One transient line, never a modal (content §5). Same speech-bubble
+     chrome as #banner, pill-shaped and tail-less. */
+  #oneLiner{position:fixed;left:50%;bottom:20%;transform:translateX(-50%) translateY(8px);z-index:7;pointer-events:none;opacity:0;transition:opacity .25s,transform .25s;background:#fff;border:3px solid #1c2733;color:#1c2733;font-size:clamp(14px,2.2vw,18px);font-weight:800;padding:9px 20px;border-radius:99px;box-shadow:0 3px 0 rgba(28,39,51,.3);white-space:nowrap;max-width:92vw;}
   #oneLiner.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
   /* District-card mechanic intro line (content §5 — one line, never a modal). */
@@ -224,6 +250,12 @@
 <div id="lockBadge" aria-hidden="true">🔒 Too big — grow first</div>
 <div id="tutHand" aria-hidden="true">👆</div>
 <div id="oneLiner" aria-live="polite"></div>
+
+<!-- Hole.io-style size pill under the player hole (positioned by overlays.js setSizePill) -->
+<div id="sizePill" aria-hidden="true">Size 1</div>
+
+<!-- Virtual joystick: base ring + nub follow the left-half touch (input.js stick state, driven by main.js) -->
+<div id="stickBase" aria-hidden="true"><div id="stickNub"></div></div>
 
 <!-- START -->
 <div class="overlay" id="startScreen">

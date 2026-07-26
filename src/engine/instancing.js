@@ -8,7 +8,9 @@
 //
 // Edibility signaling (art §3) runs through instance colors: edible props
 // get a tint-shift toward the metro accent (instance colors can't do a true
-// fresnel — documented fallback), too-big props are desaturated 30%.
+// fresnel — documented fallback), too-big props are dimmed 30%. Instance
+// colors also carry the Hole.io-style per-instance pastel palette picks
+// (buildings/vehicles; seeded — see set()), with edibility modulated on top.
 //
 // Blob shadows (art §5 / tech §1): a single extra InstancedMesh of flat
 // dark circles under the props instead of shadow maps.
@@ -25,10 +27,20 @@
 // convention: engine may, systems/content/data/meta may NOT). propkit is
 // injected so engine never imports from content/. No DOM access anywhere.
 import * as THREE from 'three';
+import { mulberry32, hashStr } from '../data/seeds.js';
 
 const FOG_CULL_MARGIN = 1.2;  // props beyond 1.2x fog distance skip updates
 const SHADOW_COLOR = 0x000000;
 const SHADOW_OPACITY = 0.32;
+
+// Kinds that get Hole.io-style per-instance pastel hue variety (propkit's
+// metroPalette). These kinds bake their instanced geometry with a neutral
+// white accent (propkit.PALETTE_BASE_KINDS), so the instance color IS the
+// body color — no accent-ratio math. Small clutter (trash, bikes) keeps the
+// accent-derived vertex colors; golden groups keep propkit's gold.
+const FALLBACK_PALETTE_KINDS = new Set([
+  'building-small', 'building-medium', 'building-large', 'car', 'bus',
+]);
 
 // Per-instance state for the edibility tint (Uint8 per prop).
 const EDIBILITY_UNSET = 0;
@@ -40,11 +52,14 @@ const EDIBILITY_TOO_BIG = 2;
  *   scene: THREE.Scene,
  *   propkit: { createInstancedPropField: Function }, // src/content/propkit.js
  *   accent?: string,   // metro accent — geometry vertex-color tint AND the edible glow
+ *   seed?: number,     // level/layout seed — drives the per-instance pastel
+ *     palette picks (buildings/vehicles). Deterministic: same seed ⇒ same
+ *     colors; omitted ⇒ palette derived from the accent hash.
  *   goldenTint?: string, // retained for API stability; the golden group's
  *     gold read now comes from propkit's opts.golden instance colors
  * }} opts
  */
-export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textures = null } = {}) {
+export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textures = null, seed } = {}) {
   // groups: key `${kind}|${golden ? 1 : 0}` ->
   //   { kind, golden, mesh, slots: [propIndex per slot], baseColors: [Color] }
   const groups = new Map();
@@ -78,6 +93,20 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
   const tmpTintColor = new THREE.Color();
   const accentColor = new THREE.Color(accent);
   const hiddenScale = new THREE.Vector3(0, 0, 0);
+
+  // Per-metro pastel palette (propkit.metroPalette) + the seeded pick stream
+  // that assigns one palette entry per building/vehicle instance in set().
+  // Sequential over the prop roster (layout order is seeded and stable, and
+  // add() rebuilds append-only), so picks are reproducible across rebuilds.
+  const palette = typeof propkit.metroPalette === 'function'
+    ? propkit.metroPalette(THREE, accent, seed)
+    : null;
+  const paletteKinds = propkit.PALETTE_BASE_KINDS instanceof Set
+    ? propkit.PALETTE_BASE_KINDS
+    : FALLBACK_PALETTE_KINDS;
+  const paletteRng = mulberry32((
+    (typeof seed === 'number' ? seed >>> 0 : hashStr(String(accent))) ^ 0xC0101A
+  ) >>> 0);
 
   function identityFor(p) {
     const kind = p && typeof p.kind === 'string' ? p.kind : 'trash';
@@ -136,9 +165,11 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       const {
         kind, visualId, materialVariant, golden, count,
       } = entry;
-      // Geometry is always baked from the METRO accent (per-part vertex
-      // colors); the golden group's jackpot read comes from gold instance
-      // colors inside propkit (opts.golden), not a second geometry tint.
+      // Geometry is baked from the METRO accent (per-part vertex colors) —
+      // except palette-base kinds (buildings/vehicles), which propkit bakes
+      // with a white accent so the seeded per-instance pastel picks below
+      // carry the full body hue. The golden group's jackpot read comes from
+      // gold instance colors inside propkit (opts.golden), not a geometry tint.
       // Building kinds additionally get their realistic facade texture
       // (textures.js) when the loader provided one for this kind.
       const facadeMap = textures && textures.facades ? textures.facades[kind] : null;
@@ -178,6 +209,16 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       // tints are always computed FROM this base, never compounded.
       const base = new THREE.Color(1, 1, 1);
       if (group.mesh.instanceColor) group.mesh.getColorAt(slot, base);
+      // Hole.io-style pastel hue variety (buildings/vehicles, non-golden):
+      // these kinds bake with white vertex colors, so the instance color IS
+      // the body color — palette pick x propkit's brightness jitter. This
+      // base is what setEdibility()/pulseInstance() modulate on top of.
+      if (palette && !group.golden && paletteKinds.has(group.kind)) {
+        const pick = palette[Math.floor(paletteRng() * palette.length)];
+        const j = base.r; // propkit's neutral grey brightness jitter
+        base.setRGB(pick.r * j, pick.g * j, pick.b * j);
+        group.mesh.setColorAt(slot, base);
+      }
       group.baseColors.push(base);
     }
 
@@ -196,6 +237,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     for (let i = 0; i < props.length; i += 1) writeInstanceMatrix(i);
     for (const group of groups.values()) {
       group.mesh.instanceMatrix.needsUpdate = true;
+      if (group.mesh.instanceColor) group.mesh.instanceColor.needsUpdate = true;
       group.matrixDirty = false;
     }
     if (shadowMesh) shadowMesh.instanceMatrix.needsUpdate = true;
@@ -318,8 +360,10 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     tmpColor.copy(group.baseColors[slot]);
     if (edible) {
       // Soft blend toward the accent + slight brighten — reads as a glow
-      // rim against the dimmed too-big props without flattening the palette.
-      tmpColor.lerp(accentColor, 0.30).multiplyScalar(1.10);
+      // rim against the dimmed too-big props without flattening the palette
+      // (the base color now carries the per-instance pastel palette pick,
+      // so the modulation stays ON TOP of it).
+      tmpColor.lerp(accentColor, 0.30).multiplyScalar(1.15);
     } else {
       tmpColor.multiplyScalar(0.7); // dim 30%
     }

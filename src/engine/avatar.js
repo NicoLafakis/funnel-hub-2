@@ -1,17 +1,19 @@
-// The player avatar: a dark-matter VORTEX, not a ball (art-direction §2,
-// flaw D3 — the V1 "purple sphere + wireframe shell" read as "a ball" in
-// live playtests). The sphere silhouette stays (it reads at any size), but
-// the body is now: an emissive swirl shader on the core (rotating spiral UV,
-// ~20 lines of GLSL), a rim energy ring lying flat on the ground like a
-// suction disc, and a pooled debris stream of last-eaten props orbiting
-// briefly before absorption.
+// The player avatar: a ground-flush VORTEX DISC, not a ball (art-direction
+// §2 — Hole.io reference: the hero is a hole in the ground, not a floating
+// sphere). The body is: a shallow concave funnel (paraboloid lathe) whose
+// interior is a near-black radial gradient with the rotating spiral-swirl
+// GLSL adapted to disc/polar UVs (lathe u = angle, v = throat→rim), plus a
+// THICK unlit rim ring at ground level in a vivid cyan-blue that reads as
+// glowing, plus a pooled debris stream of last-eaten props skimming the
+// disc before absorption.
 //
-// Motion juice (art §2/§5): 2% squash-pop on eat (80ms), banking into turns
-// (roll ±10° from lateral velocity), and a ground wake (darkened trail
-// decals + dust puffs at speed) so movement reads on the floor.
+// Motion juice (art §2/§5): 2% squash-pop on eat (80ms), a gentle rim pulse
+// (±3% scale/opacity), and a ground wake (darkened trail decals + dust
+// puffs at speed) so movement reads on the floor. The V1 sphere's floating
+// tilt/banking is gone — a hole in the ground does not lean.
 // `reducedMotion = true` (tech §6, prefers-reduced-motion) disables the
-// debris stream, wake decals, and dust puffs; movement, banking, and the
-// eat-pop stay (they are readability, not shake).
+// debris stream, wake decals, and dust puffs; movement and the eat-pop
+// stay (they are readability, not shake).
 //
 // Movement math is EXACTLY V1's (speed 340 u/s, radius 26+sqrt(mass)*1.9,
 // growth drag 60/max(60,r)) — the logic suite asserts per-frame displacement
@@ -21,74 +23,67 @@
 // createAvatar(), so a bare `import` of this file never throws in Node.
 import { createPool } from './pools.js';
 
-// Identity skins (art §2): V1's 5 skins kept as a setSkin() API, but they
-// now differ in MATERIAL character (matte / metallic / emissive), not just
-// rim color. With the core's ShaderMaterial, "material" is expressed through
-// the swirl uniforms: uGloss (rim/specular strength), uSwirl (band contrast)
-// and the palette pair.
+// Identity skins (art §2): same 5 ids as V1 (save data references them),
+// but every skin is now a BRIGHT rim hue over a near-black interior — the
+// swirl bands are a dim shade of the rim hue (colorB), the throat fades to
+// near-black (colorA). `swirl` sets band contrast, `ringOpacity` the rim's
+// base opacity (pulsed ±3% per frame).
 export const SKINS = {
-  // Default: the classic near-black purple vortex, emissive-forward.
+  // Default: the Hole.io cyan-blue rim over a blue-black throat.
   void: {
-    colorA: 0x0d0014, colorB: 0x7a2bd0, ring: 0x00a4bd,
-    gloss: 0.35, swirl: 1.0, ringOpacity: 0.55,
+    colorA: 0x04060c, colorB: 0x1b6fa8, ring: 0x29b6f6,
+    swirl: 1.0, ringOpacity: 0.95,
   },
-  // Matte: flat basalt, low rim — the understated one.
+  // Purple rim, violet-black throat.
   basalt: {
-    colorA: 0x1a1d22, colorB: 0x4d5866, ring: 0x8fb8d9,
-    gloss: 0.08, swirl: 0.45, ringOpacity: 0.3,
+    colorA: 0x070510, colorB: 0x5a3aa8, ring: 0xa259ff,
+    swirl: 0.8, ringOpacity: 0.95,
   },
-  // Metallic: chrome with a hard fresnel rim.
+  // Magenta rim, wine-black throat.
   chrome: {
-    colorA: 0x2b3138, colorB: 0xb9c6d4, ring: 0xd7e6f2,
-    gloss: 1.1, swirl: 0.6, ringOpacity: 0.45,
+    colorA: 0x0c0510, colorB: 0x983380, ring: 0xf044c8,
+    swirl: 0.7, ringOpacity: 0.95,
   },
-  // Emissive: deep ember core, hot bands, strong glow.
+  // Orange rim, ember-black throat.
   ember: {
-    colorA: 0x1a0500, colorB: 0xff5a1f, ring: 0xffb347,
-    gloss: 0.5, swirl: 1.3, ringOpacity: 0.7,
+    colorA: 0x0d0703, colorB: 0xa85e18, ring: 0xff9f1c,
+    swirl: 1.2, ringOpacity: 0.95,
   },
-  // Toxic: acid-green swirl, sickly bright ring.
+  // Acid-green rim, toxic-black throat.
   toxic: {
-    colorA: 0x04140a, colorB: 0x39ff88, ring: 0xa4ff4f,
-    gloss: 0.45, swirl: 1.15, ringOpacity: 0.65,
+    colorA: 0x041008, colorB: 0x259c58, ring: 0x39ff88,
+    swirl: 1.1, ringOpacity: 0.95,
   },
 };
 export const SKIN_NAMES = Object.keys(SKINS);
 
 const SWIRL_VERTEX = /* glsl */ `
   varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vView;
   void main() {
     vUv = uv;
-    vNormal = normalize(normalMatrix * normal);
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    vView = -mv.xyz;
-    gl_Position = projectionMatrix * mv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
-// Rotating spiral UV (art §2's "~20 lines of GLSL"): polar spiral bands in
-// UV space rotating over time, plus a fresnel rim so the sphere edge glows
-// like an event horizon. Bands fade toward the UV pole to hide the seam.
+// Rotating spiral on disc/polar UVs (art §2's "~20 lines of GLSL", adapted
+// from the V1 sphere version): lathe UVs give u = angle around the disc and
+// v = 0 at the throat → 1 at the rim, which IS polar space. Spiral bands
+// rotate over time; a radial falloff sinks the throat to near-black so the
+// shallow dish reads as a deep funnel (the concavity is painted, not
+// geometric — the mesh stays essentially flush with the ground).
 const SWIRL_FRAGMENT = /* glsl */ `
   uniform float uTime;
   uniform vec3 uColorA;
   uniform vec3 uColorB;
-  uniform float uGloss;
   uniform float uSwirl;
   varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vView;
   void main() {
-    vec2 c = vUv - 0.5;
-    float ang = atan(c.y, c.x);
-    float rad = length(c) * 2.0;
-    float spiral = sin(ang * 3.0 + rad * 9.0 - uTime * 2.2) * uSwirl;
-    float bands = smoothstep(-0.2, 0.9, spiral) * (1.0 - smoothstep(0.75, 1.0, rad));
+    float ang = vUv.x * 6.28318;
+    float rad = vUv.y;
+    float spiral = sin(ang * 3.0 + rad * 10.0 - uTime * 2.4) * uSwirl;
+    float bands = smoothstep(-0.2, 0.9, spiral) * smoothstep(0.12, 0.9, rad);
     vec3 col = mix(uColorA, uColorB, bands);
-    float fres = pow(1.0 - abs(dot(normalize(vNormal), normalize(vView))), 2.0);
-    col += uColorB * fres * (0.4 + uGloss);
+    col *= 0.22 + 0.78 * smoothstep(0.0, 0.75, rad);
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -98,69 +93,137 @@ const BASE_SPEED = 340;
 
 const EAT_POP_SCALE = 0.02;   // 2% squash-and-stretch pop
 const EAT_POP_SECONDS = 0.08; // 80ms
-const BANK_MAX = 10 * (Math.PI / 180); // ±10° roll from lateral velocity
+
+// Ground-stack heights (world units): ground plane y=0, prop blob shadows
+// 0.15 (instancing.js), wake decals 0.25, funnel throat 0.12 → rim 0.5.
+// The rim sits above the shadows/wake but below falling props, and nothing
+// is coplanar, so no z-fighting and no renderOrder tricks are needed.
+const RIM_Y = 0.5;
+const THROAT_Y = 0.12;
+const FUNNEL_DEPTH = RIM_Y - THROAT_Y; // lathe geometry is 1.0 deep; scaled to this
+const WAKE_Y = 0.25;
+const RIM_PULSE = 0.03;       // ±3% scale/opacity
+const RIM_PULSE_SPEED = 3.0;  // rad/s
 
 const DEBRIS_POOL_SIZE = 14;
-const DEBRIS_LIFE = 0.9;      // seconds orbiting before absorption
+const DEBRIS_LIFE = 0.9;      // seconds skimming the disc before absorption
 const WAKE_POOL_SIZE = 20;
 const WAKE_LIFE = 1.1;
 const WAKE_INTERVAL = 0.09;   // seconds between trail decals at speed
 const DUST_POOL_SIZE = 12;
 const DUST_LIFE = 0.5;
 
-export function createAvatar(scene, THREE) {
-  const object3D = new THREE.Group();
-  // Inner group carries the visual-only transforms (forward tilt, banking
-  // roll, eat-pop) so object3D.rotation.y stays a pure facing angle for
-  // camera.js and gameplay code.
-  const inner = new THREE.Group();
-  object3D.add(inner);
+// The ground-flush HOLE VISUAL shared by the player avatar and the rival
+// flywheels (main.js builds rivals with this too): a swirl-shaded paraboloid
+// funnel plus the thick unlit rim ring. The returned group is meant to live
+// inside a parent scaled to the hole's world radius (both the avatar and
+// rivals.js follow that convention); update(dt, radius) keeps the disc
+// flush with the ground and animates the swirl + rim pulse.
+export function createHoleVisual(THREE, {
+  rim, colorA, colorB, swirl = 1, ringOpacity = 0.95,
+}) {
+  const group = new THREE.Group();
 
-  // Core: sphere with the swirl shader — the vortex body.
-  const coreGeo = new THREE.SphereGeometry(1, 32, 24);
+  // Interior: shallow paraboloid funnel (lathe), rim radius 1.0, depth 1.0
+  // (scaled down to FUNNEL_DEPTH world units per frame — see update()). The
+  // swirl shader paints it from a near-black throat to the rim-hue bands.
+  const funnelPoints = [];
+  for (let i = 0; i <= 16; i += 1) {
+    const t = i / 16;
+    const x = Math.max(0.001, t);
+    funnelPoints.push(new THREE.Vector2(x, -(1 - x * x))); // paraboloid, y: -1 → 0
+  }
+  const funnelGeo = new THREE.LatheGeometry(funnelPoints, 48);
   const coreUniforms = {
     uTime: { value: 0 },
-    uColorA: { value: new THREE.Color(SKINS.void.colorA) },
-    uColorB: { value: new THREE.Color(SKINS.void.colorB) },
-    uGloss: { value: SKINS.void.gloss },
-    uSwirl: { value: SKINS.void.swirl },
+    uColorA: { value: new THREE.Color(colorA) },
+    uColorB: { value: new THREE.Color(colorB) },
+    uSwirl: { value: swirl },
   };
   const coreMat = new THREE.ShaderMaterial({
     uniforms: coreUniforms,
     vertexShader: SWIRL_VERTEX,
     fragmentShader: SWIRL_FRAGMENT,
+    side: THREE.DoubleSide,
   });
-  const core = new THREE.Mesh(coreGeo, coreMat);
-  inner.add(core);
+  const funnel = new THREE.Mesh(funnelGeo, coreMat);
+  group.add(funnel);
 
-  // Rim energy ring: a flat suction disc on the ground (art §2). Lives under
-  // object3D so its radius scales with the avatar; its local y is corrected
-  // every frame so it hugs the ground plane regardless of scale.
-  const ringGeo = new THREE.RingGeometry(1.04, 1.22, 48);
+  // Rim: a THICK flat ring at ground level in the bright rim hue —
+  // MeshBasicMaterial (unlit, reads as glowing) at ~0.95 opacity with a
+  // gentle ±3% pulse. Inner edge tucks under the funnel's rim (0.92 < 1.0)
+  // so the seam stays hidden through the pulse.
+  const ringGeo = new THREE.RingGeometry(0.92, 1.14, 48);
   const ringMat = new THREE.MeshBasicMaterial({
-    color: SKINS.void.ring,
+    color: rim,
     transparent: true,
-    opacity: SKINS.void.ringOpacity,
-    blending: THREE.AdditiveBlending,
+    opacity: ringOpacity,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.rotation.x = -Math.PI / 2;
-  object3D.add(ring);
-  let ringSpin = 0;
+  group.add(ring);
+  let baseRingOpacity = ringOpacity;
 
-  // Debris stream: pooled shards of last-eaten props orbiting just outside
-  // the core, shrinking into it (pooled per tech §1 — zero alloc per eat).
+  function setColors(colors) {
+    if (typeof colors.colorA === 'number') coreUniforms.uColorA.value.set(colors.colorA);
+    if (typeof colors.colorB === 'number') coreUniforms.uColorB.value.set(colors.colorB);
+    if (typeof colors.swirl === 'number') coreUniforms.uSwirl.value = colors.swirl;
+    if (typeof colors.rim === 'number') ringMat.color.set(colors.rim);
+    if (typeof colors.ringOpacity === 'number') {
+      baseRingOpacity = colors.ringOpacity;
+      ringMat.opacity = baseRingOpacity;
+    }
+  }
+
+  // `radius` is the world radius the PARENT group is scaled to this frame —
+  // the heights below are divided back out so the disc stays ground-flush
+  // regardless of that scale (funnel depth is a fixed world height, not a
+  // fraction of r — a deeper dish would sink below the opaque ground plane
+  // and get clipped flat anyway).
+  function update(dt, radius) {
+    // Swirl time — the always-on vortex identity — plus the rim pulse.
+    coreUniforms.uTime.value += dt;
+    const pulseWave = Math.sin(coreUniforms.uTime.value * RIM_PULSE_SPEED);
+    ring.scale.set(1 + RIM_PULSE * pulseWave, 1 + RIM_PULSE * pulseWave, 1);
+    ringMat.opacity = baseRingOpacity * (1 - RIM_PULSE * pulseWave);
+
+    const inv = 1 / Math.max(1, radius);
+    ring.position.y = RIM_Y * inv;
+    funnel.position.y = RIM_Y * inv;
+    funnel.scale.y = FUNNEL_DEPTH * inv;
+  }
+
+  return { group, setColors, update };
+}
+
+export function createAvatar(scene, THREE) {
+  const object3D = new THREE.Group();
+
+  // Funnel + rim come from the shared hole-visual factory (rivals use it
+  // too); the avatar adds debris stream, wake, and dust on top.
+  const hole = createHoleVisual(THREE, {
+    rim: SKINS.void.ring,
+    colorA: SKINS.void.colorA,
+    colorB: SKINS.void.colorB,
+    swirl: SKINS.void.swirl,
+    ringOpacity: SKINS.void.ringOpacity,
+  });
+  object3D.add(hole.group);
+
+  // Debris stream: pooled shards of last-eaten props skimming just above
+  // the disc, spiraling into the throat (pooled per tech §1 — zero alloc
+  // per eat).
   const debrisPool = createPool({
     initialSize: DEBRIS_POOL_SIZE,
     create: () => {
       const mesh = new THREE.Mesh(
         new THREE.TetrahedronGeometry(0.09),
-        new THREE.MeshBasicMaterial({ color: 0xb98ae0, transparent: true, opacity: 0.9 })
+        new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.9 })
       );
       mesh.visible = false;
-      inner.add(mesh);
+      object3D.add(mesh);
       return { mesh, angle: 0, height: 0, speed: 0, t: 0 };
     },
     reset: (d) => { d.mesh.visible = false; d.t = 0; },
@@ -192,7 +255,7 @@ export function createAvatar(scene, THREE) {
       const mesh = new THREE.Mesh(
         new THREE.RingGeometry(0.5, 0.9, 16),
         new THREE.MeshBasicMaterial({
-          color: 0x9fb4c4, transparent: true, opacity: 0,
+          color: 0x86d4f5, transparent: true, opacity: 0,
           blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
         })
       );
@@ -216,7 +279,6 @@ export function createAvatar(scene, THREE) {
   let inputDx = 0;
   let inputDz = 0;
   let facingAngle = 0;
-  let bankAngle = 0;
   let popTimer = 0;
   let wakeTimer = 0;
   let dustTimer = 0;
@@ -240,7 +302,7 @@ export function createAvatar(scene, THREE) {
     if (_reducedMotion) return;
     const d = debrisPool.acquire();
     d.angle = Math.random() * Math.PI * 2;
-    d.height = (Math.random() - 0.5) * 0.9;
+    d.height = Math.random(); // 0..1 skim height above the disc
     d.speed = 4 + Math.random() * 3;
     d.t = 0;
     d.mesh.visible = true;
@@ -250,12 +312,13 @@ export function createAvatar(scene, THREE) {
   function setSkin(name) {
     const skin = SKINS[name];
     if (!skin) return false;
-    coreUniforms.uColorA.value.set(skin.colorA);
-    coreUniforms.uColorB.value.set(skin.colorB);
-    coreUniforms.uGloss.value = skin.gloss;
-    coreUniforms.uSwirl.value = skin.swirl;
-    ringMat.color.set(skin.ring);
-    ringMat.opacity = skin.ringOpacity;
+    hole.setColors({
+      rim: skin.ring,
+      colorA: skin.colorA,
+      colorB: skin.colorB,
+      swirl: skin.swirl,
+      ringOpacity: skin.ringOpacity,
+    });
     return true;
   }
 
@@ -263,8 +326,6 @@ export function createAvatar(scene, THREE) {
     // --- Movement (EXACT V1 math) -----------------------------------------
     const len = Math.hypot(inputDx, inputDz);
     let speed = 0;
-    let velX = 0;
-    let velZ = 0;
 
     if (len > 0.0001) {
       const nx = inputDx / len;
@@ -272,10 +333,8 @@ export function createAvatar(scene, THREE) {
       // Mild slowdown as mass grows (genre-typical), capped so it never stalls.
       const growthDrag = 60 / Math.max(60, radius());
       speed = BASE_SPEED * _speedMultiplier * Math.min(1, len) * growthDrag;
-      velX = nx * speed;
-      velZ = nz * speed;
-      object3D.position.x += velX * dt;
-      object3D.position.z += velZ * dt;
+      object3D.position.x += nx * speed * dt;
+      object3D.position.z += nz * speed * dt;
       facingAngle = Math.atan2(nx, nz);
     }
 
@@ -289,33 +348,19 @@ export function createAvatar(scene, THREE) {
     }
     object3D.scale.setScalar(r * popScale);
 
-    // Orientation: damped facing (V1's `Math.min(1, dt*6)`), forward tilt on
-    // the inner group growing with speed.
+    // Orientation: damped facing (V1's `Math.min(1, dt*6)`). No tilt, no
+    // banking — a ground-flush hole does not lean into turns.
     const damp = Math.min(1, dt * 6);
     object3D.rotation.y += (facingAngle - object3D.rotation.y) * damp;
-    const tiltTarget = Math.min(0.35, (speed / BASE_SPEED) * 0.35);
-    inner.rotation.x += (tiltTarget - inner.rotation.x) * damp;
 
-    // Banking (art §2): roll ±10° from the velocity component perpendicular
-    // to facing — the vortex leans into its turns.
-    const fX = Math.sin(facingAngle);
-    const fZ = Math.cos(facingAngle);
-    const lateral = velX * -fZ + velZ * fX; // velocity along facing-right
-    const bankTarget = speed > 0.0001
-      ? Math.max(-BANK_MAX, Math.min(BANK_MAX, -(lateral / BASE_SPEED) * BANK_MAX))
-      : 0;
-    bankAngle += (bankTarget - bankAngle) * damp;
-    inner.rotation.z = bankAngle;
+    // Swirl time, rim pulse, and the ground-flush heights all live in the
+    // shared hole visual now.
+    hole.update(dt, r);
 
-    // Swirl time + ring spin — the always-on vortex identity.
-    coreUniforms.uTime.value += dt;
-    ringSpin += dt * 0.8;
-    ring.rotation.z = ringSpin;
-    // Keep the suction disc on the ground plane: object3D sits at y=0 and is
-    // scaled by r, so a local y of 0.6/r lands the ring ~0.6 units up.
-    ring.position.y = 0.6 / Math.max(1, r);
+    // object3D is scaled by r, so world-space debris heights become local /r.
+    const inv = 1 / Math.max(1, r);
 
-    // Debris stream: orbit just outside the core, shrink to nothing over
+    // Debris stream: spiral from just outside the rim into the throat over
     // DEBRIS_LIFE seconds (absorption), then return to the pool.
     for (let i = debrisLive.length - 1; i >= 0; i--) {
       const d = debrisLive[i];
@@ -327,8 +372,12 @@ export function createAvatar(scene, THREE) {
         debrisPool.release(d);
         continue;
       }
-      const orbitR = 0.55 + 0.6 * k; // spirals inward as it dies
-      d.mesh.position.set(Math.cos(d.angle) * orbitR, d.height * k, Math.sin(d.angle) * orbitR);
+      const orbitR = 0.15 + 1.0 * k; // 1.15r → 0.15r as it dies
+      d.mesh.position.set(
+        Math.cos(d.angle) * orbitR,
+        (0.8 + 2.2 * d.height * k) * inv, // skims 0.8–3.0 world units up
+        Math.sin(d.angle) * orbitR
+      );
       d.mesh.scale.setScalar(Math.max(0.01, k));
       d.mesh.rotation.x += dt * 3;
       d.mesh.rotation.y += dt * 2;
@@ -344,7 +393,7 @@ export function createAvatar(scene, THREE) {
           const w = wakePool.acquire();
           w.t = 0;
           w.mesh.visible = true;
-          w.mesh.position.set(object3D.position.x, 0.4, object3D.position.z);
+          w.mesh.position.set(object3D.position.x, WAKE_Y, object3D.position.z);
           w.mesh.scale.setScalar(r * 0.8);
           wakeLive.push(w);
         }
@@ -357,9 +406,9 @@ export function createAvatar(scene, THREE) {
             p.baseScale = r * 0.5;
             p.mesh.visible = true;
             p.mesh.position.set(
-              object3D.position.x - fX * r * 0.8,
+              object3D.position.x - Math.sin(facingAngle) * r * 0.8,
               0.5,
-              object3D.position.z - fZ * r * 0.8
+              object3D.position.z - Math.cos(facingAngle) * r * 0.8
             );
             dustLive.push(p);
           }

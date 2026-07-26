@@ -35,6 +35,9 @@ import map, **no bundler, no backend**, localStorage saves, static deploy.
 - `npm run test:e2e` — Playwright boot smoke (3 viewports) + scripted flow
   (uses the globally installed Playwright, `process.env.APPDATA +
   "/npm/node_modules/playwright"`, from `.cjs` scripts)
+- `npm run models` — Blender prop pack: headless Blender rebuilds
+  `assets/models/*.glb`, then `scripts/glb-to-js.js` converts them to the
+  JS data modules the runtime actually loads (`src/content/modelkit.js`).
 - `npm run build` / `npm run ship` — dist build / pre-deploy checklist
   (ship never deploys by default)
 - `node scripts/leonardo.js` — art pipeline (key from `.leonardo-key`,
