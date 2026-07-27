@@ -1920,3 +1920,90 @@ Every number here is a claim about footprint RECTANGLES computed from the
 descriptor. Nobody has looked at any of it in a browser. "Buried" means two
 rectangles interpenetrate in the data, not that anyone has seen a bin inside a
 wall on screen. The visual verification pass is owed regardless.
+
+## 20. Handoff to Task C (prop variety and taxonomy) — 2026-07-27
+
+Written at the end of the placement work for whoever picks up "parks, sights,
+monuments, statues, different types of buildings that represent different use
+cases". Task C is additive polish on top of §18 and §19; none of it is blocked.
+
+### What is newly available, and unused
+
+**The `zone` tag is now honest** (§18). Before, every building reported
+`zone: 'corner'` because the tag was hardcoded to the plan's first pool. It now
+records the pool the site actually came from:
+
+| value | meaning |
+|---|---|
+| `corner` | anchors a block corner, open sightlines on two sides |
+| `frontage` | mid-terrace infill in a contiguous street wall |
+| `spill` | budgeted into one pool, landed in another |
+| `loose` | defensive fallback, seeded point on the world square |
+
+**A corner anchor and a mid-terrace infill are genuinely different buildings in
+a real city** — the corner gets the bank, the pub, the department store with two
+display frontages; the terrace gets the narrow shopfronts. That distinction now
+exists in the data and nothing consumes it yet. It is the most direct hook for
+"different types of buildings that represent different use cases" and it costs
+nothing to read.
+
+**Frontage is an ORDERED run** (§18). A terrace is a sequence of adjacent slots,
+not a set of unrelated sites, so a treatment can vary monotonically ALONG it —
+band phase, shopfront colour, roofline step — giving a street of distinct
+premises instead of a repeated tile. Ordering is free; see the constraint below
+before planning to act on it.
+
+### Constraints that will bite
+
+**Only `.color` survives the instancing geometry merge.** Per-part materials are
+not currently possible without breaking the draw-call budget. Facades are keyed
+by building KIND in `src/content/textures.js` (mat2's work: window grids,
+shopfront bands, rooflines). Any taxonomy that needs per-building surface
+variation runs into this wall — the ordering hook is free, acting on it is not.
+Flagged, not solved, and it has been flagged since the original brief.
+
+**New props must register in the occupancy grid** (§19), or they will be placed
+inside existing geometry and undo part of the fix. Any new site pool must
+consult `occupancy.blocked()` at placement, exactly as the existing ones do. A
+pool that skips it reintroduces the defect §19 exists to fix, and no gate will
+catch it — the overlap number is INFORMATIONAL by design.
+
+**Adding props raises the residue.** 4,859 props already keep an overlapping
+site after exhausting `MAX_SITE_TRIES`. More props on the same ground means more
+of them; check `stats.keptOverlapping` after any count change rather than
+assuming the fix absorbs it.
+
+**Density is already far above the reference.** The original brief's reference
+is ~20-25 props per hectare; this map runs at ~102. Task C should lean toward
+VARIETY at the current count, not more props — and the placement principle in
+the brief still stands: clutter belongs at the kerb line and the building
+frontage, open ground stays open.
+
+### Already judged, do not re-derive (§18)
+
+* **Alleys** — cheap to gap a run, but a gap with no ground treatment is a
+  missing building rather than a place. Needs a ground surface class and a
+  block-interior route.
+* **Elevated rail** — does not fall out of the placement work at all. New
+  geometry, new prop kind, cross-block route, draw-call review.
+* **Facade variation along a terrace** — the cheap one, and the hook the
+  built-out blocks created. Gated by the `.color` constraint above.
+
+### Two live hazards inherited
+
+* **Mega props** (§17) — the draw filters `tierIndex >= 4` and treats tiers 4-6
+  as interchangeable, then applies `mass *= 3` and `scaleMult = 1.6`. Scaling a
+  prop UP makes it edible LATER, concentrating mass at the end of the route.
+  Same fragility shape as the golden lottery, live from L26+, needs its own
+  40-run grid. Do not assume it is fine because the goldens now are.
+* **Mega scaling happens AFTER placement**, so a mega prop grows into whatever
+  is beside it. `buildingPitch()` allows for the 1.6x multiplier; anything new
+  that can be scaled after placement must do the same.
+
+### The standing caveat
+
+Nothing in §17, §18 or §19 has been seen in a browser. Every claim is about
+footprint rectangles in the descriptor. The visual verification pass is owed and
+should run before Task C commits to a taxonomy, because it may reveal that the
+overlap metric does not match what the eye actually notices — in either
+direction.
