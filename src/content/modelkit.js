@@ -30,6 +30,16 @@ export const PROP_MODELS = Object.freeze({
     person: 'person',
     streetlamp: 'streetlamp',
     car: 'car',
+    // Authored building tiers (0003 §4.3): the procedural bake is a box with
+    // thin window-band boxes and no street-level read at all, which is most of
+    // why the skyline looked like grey slabs next to the reference. These carry
+    // shopfronts, awnings, punched/ribbon windows, parapets and roof plant, and
+    // each tier is given a deliberately different read — small = wide and
+    // horizontal, medium = banded mid-rise, large = vertical curtain-wall
+    // tower — so the size ladder still parses at a glance.
+    'building-small': 'building_small',
+    'building-medium': 'building_medium',
+    'building-large': 'building_large',
   }),
 });
 

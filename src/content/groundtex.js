@@ -23,10 +23,15 @@ import { mulberry32 } from '../data/seeds.js';
 // texture fills the zone: the tint is overlaid at that alpha so the baked
 // result stays as bright as the procedural path even when the source texture
 // art is dark (asphalt.png is near-black).
+// Targets are pulled toward the reference set (assets/references/holeio/):
+// carriageways are a LAVENDER grey rather than a neutral one, and pavements
+// and plazas are a cool cream. The old neutral grey read as wet tarmac and
+// gave the road/kerb pair almost no hue separation, so at the reference camera
+// distance the whole district flattened into one grey field.
 export const GROUND_ZONE_MIX = {
-  asphalt: { target: '#8a8f98', t: 0.7, wash: 0.6 },
-  curb: { target: '#d9cfae', t: 0.35, wash: 0.25 },
-  plaza: { target: '#e8e0cc', t: 0.5, wash: 0.3 },
+  asphalt: { target: '#8f86a3', t: 0.72, wash: 0.62 },
+  curb: { target: '#ded7e2', t: 0.42, wash: 0.3 },
+  plaza: { target: '#e9e4ef', t: 0.55, wash: 0.32 },
   grass: { target: '#63c74d', t: 0.65, wash: 0.25 },
   block: { target: '#ffffff', t: 0.06, wash: 0 },
 };
@@ -164,23 +169,43 @@ export function bakeGroundTexture(layout, opts = {}) {
   // canvas space describeGround() rasterizes (canvas x = world x, canvas y =
   // world z; local +X maps to world (cos rotY, -sin rotY), so the canvas
   // rotation is -rotY). Cheap realism the procedural tint could never read.
+  // Markings are BRIGHT WHITE and near-opaque, and every street gets solid
+  // edge lines as well as the dashed centre. The old 0.5-alpha beige dashes
+  // were barely visible against the carriageway, which is most of why the
+  // roads read as undifferentiated grey bands; in the reference the lane
+  // paint is one of the strongest value contrasts on screen.
   if (opts.roadMarkings !== false) {
     const k = size / world;
-    ctx.strokeStyle = 'rgba(235,228,190,0.5)';
-    ctx.lineWidth = Math.max(1.2, 2.4 * k);
-    ctx.setLineDash([12 * k, 10 * k]);
+    ctx.lineCap = 'butt';
     for (const st of layout.streets || []) {
       if (st.w * k < 30) continue;
+      const halfLen = st.w * k / 2;
+      const halfWide = st.d * k / 2;
       ctx.save();
       ctx.translate((st.x + world / 2) * k, (st.z + world / 2) * k);
       ctx.rotate(-(st.rotY || 0));
+
+      // Solid edge lines, inset from the kerb by roughly a lane margin.
+      ctx.strokeStyle = 'rgba(255,255,255,0.72)';
+      ctx.lineWidth = Math.max(1, 2.2 * k);
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(-halfLen + 6 * k, side * halfWide * 0.66);
+        ctx.lineTo(halfLen - 6 * k, side * halfWide * 0.66);
+        ctx.stroke();
+      }
+
+      // Dashed centre line.
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = Math.max(1.2, 3.0 * k);
+      ctx.setLineDash([14 * k, 12 * k]);
       ctx.beginPath();
-      ctx.moveTo(-st.w * k / 2 + 6 * k, 0);
-      ctx.lineTo(st.w * k / 2 - 6 * k, 0);
+      ctx.moveTo(-halfLen + 6 * k, 0);
+      ctx.lineTo(halfLen - 6 * k, 0);
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.restore();
     }
-    ctx.setLineDash([]);
   }
 
   // 64x64 deterministic value noise over everything (art §1's cheap

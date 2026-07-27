@@ -107,11 +107,33 @@ const RIM_PULSE_SPEED = 3.0;  // rad/s
 
 const DEBRIS_POOL_SIZE = 14;
 const DEBRIS_LIFE = 0.9;      // seconds skimming the disc before absorption
+// Ground wake. Sized and faded WAY down from the original r*0.8 discs at 0.28
+// opacity: at the reference camera framing those read as a chain of big grey
+// puddles dragging behind the hole, not motion. The reference has no wake at
+// all; this keeps a faint scuff so speed still registers on the floor.
 const WAKE_POOL_SIZE = 20;
-const WAKE_LIFE = 1.1;
+const WAKE_LIFE = 0.55;
 const WAKE_INTERVAL = 0.09;   // seconds between trail decals at speed
+const WAKE_SCALE = 0.34;      // fraction of avatar radius
+const WAKE_OPACITY = 0.10;
+// Dust puffs, likewise pulled back: at r*0.5 growing 2.5x with 0.22 additive
+// opacity these bloomed into a pale disc wider than the hole itself, reading
+// as a grey smudge parked under the player rather than as speed.
 const DUST_POOL_SIZE = 12;
 const DUST_LIFE = 0.5;
+const DUST_SCALE = 0.22;    // fraction of avatar radius
+const DUST_OPACITY = 0.14;
+
+const TAU = Math.PI * 2;
+
+// Signed shortest angular distance from `from` to `to`, wrapped to (-PI, PI].
+// Exported so the logic suite can assert the wrap directly.
+export function shortestAngleTo(from, to) {
+  let d = (to - from) % TAU;
+  if (d > Math.PI) d -= TAU;
+  else if (d <= -Math.PI) d += TAU;
+  return d;
+}
 
 // The ground-flush HOLE VISUAL shared by the player avatar and the rival
 // flywheels (main.js builds rivals with this too): a swirl-shaded paraboloid
@@ -350,8 +372,15 @@ export function createAvatar(scene, THREE) {
 
     // Orientation: damped facing (V1's `Math.min(1, dt*6)`). No tilt, no
     // banking — a ground-flush hole does not lean into turns.
+    //
+    // The difference MUST be wrapped to (-PI, PI] first: facingAngle comes
+    // from Math.atan2 and so lives in (-PI, PI], while rotation.y accumulates
+    // unbounded. Damping toward the raw difference makes the avatar spin the
+    // long way round every time atan2 wraps — measured as a +27deg snap
+    // against the steer, then a 15 Hz limit cycle
+    // (`.wiki/0003-hole-feel-and-visual-fidelity/00-findings.md` §1.3b).
     const damp = Math.min(1, dt * 6);
-    object3D.rotation.y += (facingAngle - object3D.rotation.y) * damp;
+    object3D.rotation.y += shortestAngleTo(object3D.rotation.y, facingAngle) * damp;
 
     // Swirl time, rim pulse, and the ground-flush heights all live in the
     // shared hole visual now.
@@ -394,7 +423,7 @@ export function createAvatar(scene, THREE) {
           w.t = 0;
           w.mesh.visible = true;
           w.mesh.position.set(object3D.position.x, WAKE_Y, object3D.position.z);
-          w.mesh.scale.setScalar(r * 0.8);
+          w.mesh.scale.setScalar(r * WAKE_SCALE);
           wakeLive.push(w);
         }
         if (speedFrac > 0.8) {
@@ -403,7 +432,7 @@ export function createAvatar(scene, THREE) {
             dustTimer = 0.15;
             const p = dustPool.acquire();
             p.t = 0;
-            p.baseScale = r * 0.5;
+            p.baseScale = r * DUST_SCALE;
             p.mesh.visible = true;
             p.mesh.position.set(
               object3D.position.x - Math.sin(facingAngle) * r * 0.8,
@@ -424,7 +453,7 @@ export function createAvatar(scene, THREE) {
         wakePool.release(w);
         continue;
       }
-      w.mesh.material.opacity = 0.28 * k;
+      w.mesh.material.opacity = WAKE_OPACITY * k;
     }
     for (let i = dustLive.length - 1; i >= 0; i--) {
       const p = dustLive[i];
@@ -435,8 +464,8 @@ export function createAvatar(scene, THREE) {
         dustPool.release(p);
         continue;
       }
-      p.mesh.material.opacity = 0.22 * k;
-      p.mesh.scale.setScalar(p.baseScale * (1 + (1 - k) * 1.5));
+      p.mesh.material.opacity = DUST_OPACITY * k;
+      p.mesh.scale.setScalar(p.baseScale * (1 + (1 - k) * 0.8));
     }
   }
 
