@@ -11,7 +11,10 @@
 #     sRGB palette itself) exported as COLOR_0.
 #   - GREYSCALE colors (r == g == b) mark TINTABLE verts: propkit multiplies
 #     them by the archetype tint at bake time (tree canopy / person shirt /
-#     lamp pole). White = full tint, 0.5 = darker shade, 1.18 = lighter.
+#     lamp pole). 1.0 = full tint, lower = darker shade. NOTE: values ABOVE 1.0
+#     do NOT survive — the glTF exporter clamps COLOR_0 to [0,1] — so a
+#     "lighter than the tint" step is impossible; build the ladder downward
+#     from 1.0 instead (see WALL_LIGHT / WALL / WALL_DARK below).
 #   - Non-greyscale colors are FIXED (trunk brown, skin, lamp head, car
 #     glass/wheels/trim) and ship unchanged.
 #   - The car body bakes WHITE: 'car' is a PALETTE_BASE_KIND, so the seeded
@@ -69,9 +72,13 @@ CANOPY = (0.85, 0.85, 0.85)      # tintable, canopy body (tufts stay WHITE = lig
 MID = (0.75, 0.75, 0.75)         # tintable, mid shade (lamp base)
 DARK = (0.5, 0.5, 0.5)           # tintable, darker shade (person legs)
 
-WALL = WHITE                     # tintable, main facade (full metro accent)
-WALL_DARK = (0.72, 0.72, 0.72)   # tintable, recessed ground floor / podium
-WALL_LIGHT = (1.18, 1.18, 1.18)  # tintable, cornices / floor ledges / parapets
+# Three-step tintable ladder for the buildings. COLOR_0 clamps at 1.0, so the
+# LIGHTEST step is the full metro accent and the facade sits below it — that is
+# what makes cornices/ledges/parapets read as pale trim over a coloured wall,
+# the way the Hole.io references do.
+WALL_LIGHT = (1.0, 1.0, 1.0)     # tintable, cornices / floor ledges / parapets
+WALL = (0.86, 0.86, 0.86)        # tintable, main facade
+WALL_DARK = (0.62, 0.62, 0.62)   # tintable, recessed ground floor / podium
 
 # --- Mesh helpers -------------------------------------------------------------
 def clean_scene():
@@ -361,52 +368,74 @@ def window_mullions(half, z, height, thickness=0.36, offset=1.65):
     ]
 
 
+def parapet_ring(outer, thickness, z_bottom, z_top):
+    """Roof parapet as FOUR perimeter slabs, not one solid box. A solid cap
+    would bury the ROOF-coloured deck inside it and leave the deck's top face
+    coplanar with the cap's — the ring keeps the roof colour and the roof plant
+    visible from the game's high camera, exactly like the Hole.io references."""
+    half = outer / 2
+    inner = half - thickness
+    h = z_top - z_bottom
+    z = (z_top + z_bottom) / 2
+    return [
+        (box((outer, thickness, h), (0, half - thickness / 2, z)), WALL_LIGHT),
+        (box((outer, thickness, h), (0, -(half - thickness / 2), z)), WALL_LIGHT),
+        (box((thickness, inner * 2, h), (half - thickness / 2, 0, z)), WALL_LIGHT),
+        (box((thickness, inner * 2, h), (-(half - thickness / 2), 0, z)), WALL_LIGHT),
+    ]
+
+
 def build_building_small():
-    """Tier 4 — squat 3-storey corner shophouse. Silhouette cue: WIDE, with a
-    recessed glazed shopfront under a striped-awning overhang and a single
-    chunky parapet. No mast: this tier must read as the "small" rung."""
+    """Tier 4 — squat 3-storey corner shophouse. Silhouette cue: WIDE and
+    ledge-heavy, with a glazed shopfront under a proud awning and a single
+    chunky parapet. No mast — this tier has to read as the bottom rung of the
+    three-building ladder at a glance.
+
+    The body is deliberately narrower (5.80) than the tier's nominal 7: every
+    protrusion — cornices at 6.90, then the awning at 7.16 — has to fit inside
+    the SAME bounding box, and the awning only reads if it out-projects the
+    cornice above it instead of hiding under its overhang."""
     parts = [
-        (box((6.30, 6.30, 9.90), (0, 0, 4.95)), WALL),
-        # Recessed glazed ground floor — the upper floors overhang it.
-        (box((5.90, 5.90, 3.40), (0, 0, 1.70)), WALL_DARK),
-        (box((6.05, 6.05, 2.10), (0, 0, 1.95)), WINDOW),
-        (box((1.40, 0.22, 2.60), (-1.75, 3.02, 1.30)), DOOR_GLASS),
-        (box((1.90, 0.55, 0.22), (-1.75, 3.20, 0.11)), WALL_LIGHT),
-        # Awning: tilted slab reaching exactly to the cornice line (y 3.575).
-        (box((4.40, 0.66, 0.26), (0.55, 3.22, 3.18), rot_x=-22.0), AWNING),
-        (box((2.60, 0.16, 0.70), (0.40, 3.20, 4.10)), TRIM),
-        (box((7.14, 7.16, 0.36), (0, 0, 3.58)), WALL_LIGHT),
-        (box((6.45, 6.45, 1.80), (0, 0, 5.35)), WINDOW),
+        (box((6.20, 6.20, 3.30), (0, 0, 1.65)), WALL_DARK),
+        (box((6.32, 6.32, 2.00), (0, 0, 1.80)), WINDOW),
+        (box((1.50, 0.26, 2.45), (-1.65, 3.22, 1.225)), DOOR_GLASS),
+        (box((2.00, 0.50, 0.22), (-1.65, 3.30, 0.11)), WALL_LIGHT),
+        # Awning: tilted slab, the single proudest part at y = 3.58.
+        (box((4.20, 0.70, 0.24), (0.55, 3.21, 2.90), rot_x=-20.0), AWNING),
+        (box((6.90, 6.90, 0.44), (0, 0, 3.42)), WALL_LIGHT),
+        (box((5.80, 5.80, 6.50), (0, 0, 6.65)), WALL),
+        (box((2.40, 0.20, 0.66), (0.35, 2.98, 4.10)), TRIM),
+        (box((5.95, 5.95, 1.75), (0, 0, 5.35)), WINDOW),
     ]
-    parts += window_mullions(3.30, 5.35, 1.80)
+    parts += window_mullions(3.05, 5.35, 1.75, thickness=0.34, offset=1.55)
     parts += [
-        (box((7.00, 7.00, 0.30), (0, 0, 6.42)), WALL_LIGHT),
-        (box((6.45, 6.45, 1.80), (0, 0, 7.90)), WINDOW),
+        (box((6.60, 6.60, 0.30), (0, 0, 6.45)), WALL_LIGHT),
+        (box((5.95, 5.95, 1.75), (0, 0, 7.90)), WINDOW),
     ]
-    parts += window_mullions(3.30, 7.90, 1.80)
+    parts += window_mullions(3.05, 7.90, 1.75, thickness=0.34, offset=1.55)
+    parts += [(box((6.30, 6.30, 0.40), (0, 0, 9.96)), ROOF)]
+    parts += parapet_ring(6.90, 0.40, 9.70, 10.62)
     parts += [
-        (box((7.14, 7.16, 0.72), (0, 0, 10.04)), WALL_LIGHT),
-        (box((6.40, 6.40, 0.30), (0, 0, 9.83)), ROOF),
-        (box((1.50, 1.20, 0.70), (1.50, -1.30, 10.33)), TRIM),
-        (box((1.10, 0.90, 0.12), (1.50, -1.30, 10.74)), WALL_DARK),
-        (box((2.00, 1.80, 1.02), (-1.40, 1.10, 10.49)), WALL),
-        (cyl(0.18, 0.85, (-0.30, -2.10, 10.40), vertices=6), TRIM),
+        (box((1.40, 1.15, 0.66), (1.20, -1.05, 10.49)), TRIM),
+        (box((1.05, 0.85, 0.12), (1.20, -1.05, 10.88)), WALL_DARK),
+        (box((1.90, 1.70, 0.90), (-1.20, 1.00, 10.55)), WALL),
+        (cyl(0.17, 0.78, (-0.10, -1.85, 10.49), vertices=6), TRIM),
     ]
     prop = finish_prop(parts, 'building_small')
     return fit_to_box(prop, *BUILDING_BOXES['building_small'])
 
 
 def build_building_medium():
-    """Tier 5 — mid-rise block. Silhouette cue: HORIZONTAL — five strongly
-    ledged floors over a tall glazed podium, one setback crowned with a water
-    tank on a stand, then a short mast."""
+    """Tier 5 — mid-rise block. Silhouette cue: HORIZONTAL — five ribbon-window
+    floors separated by proud ledges over a dark glazed podium, then ONE setback
+    carrying a water tank / AC / stair housing and a short mast."""
     parts = [
         (box((10.60, 10.60, 24.00), (0, 0, 12.00)), WALL),
-        (box((10.95, 10.95, 3.80), (0, 0, 1.90)), WALL_DARK),
-        (box((11.10, 11.10, 2.30), (0, 0, 1.95)), WINDOW),
-        (box((2.40, 0.24, 3.00), (0, 5.48, 1.50)), DOOR_GLASS),
-        (box((3.80, 0.80, 0.34), (0, 5.20, 3.30)), TRIM),
-        (box((11.22, 11.22, 0.52), (0, 0, 4.06)), WALL_LIGHT),
+        (box((10.75, 10.75, 3.80), (0, 0, 1.90)), WALL_DARK),
+        (box((10.90, 10.90, 2.30), (0, 0, 1.95)), WINDOW),
+        (box((2.40, 0.28, 3.00), (0, 5.47, 1.50)), DOOR_GLASS),
+        (box((3.80, 0.70, 0.34), (0, 5.26, 3.30)), TRIM),
+        (box((11.22, 11.22, 0.62), (0, 0, 4.01)), WALL_LIGHT),
     ]
     for i in range(5):
         base = 4.32 + i * 3.82
@@ -414,15 +443,15 @@ def build_building_medium():
         parts.append((box((11.08, 11.08, 0.36), (0, 0, base + 3.60)), WALL_LIGHT))
     parts += [
         (box((11.22, 11.22, 1.10), (0, 0, 23.85)), WALL_LIGHT),
-        (box((7.30, 7.30, 5.28), (0, 0, 26.64)), WALL),
-        (box((7.45, 7.45, 2.40), (0, 0, 26.40)), WINDOW),
-        (box((7.70, 7.70, 0.76), (0, 0, 28.90)), WALL_LIGHT),
-        (box((7.00, 7.00, 0.30), (0, 0, 28.67)), ROOF),
-        (box((1.80, 1.80, 0.60), (2.10, -1.70, 29.12)), WALL_DARK),
-        (cyl(1.00, 1.70, (2.10, -1.70, 30.27), vertices=8), TRIM),
-        (box((1.90, 1.50, 0.95), (-2.30, 1.70, 29.30)), TRIM),
-        (box((2.30, 2.10, 1.40), (-2.00, -2.10, 29.52)), WALL),
-        (box((1.10, 1.10, 0.50), (0, 0, 29.53)), TRIM),
+        (box((7.30, 7.30, 4.60), (0, 0, 26.30)), WALL),
+        (box((7.45, 7.45, 2.40), (0, 0, 26.30)), WINDOW),
+        (box((7.10, 7.10, 0.36), (0, 0, 28.70)), ROOF),
+    ]
+    parts += parapet_ring(7.70, 0.36, 28.40, 29.28)
+    parts += [
+        (cyl(1.00, 1.70, (2.00, -1.60, 29.73), vertices=8), TRIM),
+        (box((1.90, 1.50, 0.95), (-2.20, 1.60, 29.36)), TRIM),
+        (box((2.30, 2.10, 1.40), (-1.90, -2.00, 29.58)), WALL),
         (cyl(0.34, 6.00, (0, 0, 32.28), vertices=6), TRIM),
         (sphere(0.55, (0, 0, 35.28), segments=6, rings=3), BEACON),
     ]
@@ -432,13 +461,13 @@ def build_building_medium():
 
 def build_building_large():
     """Tier 6 — curtain-wall tower. Silhouette cue: VERTICAL — four corner
-    pilasters running the full shaft, sparse spandrel ledges, a TWO-step
-    tapering crown and a long mast, so it never reads as a taller medium."""
+    pilasters running the full shaft, sparse spandrel ledges, and a TWO-step
+    tapering crown under a long mast, so it never reads as a taller medium."""
     parts = [
         (box((14.90, 14.90, 6.20), (0, 0, 3.10)), WALL_DARK),
         (box((15.05, 15.05, 3.80), (0, 0, 2.70)), WINDOW),
-        (box((3.40, 0.30, 4.20), (0, 7.42, 2.10)), DOOR_GLASS),
-        (box((5.20, 1.20, 0.50), (0, 7.05, 4.85)), TRIM),
+        (box((3.40, 0.30, 4.20), (0, 7.50, 2.10)), DOOR_GLASS),
+        (box((5.20, 0.70, 0.50), (0, 7.30, 4.85)), TRIM),
         (box((15.30, 15.30, 0.75), (0, 0, 6.32)), WALL_LIGHT),
         (box((14.10, 14.10, 35.10), (0, 0, 23.75)), WALL),
         (box((14.35, 14.35, 33.00), (0, 0, 23.60)), WINDOW),
@@ -446,20 +475,21 @@ def build_building_large():
     for sx in (-6.60, 6.60):
         for sy in (-6.60, 6.60):
             parts.append((box((1.60, 1.60, 34.60), (sx, sy, 23.60)), WALL))
-    for i in range(6):
-        parts.append((box((14.50, 14.50, 0.40), (0, 0, 10.50 + i * 5.60)), WALL_LIGHT))
+    for i in range(5):
+        parts.append((box((14.50, 14.50, 0.42), (0, 0, 11.00 + i * 5.80)), WALL_LIGHT))
     parts += [
         (box((15.30, 15.30, 0.90), (0, 0, 41.30)), WALL_LIGHT),
         (box((11.60, 11.60, 5.20), (0, 0, 43.90)), WALL),
         (box((11.75, 11.75, 3.00), (0, 0, 43.70)), WINDOW),
         (box((12.10, 12.10, 0.60), (0, 0, 46.30)), WALL_LIGHT),
-        (box((8.40, 8.40, 4.74), (0, 0, 48.87)), WALL),
-        (box((8.55, 8.55, 2.60), (0, 0, 48.60)), WINDOW),
-        (box((8.90, 8.90, 0.80), (0, 0, 50.84)), WALL_LIGHT),
-        (box((8.10, 8.10, 0.32), (0, 0, 50.60)), ROOF),
-        (box((2.30, 1.80, 1.10), (2.30, -1.90, 51.31)), TRIM),
-        (box((2.60, 2.30, 1.70), (-2.10, 1.70, 51.61)), WALL),
-        (box((1.40, 1.40, 0.70), (0, 0, 51.59)), TRIM),
+        (box((8.40, 8.40, 4.00), (0, 0, 48.50)), WALL),
+        (box((8.55, 8.55, 2.40), (0, 0, 48.50)), WINDOW),
+        (box((8.20, 8.20, 0.40), (0, 0, 50.62)), ROOF),
+    ]
+    parts += parapet_ring(8.90, 0.40, 50.30, 51.24)
+    parts += [
+        (box((2.30, 1.80, 1.10), (2.20, -1.80, 51.37)), TRIM),
+        (box((2.60, 2.30, 1.70), (-2.00, 1.70, 51.67)), WALL),
         (cyl(0.42, 10.50, (0, 0, 56.49), vertices=6), TRIM),
         (sphere(0.75, (0, 0, 61.74), segments=6, rings=3), BEACON),
     ]
