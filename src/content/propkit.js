@@ -235,21 +235,67 @@ function standardMat(THREE, color, opts = {}) {
 // plausibly swallowable early on. Every prop's local origin sits at its own
 // base footprint center (y=0 is "on the ground"), not its geometric center,
 // so placement code can drop it straight onto a ground plane.
+// Heights are authored so that `h * kindRenderScale()` lands on the kind's
+// TRUE metric height at WORLD_UNITS_PER_METRE (see the table below the
+// dimensions). Height never feeds kindFootprintRadius, so tuning it is free:
+// it moves no gameplay quantity at all.
 const DIMENSIONS = {
-  trash: { w: 1.1, h: 0.9, d: 1.1 },
-  bike: { w: 0.55, h: 1.3, d: 1.8 },
+  trash: { w: 1.1, h: 0.77, d: 1.1 },
+  bike: { w: 0.55, h: 0.84, d: 1.8 },
   car: { w: 2.0, h: 1.5, d: 4.2 },
-  bus: { w: 2.6, h: 3.0, d: 9.0 },
+  bus: { w: 2.6, h: 3.83, d: 9.0 },
   'building-small': { w: 7, h: 11, d: 7 },
   'building-medium': { w: 11, h: 24, d: 11 },
   'building-large': { w: 15, h: 42, d: 15 },
   // Street-prop food chain (tier-0 snacks, spawn-edible — Hole.io staples).
-  // Person is a chibi on purpose (big head, tiny body): render scale is
-  // footprint-normalized to the gameplay radius, so honest 1.7m proportions
-  // would blow up to building height (same reason the bike is squat here).
-  tree: { w: 2.4, h: 3.2, d: 2.4 },
-  person: { w: 0.5, h: 0.7, d: 0.35 },
-  streetlamp: { w: 1.4, h: 2.9, d: 0.6 },
+  tree: { w: 2.4, h: 5.33, d: 2.4 },
+  person: { w: 0.5, h: 0.98, d: 0.35 },
+  streetlamp: { w: 1.4, h: 4.65, d: 0.6 },
+};
+
+// --- ART SCALE vs GAMEPLAY SCALE ---------------------------------------------
+// `kindFootprintRadius` normalises a prop's mesh to its GAMEPLAY radius, and
+// the gameplay radius is a DIFFICULTY quantity: TIER_RADII steps a sacred
+// 1.35x per tier (art-direction.md §3). The authored DIMENSIONS do NOT step
+// 1.35x, so that single normalisation silently forces a DIFFERENT
+// units-per-metre onto every kind. Measured before this split: 7.34 u/m for a
+// bus against 26.22 u/m for a pedestrian — a 3.6x spread, with these visible
+// consequences:
+//
+//   * the tier-3 BUS rendered NARROWER than the tier-2 car (19.1u vs 21.9u);
+//   * a street TREE only 1.43x a pedestrian's height (a shrub, not a tree);
+//   * no relationship whatsoever between a vehicle's width and its lane.
+//
+// The fix is a seam, not a rescale. `kindRenderScale()` is the ART quantity
+// and is the ONLY thing that drives mesh scale; `radius` stays the gameplay
+// quantity and still drives the eat gate, the mass ledger and the 1.35x
+// ladder. Nothing below changes what is edible when.
+//
+// WORLD_UNITS_PER_METRE is set from the road, which is the one dimension the
+// whole city has to agree with: streets are clamp(world*0.032, 36, 80) units
+// wide across every level (measured 77.3-80.0u), carrying two lanes, so one
+// 3.5m lane is ~38.6u and 1m ~= 11.0u.
+export const WORLD_UNITS_PER_METRE = 11.0;
+
+// Per-kind correction from the gameplay-normalised scale toward metric truth.
+// CLAMPED to +-25%: a prop rendered far from its gameplay radius stops
+// reading its own edibility tier, and edibility legibility outranks metric
+// purity. Every value below is the clamped metric-true correction
+// (WORLD_UNITS_PER_METRE / gameplay-normalised u/m), so each is either exact
+// or sitting on a clamp rail — see 00-findings.md §8 defect 3 for the
+// residual conflict this clamp encodes.
+export const RENDER_SCALE_CLAMP = 0.25;
+const RENDER_SCALE_CORRECTION = {
+  trash: 0.75,            // metric wants 0.61 — clamped
+  bike: 0.75,             // metric wants 0.55 — clamped
+  car: 1.00,              // exact: the anchor kind
+  bus: 1.25,              // metric wants 1.50 — clamped
+  'building-small': 1.17, // exact
+  'building-medium': 1.25, // metric wants 1.36 — clamped
+  'building-large': 1.25, // metric wants 1.38 — clamped
+  tree: 1.25,             // metric wants 1.33 — clamped
+  person: 0.75,           // metric wants 0.42 — clamped
+  streetlamp: 0.75,       // metric wants 0.70 — clamped
 };
 
 function buildTrash(THREE, accent) {
@@ -947,6 +993,38 @@ export function kindFootprintRadius(kind) {
   return Math.sqrt(dim.w * dim.w + dim.d * dim.d) / 2;
 }
 
+// Raw authored footprint (local X/Z, before render scale) — the placement
+// audit needs the true RECTANGLE, not the half-diagonal, to test a rotated
+// building against a street rect.
+export function kindFootprint(kind) {
+  const dim = DIMENSIONS[kind] || { w: 2, h: 2, d: 2 };
+  return { w: dim.w, d: dim.d };
+}
+
+/**
+ * ART render scale for a prop — the ONLY scale a mesh should be built at.
+ * Gameplay-normalised scale times the kind's metric correction (see
+ * RENDER_SCALE_CORRECTION). Deliberately NOT a difficulty quantity: callers
+ * must keep using `prop.radius` for the eat gate, mass and collision.
+ * @param {string} kind
+ * @param {number} radius - the prop's GAMEPLAY radius (TIER_RADII * scaleMult)
+ * @returns {number} uniform mesh scale
+ */
+export function kindRenderScale(kind, radius) {
+  const correction = RENDER_SCALE_CORRECTION[kind];
+  const c = Number.isFinite(correction)
+    ? Math.min(1 + RENDER_SCALE_CLAMP, Math.max(1 - RENDER_SCALE_CLAMP, correction))
+    : 1;
+  return (radius / kindFootprintRadius(kind)) * c;
+}
+
+// Rendered footprint half-diagonal — what the prop actually OCCUPIES on the
+// ground, as opposed to `radius`, which is what it EATS at. Placement,
+// clearance and contact shadows want this one.
+export function kindRenderFootprintRadius(kind, radius) {
+  return kindRenderScale(kind, radius) * kindFootprintRadius(kind);
+}
+
 // Raw visual height of a kind (from DIMENSIONS) — metro signatures place
 // rooflines/signage relative to it (multiplied by the prop's render scale).
 export function kindHeight(kind) {
@@ -972,7 +1050,20 @@ export function createInstancedPropField(kind, count, THREE, accentColorHex, opt
   });
   // White base material: the real per-part colors live in the vertex colors;
   // instance colors multiply on top (jitter / edibility / golden).
-  const material = standardMat(THREE, 0xffffff, { roughness: 0.85, metalness: 0.0 });
+  // Roughness 0.72 / metalness 0.0. Metalness is 0 and stays 0: every surface
+  // in this kit is a dielectric (painted metal, plastic, masonry, foliage,
+  // fabric), and painted metal is paint, not metal. The per-part standardMat()
+  // calls above carry metalness up to 0.6, but mergedKindGeometry bakes only
+  // their COLOR into the vertex attribute — the roughness/metalness on those
+  // part materials is discarded, so this one material is what the whole prop
+  // kit actually renders with. It has to be right on its own.
+  //
+  // 0.85 was flat enough that the sun contributed almost no specular, which
+  // wasted the flat shading below: faceted low-poly reads through the value
+  // STEP between adjacent faces, and at 0.85 that step is nearly pure diffuse
+  // lambert. 0.72 is still unmistakably matte (no reference surface is glossy)
+  // but gives the facets a visible terminator.
+  const material = standardMat(THREE, 0xffffff, { roughness: 0.72, metalness: 0.0 });
   material.vertexColors = true;
   // Flat shading: the reference art is unmistakably faceted low-poly — hard
   // value steps between faces are what give the props their chunky, readable

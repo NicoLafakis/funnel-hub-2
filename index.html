@@ -32,7 +32,16 @@
   #timer.warn{color:#e02020;animation:pulse 1s infinite;}
   @keyframes pulse{50%{opacity:.55}}
   #scorebar{width:min(42vw,340px);height:16px;background:#1c2733;border-radius:99px;overflow:hidden;border:3px solid #1c2733;box-shadow:0 3px 0 rgba(28,39,51,.35);}
-  #scorefill{height:100%;width:0%;background:linear-gradient(90deg,#7ee236,#d8f53c);border-radius:99px;transition:width .25s;box-shadow:inset 0 2px 0 rgba(255,255,255,.5);}
+  #scorefill{height:100%;width:0%;background:linear-gradient(90deg,#7ee236,#d8f53c);border-radius:99px;transition:width .25s;box-shadow:inset 0 2px 0 rgba(255,255,255,.5);position:relative;overflow:hidden;}
+  /* Score-bar sparkle (art §5): a travelling sheen ACROSS THE FILL while mass
+     is coming in — the reference's "the bar sparkles while it fills". A
+     pseudo-element, so it costs no extra node and no JS per frame; overlays.js
+     only toggles `.spark` on an edge. `overflow:hidden` on the fill clips it to
+     however full the bar currently is, so it never paints over empty track.
+     The global reduced-motion rule kills the animation; the bar still fills. */
+  #scorefill::after{content:"";position:absolute;inset:0;transform:translateX(-120%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);width:45%;}
+  #scorefill.spark::after{animation:scoreSheen .7s linear infinite;}
+  @keyframes scoreSheen{from{transform:translateX(-120%);}to{transform:translateX(320%);}}
   #sizehint{font-size:11.5px;font-weight:700;letter-spacing:.3px;color:#1c2733;padding:4px 12px;background:#fff;border:2px solid #1c2733;border-radius:99px;box-shadow:0 2px 0 rgba(28,39,51,.3);}
 
   /* ---------- Banner (big center announcements) ---------- */
@@ -152,6 +161,23 @@
   #sizePill{position:fixed;left:0;top:0;transform:translateX(-50%);z-index:6;pointer-events:none;opacity:0;transition:opacity .15s;background:linear-gradient(180deg,#4fc3ff,#1e88e5);color:#fff;font-size:14px;font-weight:900;letter-spacing:.5px;padding:5px 16px;border-radius:999px;border:3px solid #1c2733;box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 3px 0 rgba(28,39,51,.35);white-space:nowrap;text-shadow:0 1.5px 0 rgba(28,39,51,.55);}
   #sizePill.show{opacity:1;}
   #hud.hidden ~ #sizePill{opacity:0 !important;}
+  /* Tier-up punch: one 420ms kick on the pill the moment the Size number goes
+     up (overlays.js setSizePill({punch:true})). translateX(-50%) must be
+     restated in every keyframe or the pill jumps half its width. */
+  /* Aggregated "+N" mass floats (art §5). Position, rise and fade are all
+     driven from overlays.js in JS rather than CSS: the global reduced-motion
+     rule below kills `animation` and `transition` outright, so a CSS-animated
+     float would appear and then never leave. Styling only lives here. */
+  #massFloats{position:fixed;left:0;top:0;width:0;height:0;z-index:6;pointer-events:none;}
+  .massfloat{position:fixed;left:0;top:0;opacity:0;will-change:transform,opacity;font-size:22px;font-weight:900;letter-spacing:.5px;color:#eaffd0;text-shadow:0 2px 0 rgba(28,39,51,.75),0 0 12px rgba(160,255,90,.5);white-space:nowrap;}
+  .massfloat.golden{color:#ffdf70;text-shadow:0 2px 0 rgba(28,39,51,.75),0 0 14px rgba(255,200,60,.7);}
+
+  #sizePill.punch{animation:sizePunch .42s cubic-bezier(.2,1.4,.4,1);}
+  @keyframes sizePunch{
+    0%{transform:translateX(-50%) scale(1);}
+    28%{transform:translateX(-50%) scale(1.34);box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 3px 0 rgba(28,39,51,.35),0 0 18px rgba(120,220,255,.9);}
+    100%{transform:translateX(-50%) scale(1);}
+  }
 
   /* Screen-space corner minimap (game-design §2). Canvas is injected by
      src/ui/minimap.js; this styles the container + canvas chrome. */
@@ -250,6 +276,9 @@
 <div id="lockBadge" aria-hidden="true">🔒 Too big — grow first</div>
 <div id="tutHand" aria-hidden="true">👆</div>
 <div id="oneLiner" aria-live="polite"></div>
+
+<!-- Pooled "+N" mass floats (overlays.js spawnMassFloat/updateMassFloats) -->
+<div id="massFloats" aria-hidden="true"></div>
 
 <!-- Hole.io-style size pill under the player hole (positioned by overlays.js setSizePill) -->
 <div id="sizePill" aria-hidden="true">Size 1</div>

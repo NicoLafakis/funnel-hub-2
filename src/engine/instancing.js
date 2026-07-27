@@ -30,8 +30,30 @@ import * as THREE from 'three';
 import { mulberry32, hashStr } from '../data/seeds.js';
 
 const FOG_CULL_MARGIN = 1.2;  // props beyond 1.2x fog distance skip updates
-const SHADOW_COLOR = 0x000000;
-const SHADOW_OPACITY = 0.26;
+// Contact decal value/hue. A shadow is a surface UNDER LESS LIGHT, not a
+// surface with black painted on it. Two separate changes, both measured
+// against the ground palette in groundtex.js:
+//
+// OPACITY 0.26 -> 0.18. This is the important one. The sun now casts real
+// shadows (scene.js), so at 0.26 the decal was stacking a second, softer
+// shadow on top of a real one under every single prop — the double-darkening
+// half of §4.1's "grey puddle" complaint. Measured luma drop under a prop on
+// Harbor pavement: -0.177 before, -0.099 now. Its remaining job is the
+// grazing-angle case where the shadow map is unreliable.
+//
+// COLOUR 0x000000 -> 0x241d3a. Note what this does and does not do: lerping
+// toward black scales all three channels evenly, so it preserves HSV
+// saturation exactly (measured +0.000) — it does NOT "desaturate" the ground,
+// and any comment claiming so is wrong. What it does drain is absolute CHROMA
+// (max-min falls with the scale), which is what makes a dark patch read grey.
+// The violet is justified physically instead: shadowed surfaces here are lit
+// by the hemisphere fill, which is sky-blue, so shade should shift COOLER, not
+// merely darker. Measured chroma effect: +0.013 to +0.017 saturation on the
+// cool surfaces (asphalt, pavement — most of the map), -0.021 on the warm
+// cream promenade, where violet opposes the base hue. That trade is accepted:
+// a warm surface going cool in shade is the correct read.
+const SHADOW_COLOR = 0x241d3a;
+const SHADOW_OPACITY = 0.18;
 // Fraction of a prop's footprint half-diagonal used for its contact decal.
 // Below 1/sqrt(2) (~0.707) so the disc sits INSIDE a square footprint rather
 // than ringing it. See writeInstanceMatrix for why this matters.
@@ -301,12 +323,16 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     if (shadowMesh) {
       // Contact darkening only, now that the sun casts real shadows: a tight
       // disc tucked under the footprint so props read as grounded even where
-      // the shadow map is at a grazing angle. `p.radius` is the footprint
-      // HALF-DIAGONAL, so the old 0.9x made a puddle ~27% wider than the prop
-      // itself — a scene full of grey saucers. 0.55x sits inside the footprint.
+      // the shadow map is at a grazing angle. Sized off `p.footprintRadius` —
+      // the RENDERED footprint half-diagonal — not `p.radius`, which is the
+      // eat-gate radius and can now sit up to 25% away from it (see
+      // propkit.kindRenderScale). A contact shadow must hug the mesh it is
+      // grounding, not the gameplay circle. 0.55x sits inside the footprint;
+      // the old 0.9x made a puddle ~27% wider than the prop itself.
       tmpPos.y = 0.15; // float just above the ground plane to avoid z-fighting
       tmpQuat.identity();
-      const sr = Math.max(0.5, (p.radius || 2) * SHADOW_FOOTPRINT_SCALE);
+      const fr = p.footprintRadius || p.radius || 2;
+      const sr = Math.max(0.5, fr * SHADOW_FOOTPRINT_SCALE);
       tmpScale.set(sr, 1, sr);
       tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
       shadowMesh.setMatrixAt(i, tmpMatrix);

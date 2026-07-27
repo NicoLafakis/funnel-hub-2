@@ -46,7 +46,14 @@ builds on.
     the 100/100 difficulty-invariant merge gate is fitted to one RNG stream —
     the untouched generator scores 47-55/100 at any other seed salt — and that
     invariant 6 ships at 91/100 as an explicit call. Reproduce with
-    `scripts/motion-probe.mjs` and `scripts/placement-audit.mjs`.
+    `scripts/motion-probe.mjs` and `scripts/placement-audit.mjs`. §9 (added
+    same day) records that the vortex-funnel hero this doc diagnosed was then
+    replaced with a flat flywheel, itself superseded same day by an extruded
+    thick wheel — see `art-direction.md` §2 for its current form. §10
+    consolidates every open/deferred/decided-against item from that day's
+    four follow-up passes (geometry, material, placement, juice) in one
+    place, including the standing note that none of it has been visually
+    verified on the live URL.
 
 ## Working agreements (edit as the project evolves)
 

@@ -143,8 +143,30 @@ export const Audio = {
     this.noise(0.5, 0.18, 0, 2600);
     this.beep(1100, 0.3, 'sawtooth', 0.08, 260);
   },
+  // grow(): the SIZE TIER-UP. Until 2026-07-27 this existed and was called
+  // from nowhere — the core beat of the genre had no sound at all. Now that it
+  // carries that beat it needs weight to match, and it must not be confusable
+  // with chainPing(), which fires far more often and sits in the same register.
+  //
+  // How it differs from chainPing on purpose:
+  //   chainPing — ONE square-wave tick, 90ms, a bright chirp. Combo texture.
+  //   grow      — a rising 3-note TRIANGLE arpeggio (a major triad: root,
+  //               major third, fifth — a resolved, arrival-shaped figure
+  //               rather than a tick) over ~280ms, laid on a low sine
+  //               "thump" that gives it body no other cue in the game has.
+  // Different waveform, different note count, different envelope length, and
+  // a bass component nothing else uses: four axes of separation, so it reads
+  // as its own event even under a dense combo.
   grow() {
-    this.beep(280, 0.2, 'sine', 0.14, 560);
+    if (!this.ac || this.muted) return;
+    // C5-E5-G5, each sliding up a whole tone so the figure feels like it is
+    // still climbing when it lands rather than stopping flat.
+    [523.25, 659.25, 783.99].forEach((f, i) => {
+      this.beep(f, 0.16, 'triangle', 0.19, f * 1.06, i * 0.055);
+    });
+    // The body: a short low sine drop under the arpeggio. This is the part
+    // that makes a tier-up feel like it has mass behind it.
+    this.beep(160, 0.26, 'sine', 0.16, 90);
   },
   fail() {
     [392, 370, 349, 311].forEach((f, i) => this.beep(f, 0.26, 'sawtooth', 0.14, f * 0.96, i * 0.24));

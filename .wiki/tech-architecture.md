@@ -50,14 +50,18 @@ Save format gains `seedHistory` but stays localStorage-only.
 src/
   engine/   input.js (state machine), camera.js (orbit+lookahead),
             scene.js, avatar.js, spatialhash.js (new), pools.js (new),
-            instancing.js (new)
+            instancing.js (new), effects.js (new: pooled one-shot event
+            effects — the growth shockwave; art §5)
   systems/  swallow.js, combo.js, rivals.js, storms.js, achievements.js,
             audio.js
   content/  propkit.js, landmarks.js, districts.js (new: layout generator),
             groundtex.js (new)
   data/     formulas.js, levels.js, metros.js, seeds.js (new)
   meta/     save.js, upgrades.js, worldmap.js, collection.js, daily.js (new)
-  ui/       overlays.js, minimap.js (new), responsive.css work in index.html
+  ui/       overlays.js, minimap.js (new), format.js (new: shared compact
+            number formatter — "1.25k"/"124k"/"1.25M" — used by both the
+            HUD score readout and the "+N" mass float so the two never
+            disagree; pure, no DOM/THREE), responsive.css work in index.html
 ```
 
 Rules V1 already had, kept and enforced: no DOM/window at module top level;
@@ -88,8 +92,26 @@ THREE passed in, never imported by systems; pure functions where possible.
   `overflow-y: auto`; buttons never leave the viewport at 360×640.
 - Touch: left half = virtual stick (move), right half = orbit drag; pinch
   = camera pitch. Larger HUD tap targets (≥44px).
-- `prefers-reduced-motion`: disables screen shake, slow-mo, and the debris
-  stream.
+- `prefers-reduced-motion`: disables screen shake, slow-mo, and the
+  flywheel's idle spin (`avatar.js` `setSpinEnabled(false)`; the debris
+  stream it used to gate was removed with the vortex funnel, see
+  art-direction §2). The eat→grow beats (art §5) are **readability, not
+  spectacle**, so they survive it in reduced form: the eat pop and rim
+  impulse are unchanged, the Size-pill punch is unchanged (a pill kick is
+  not vestibular), and the growth shockwave still fires but holds one
+  radius and fades instead of travelling (`effects.js`
+  `setReducedMotion`). The growth beat is never silently dropped — a
+  player who cannot see the tier-up cannot learn the size gate. Rival
+  growth rings follow the same rule (still fire, stop travelling).
+  **Correction to an earlier claim in this file:** the Size-pill punch and
+  the score-bar sheen are CSS animations, and index.html carries a global
+  `html[data-reduced-motion="true"] * { animation:none; transition:none }`
+  rule — so they ARE suppressed under reduced motion, by project-wide
+  policy rather than by a per-effect decision. That is why the "+N" mass
+  float is animated in JS instead of CSS: a CSS-animated float would
+  appear under reduced motion and then never leave. Its reduced-motion
+  variant drops the rise and keeps the number and the fade, because the
+  "+N" is the readable value of a bite, not decoration.
 
 ## 7. What stays deliberately unchanged
 

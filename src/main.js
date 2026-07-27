@@ -31,6 +31,7 @@ import * as THREE from 'three';
 
 import { createEngine } from './engine/scene.js';
 import { createAvatar, createHoleVisual, SKINS } from './engine/avatar.js';
+import { createGrowthEffects, createRingBudget, RIVAL_RING } from './engine/effects.js';
 import { createChaseCamera } from './engine/camera.js';
 import { createInput } from './engine/input.js';
 import { createSpatialHash } from './engine/spatialhash.js';
@@ -83,6 +84,8 @@ import {
   initResponsiveFlags, isReducedMotion, applyIntroLine, showOneLiner,
   showOnboardingBeat, hideOnboarding, renderFailMercy,
   setDuelistTelegraph, setLockBadge, positionTutorialHand, setSizePill,
+  spawnMassFloat, updateMassFloats, clearMassFloats,
+  pokeScoreSparkle, updateScoreSparkle,
 } from './ui/overlays.js';
 import { createMinimap } from './ui/minimap.js';
 
@@ -112,6 +115,16 @@ const RIVAL_COLORS = {
   bandit: { rim: 0x9b59b6, colorA: 0x070410, colorB: 0x4a2a72, swirl: 0.9 },
   duelist: { rim: 0xff8c1a, colorA: 0x0d0603, colorB: 0x8a4a10, swirl: 1.1 },
 };
+
+// The cosmetic 1-15 "Size N" ladder (the HUD pill's readout). Pure, and the
+// SINGLE definition of a size tier: the player's pill, the player's growth
+// shockwave and every rival's growth ring all read from this one function, so
+// the number the player sees and the beat they feel can never drift apart.
+// Growth beats fire on an upward crossing of this value.
+function sizeTierOf(radius, baseRadius, targetRadius) {
+  const span = Math.max(1, (targetRadius || baseRadius) - baseRadius);
+  return Math.max(1, Math.min(15, 1 + Math.floor(14 * (radius - baseRadius) / span)));
+}
 
 // Star rating for a completed level — scales with how much of the clock was
 // left (a speed/skill signal), same thresholds as V1.
@@ -258,6 +271,10 @@ export async function main() {
     coinComboMultiplier: 1,
     rivalSpeedMultiplier: 1,
     targetRadius: 0,
+    // Last Size-N tier the pill displayed. 0 means "not established yet", so
+    // the first frame of a level sets the baseline WITHOUT firing a growth
+    // beat (spawning at Size 1 is not a tier-up).
+    sizeTier: 0,
     levelTime: 0,
     elitePulse: 0,
   };
@@ -350,10 +367,15 @@ export async function main() {
     return entry;
   }
 
-  // Render scale for a gameplay prop: normalize the prop kit's small raw
-  // geometry up to the prop's gameplay radius (see buildLevelWorld).
+  // ART render scale for a gameplay prop. This is deliberately NOT
+  // `radius / kindFootprintRadius(kind)` any more: that normalised every kind
+  // to its GAMEPLAY radius, which is a difficulty quantity, and so gave every
+  // kind a different units-per-metre (a bus came out narrower than a car).
+  // propkit.kindRenderScale keeps the mesh metric-consistent while `radius`
+  // — untouched — keeps driving the eat gate. See propkit.js
+  // RENDER_SCALE_CORRECTION.
   function propBaseScale(kind, radius) {
-    return radius / propkit.kindFootprintRadius(kind);
+    return propkit.kindRenderScale(kind, radius);
   }
 
   // ---------------------------------------------------------------------------
@@ -494,18 +516,26 @@ export async function main() {
     // Ground: the seeded district layout baked into a real texture (streets,
     // curbs, zone tints — art §1). V1's flat color + debug GridHelper is dead.
     const groundGeo = new THREE.PlaneGeometry(level.world, level.world);
-    const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, roughness: 0.95, metalness: 0.02 });
+    // Asphalt/concrete/turf are all dielectrics: metalness is 0.0, not 0.02.
+    // A non-zero metalness on a dielectric tints the specular by the base
+    // colour and steals energy from the diffuse — invisible as a look, wrong
+    // as physics, and it applies across the single largest surface in frame.
+    const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, roughness: 0.93, metalness: 0.0 });
     const baked = bakeGroundTexture(layout, {
       metro,
       textures: cityTextures ? cityTextures.ground : null,
-      // Higher bake resolution when realistic surfaces + road markings are
-      // in play — at 512 the dashed center lines alias away.
-      size: cityTextures && cityTextures.ground ? 1024 : 512,
+      // No fixed `size`: groundtex derives the canvas from level.world at a
+      // CONSTANT world-space texel density (GROUND_TEXELS_PER_UNIT), so lane
+      // paint and paving read identically on level 1 and level 100. The old
+      // fixed 512/1024 bake stretched by up to 2x across the level ladder.
     });
     if (baked.canvas) {
       const tex = new THREE.CanvasTexture(baked.canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = 4;
+      // The ground is viewed at a very grazing angle at the far end of the
+      // map; 4x anisotropy was leaving the lane paint smeared out there, and
+      // the sharper bake is wasted without it. Capped by the device.
+      tex.anisotropy = Math.min(8, engine.renderer.capabilities.getMaxAnisotropy());
       groundMat.map = tex;
       groundMat.color.set('#ffffff');
     }
@@ -518,17 +548,20 @@ export async function main() {
     // Props: the district layout's seeded placements, turned into the runtime
     // prop-object contract (live fields the instanced world reads per frame:
     // position / rotationY / tiltX / tiltZ / scale / scaleY). Render scale is
-    // normalized to the GAMEPLAY radius (propkit's raw dimensions are 1-45u —
-    // dust motes next to a 26u-radius avatar; the 1.35x tier step stays
-    // sacred because TIER_RADII itself steps 1.35x).
+    // an ART quantity (propkit.kindRenderScale) and is bounded to +-25% of
+    // the gameplay-normalized scale, so the 1.35x tier step stays sacred and
+    // legible while the city keeps ONE units-per-metre.
     const worldProps = [];
     const buildings = []; // fed to metro signatures (roofs, facade signs)
     for (const rec of layout.props) {
       const radius = rec.radius * (rec.scaleMult || 1);
-      const baseScale = radius / propkit.kindFootprintRadius(rec.kind);
+      const baseScale = propBaseScale(rec.kind, radius);
       const prop = {
         position: new THREE.Vector3(rec.x, 0, rec.z),
         radius,
+        // What the mesh OCCUPIES, as opposed to what it EATS at. Contact
+        // shadows and any footprint query want this, not `radius`.
+        footprintRadius: baseScale * propkit.kindFootprintRadius(rec.kind),
         mass: rec.mass,
         kind: rec.kind,
         visualId: rec.visualId,
@@ -653,12 +686,32 @@ export async function main() {
       rival.massDivisor = level.itemValueMultiplier;
       rival.hoardCap = hoardCap;
       const colors = RIVAL_COLORS[archetype] || RIVAL_COLORS.grazer;
-      // Same ground-flush funnel + thick rim as the player (art §2). The
+      // Same ground-flush flywheel as the player (art §2). The
       // group lives unscaled inside rival.object3D, which rivals.js scales
       // to the rival's world radius — exactly the avatar's convention, so
       // the hole fills the same footprint the old sphere did.
       rival.holeVisual = createHoleVisual(THREE, { ...colors, ringOpacity: 0.95 });
       rival.object3D.add(rival.holeVisual.group);
+      // Rival growth rings (art §5): opponent threat state readable at a
+      // glance. RIVAL_RING is subordinate to the player's mark on opacity,
+      // reach AND duration at once, and every rival shares ONE budget so the
+      // worst case is bounded. Like holeVisual, the group goes in UNSCALED —
+      // rivals.js scales object3D to the rival's world radius, so local 1.0 is
+      // that rival's aperture and the mark is screen-invariant.
+      rival.growth = createGrowthEffects(THREE, {
+        color: colors.rim,
+        profile: RIVAL_RING,
+        budget: rivalRingBudget,
+      });
+      // NOTE: reduced motion is NOT propagated here — buildLevelWorld runs
+      // BEFORE startLevel sets avatar.reducedMotion, so reading it now would
+      // pick up the previous level's value. startLevel pushes it to every
+      // rival immediately after it sets the avatar's.
+      rival.object3D.add(rival.growth.group);
+      // Last Size tier this rival displayed. 0 = not yet established, so a
+      // rival's first measured frame never fires a mark (same rule the player
+      // uses for spawning at Size 1).
+      rival.sizeTier = 0;
       root.add(rival.object3D);
       state.rivals.push(rival);
     });
@@ -757,6 +810,13 @@ export async function main() {
   const lockBadgeVec = new THREE.Vector3();
   const tutHandVec = new THREE.Vector3();
   const sizePillVec = new THREE.Vector3();
+  // Separate scratch vector for the "+N" float projection — see the comment at
+  // its use site for why it must not share sizePillVec.
+  const massFloatVec = new THREE.Vector3();
+  // Shared rival-growth-ring budget (effects.js). ONE per run, consulted by
+  // every rival's effects instance, so the worst case is a constant no matter
+  // how many rivals the level spawns. See createRingBudget's header.
+  const rivalRingBudget = createRingBudget({ maxConcurrent: 2, playerLockoutSeconds: 0.35 });
 
   // Beat-1 cleanup: the pulse writes instance colors outside edibilityState,
   // so the edibility tint is force re-applied to every spawn-feast prop when
@@ -923,6 +983,12 @@ export async function main() {
     avatar.radiusCap = level.world * 0.2;
     avatar.massDivisor = level.itemValueMultiplier;
     avatar.reducedMotion = isReducedMotion();
+    // Rivals were built by buildLevelWorld above, before the line that sets
+    // the avatar's flag — push the authoritative value to their growth rings
+    // here so a reduced-motion player never gets a travelling rival mark.
+    for (const rival of state.rivals) {
+      if (rival.growth) rival.growth.setReducedMotion(avatar.reducedMotion);
+    }
     avatar.setSkin(SKINS[state.saveData.activeSkin] ? state.saveData.activeSkin : 'void');
 
     state.comboTracker = createComboTracker({
@@ -966,6 +1032,10 @@ export async function main() {
     state.minimapTimer = 0;
     state.levelTime = stats.timeSeconds;
     state.targetRadius = radiusFromMass(level.target / level.itemValueMultiplier);
+    state.sizeTier = 0;
+    // A run that ended mid-float/mid-ring must not bleed into the next one.
+    clearMassFloats();
+    rivalRingBudget.reset();
     state.elitePulse = 0;
     setDuelistTelegraph(null);
     setLockBadge(null);
@@ -1531,7 +1601,18 @@ export async function main() {
       let goldenBonusMass = 0;
       let goldenPerkCoins = 0;
       let eliteBonusCoins = 0;
+      // "+N" float aggregation (art §5). ONE float per frame carrying the
+      // frame's TOTAL award at the CENTROID of everything eaten this frame —
+      // never one per prop. A 12-prop cluster is a single big number, which is
+      // both more readable and the entire reason this is not spam. Accumulated
+      // in plain locals; nothing here allocates.
+      let floatSumX = 0;
+      let floatSumZ = 0;
+      let floatGolden = false;
       for (const obj of res.eaten) {
+        floatSumX += obj.position.x;
+        floatSumZ += obj.position.z;
+        if (obj.golden) floatGolden = true;
         removePropRoster(obj);
         avatar.onEat();
         state.lastEatenKind = obj.kind;
@@ -1596,10 +1677,31 @@ export async function main() {
       // Mass + coins. res.coinsGained already carries the +10/golden V2
       // bonus (formulas.GOLDEN_COIN_BONUS via swallow.js); Coliseum City's
       // roaring-crowd twist doubles combo coin payouts.
-      avatar.mass += capProgressionAward(
+      const massAwarded = capProgressionAward(
         res.massGained * state.modifiedStats.massGainMultiplier + goldenBonusMass,
         level.target,
       );
+      avatar.mass += massAwarded;
+
+      // The aggregated float + the score-bar sheen, both fed by the SAME
+      // frame-level award, so the number that floats is exactly the number the
+      // bar just moved by. Projected through the same camera the size pill
+      // uses; `massFloatVec` is preallocated at outer scope (no per-eat
+      // allocation). `sizePillVec` is deliberately NOT reused — it is written
+      // later in the same frame and sharing it would corrupt the pill.
+      if (massAwarded > 0) {
+        const n = res.eaten.length;
+        massFloatVec.set(floatSumX / n, 0, floatSumZ / n).project(engine.camera);
+        if (massFloatVec.z < 1) {
+          spawnMassFloat({
+            x: (massFloatVec.x * 0.5 + 0.5) * window.innerWidth,
+            y: (-massFloatVec.y * 0.5 + 0.5) * window.innerHeight,
+            amount: massAwarded,
+            golden: floatGolden,
+          });
+        }
+        pokeScoreSparkle();
+      }
       const coinsNow = Math.round((res.coinsGained + goldenPerkCoins + eliteBonusCoins) * state.coinComboMultiplier);
       if (coinsNow > 0) {
         state.runCoins += coinsNow;
@@ -1693,7 +1795,17 @@ export async function main() {
       // Animate the hole (swirl + rim pulse + ground-flush heights). The
       // radius passed is the scale rivals.js just applied, so a dead rival
       // mid-respawn keeps its last footprint instead of snapping to base.
-      rival.holeVisual.update(gdt, Math.max(1, rival.object3D.scale.x));
+      const rivalRadius = Math.max(1, rival.object3D.scale.x);
+      rival.holeVisual.update(gdt, rivalRadius);
+      // Rival growth beat, on the SAME ladder as the player's (sizeTierOf), so
+      // "that rival just got a size bigger" means exactly what it means for
+      // you. Upward crossings only — a rival shrinking after a piñata is not a
+      // threat signal. A dead rival mid-respawn holds its last footprint
+      // (rivals.js), so its tier does not churn while it is gone.
+      const rivalTier = sizeTierOf(rivalRadius, radiusFromMass(0), state.targetRadius);
+      if (rival.sizeTier && rivalTier > rival.sizeTier) rival.growth.onTierUp();
+      rival.sizeTier = rivalTier;
+      rival.growth.update(gdt, rivalRadius);
       for (const obj of events.ateProps) {
         removePropRoster(obj);
       }
@@ -1863,13 +1975,38 @@ export async function main() {
       const centerPy = (-sizePillVec.y * 0.5 + 0.5) * window.innerHeight;
       sizePillVec.set(avatar.position.x + r, 0, avatar.position.z).project(engine.camera);
       const rimPx = Math.abs((sizePillVec.x * 0.5 + 0.5) * window.innerWidth - centerPx);
-      const baseRadius = radiusFromMass(0);
-      const span = Math.max(1, (state.targetRadius || baseRadius) - baseRadius);
-      const size = Math.max(1, Math.min(15, 1 + Math.floor(14 * (r - baseRadius) / span)));
-      setSizePill({ x: centerPx, y: centerPy + rimPx + 10, size, visible: true });
+      const size = sizeTierOf(r, radiusFromMass(0), state.targetRadius);
+      // THE GROWTH BEAT. The Size readout was already the game's own ladder of
+      // "you got bigger" — it just changed silently. Every upward crossing now
+      // fires the avatar's growth shockwave, punches the pill, and plays the
+      // long-unused Audio.grow(). Downward crossings (mercy/twist radius caps)
+      // deliberately do not fire; shrinking is not a reward.
+      let punch = false;
+      if (state.sizeTier && size > state.sizeTier) {
+        avatar.onGrow();
+        Audio.grow();
+        // Claim the quiet window: for the next 0.35s no rival ring may fire.
+        // The player's tier-up and a rival's are driven by the same feeding
+        // spike and so tend to coincide; this is what guarantees the player's
+        // own beat is never crowded on the frame it matters most.
+        rivalRingBudget.notifyPlayerTierUp();
+        punch = true;
+      }
+      state.sizeTier = size;
+      setSizePill({ x: centerPx, y: centerPy + rimPx + 10, size, visible: true, punch });
     } else {
       setSizePill({ visible: false });
     }
+
+    // HUD-layer event effects. All three are driven on the REAL frame dt, not
+    // the slow-mo-scaled gdt: the HUD is chrome the player reads, and slowing
+    // a "+N" down with a piñata slow-mo would leave numbers hanging on screen.
+    updateMassFloats(dt, reducedMotion);
+    updateScoreSparkle(dt);
+    // The budget's lockout is WORLD time (gdt), not chrome time: it exists to
+    // protect the player's growth ring, which also runs on gdt, so under
+    // slow-mo the two must stretch together or the lockout would expire early.
+    rivalRingBudget.update(gdt);
 
     updateHUD({
       levelName: state.isDailyRun ? `📅 Daily · ${level.districtName}` : `Level ${level.n} · ${level.districtName}`,

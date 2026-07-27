@@ -14,6 +14,8 @@
 // exported functions -- so a bare dynamic import of this file never throws
 // outside a browser (per the engine's Node-testability contract).
 
+import { formatCompact, formatGain } from './format.js';
+
 // ---------------------------------------------------------------------------
 // showOverlay / hideOverlay
 // ---------------------------------------------------------------------------
@@ -235,8 +237,15 @@ export function updateHUD(state = {}) {
   const hasMass = state.mass != null;
   const hasTarget = state.target != null;
   if (scoreEl && (hasMass || hasTarget)) {
-    const mass = hasMass ? Math.floor(state.mass) : 0;
-    const target = hasTarget ? state.target : 0;
+    // Both sides go through the SHARED compact formatter (format.js). Mass
+    // reaches 10,000,000 by level 100, and `Mass 1234500 / 10000000` cannot
+    // be read at a glance while steering. Abbreviating only ONE of the pair —
+    // or abbreviating the "+N" float but not this — would be worse than either
+    // choice made consistently, which is the whole reason the formatter is
+    // shared rather than local to the float. formatCompact TRUNCATES, so this
+    // readout can never show a target reached one frame before it is.
+    const mass = formatCompact(hasMass ? state.mass : 0);
+    const target = formatCompact(hasTarget ? state.target : 0);
     scoreEl.innerHTML = `Mass <b>${mass}</b> / ${target}`;
   }
   if (scorefillEl && hasTarget && state.target > 0) {
@@ -600,6 +609,136 @@ export function setLockBadge(pos) {
 }
 
 // ---------------------------------------------------------------------------
+// Mass floats ("+N" rising off the bite) and the score-bar sparkle
+// ---------------------------------------------------------------------------
+//
+// Both are HUD-layer, which is the whole reason they are allowed: the
+// reference (assets/references/holeio/) keeps consumption feedback either
+// inside the aperture or in the HUD and never sprays it across the world, and
+// that containment — not the effect count — is why it never reads as noise.
+//
+// THE AGGREGATION RULE (load-bearing, do not relax): main.js emits AT MOST ONE
+// float per frame, carrying the frame's TOTAL mass gain at the centroid of
+// everything eaten that frame. A 12-prop cluster is therefore one big number,
+// not twelve small ones fighting each other. Per-prop floats are exactly the
+// spam this rule exists to prevent.
+//
+// Animation is driven in JS, NOT CSS, on purpose. index.html carries a global
+// `html[data-reduced-motion="true"] * { animation:none; transition:none }`
+// rule, so a CSS-animated float would appear under reduced motion and then
+// never leave. Driving it here means the float works identically in both
+// modes and the reduced-motion variant is an explicit decision rather than an
+// accident of a stylesheet.
+
+const MASS_FLOAT_SECONDS = 0.75;
+const MASS_FLOAT_RISE_PX = 46;
+const MASS_FLOAT_POOL = 6; // ~5 frames of overlap at 0.75s; never all in use
+
+let massFloatPool = null;   // lazily built on first use (no DOM at import)
+const massFloatLive = [];
+
+function ensureMassFloatPool() {
+  if (massFloatPool) return massFloatPool;
+  const host = document.getElementById('massFloats');
+  if (!host) return null;
+  massFloatPool = { host, free: [] };
+  for (let i = 0; i < MASS_FLOAT_POOL; i += 1) {
+    const el = document.createElement('div');
+    el.className = 'massfloat';
+    el.style.opacity = '0';
+    host.appendChild(el);
+    massFloatPool.free.push(el);
+  }
+  return massFloatPool;
+}
+
+/**
+ * One aggregated "+N" at a screen position.
+ * @param {{x:number, y:number, amount:number, golden?:boolean}} opts
+ */
+export function spawnMassFloat(opts = {}) {
+  const { x, y, amount } = opts;
+  if (typeof x !== 'number' || typeof y !== 'number') return;
+  if (!(amount > 0)) return;
+  const pool = ensureMassFloatPool();
+  if (!pool) return;
+  // Pool exhausted: drop the float rather than allocate. Six concurrent
+  // floats already means six frames inside 0.75s produced eats, which the
+  // aggregation rule makes rare; dropping is right because the NEWEST number
+  // is the one worth showing and stealing an in-flight one would flicker.
+  if (pool.free.length === 0) return;
+  const el = pool.free.pop();
+  // Abbreviated via the SHARED formatter, not a local one — the HUD score
+  // readout uses the same function, so the float and the bar can never
+  // disagree about how the same quantity reads (format.js header).
+  el.textContent = formatGain(amount);
+  el.classList.toggle('golden', !!opts.golden);
+  massFloatLive.push({ el, x, y, t: 0 });
+}
+
+/**
+ * Per-frame float animation. `reducedMotion` removes the RISE only — the
+ * number still appears and still fades, because the "+N" is the readable
+ * confirmation of what a bite was worth, not decoration.
+ */
+export function updateMassFloats(dt, reducedMotion = false) {
+  if (massFloatLive.length === 0) return;
+  const pool = massFloatPool;
+  for (let i = massFloatLive.length - 1; i >= 0; i -= 1) {
+    const f = massFloatLive[i];
+    f.t += dt;
+    const p = f.t / MASS_FLOAT_SECONDS;
+    if (p >= 1) {
+      f.el.style.opacity = '0';
+      if (pool) pool.free.push(f.el);
+      massFloatLive[i] = massFloatLive[massFloatLive.length - 1];
+      massFloatLive.pop();
+      continue;
+    }
+    // Ease-out rise, and a fade weighted to the back half so the number is
+    // fully readable for the first ~300ms before it starts leaving.
+    const rise = reducedMotion ? 0 : MASS_FLOAT_RISE_PX * (1 - (1 - p) * (1 - p));
+    f.el.style.transform = `translate(-50%, ${-rise}px)`;
+    f.el.style.left = `${f.x}px`;
+    f.el.style.top = `${f.y}px`;
+    f.el.style.opacity = `${Math.min(1, 2.6 * (1 - p))}`;
+  }
+}
+
+// Returns every live float to the pool (level teardown).
+export function clearMassFloats() {
+  for (const f of massFloatLive) {
+    f.el.style.opacity = '0';
+    if (massFloatPool) massFloatPool.free.push(f.el);
+  }
+  massFloatLive.length = 0;
+}
+
+// Score-bar sparkle: a travelling sheen on #scorefill while mass is coming in.
+// Held by a short decaying timer rather than toggled per eat, so continuous
+// feeding keeps the bar alive (reference behaviour — the bar sparkles WHILE it
+// fills) instead of restarting the animation every frame, which would look
+// frozen. Purely a class toggle; the animation itself is CSS and is therefore
+// correctly suppressed by the global reduced-motion rule, while the bar keeps
+// filling normally.
+let scoreSparkTimer = 0;
+let scoreSparkOn = false;
+export function pokeScoreSparkle(seconds = 0.35) {
+  scoreSparkTimer = Math.max(scoreSparkTimer, seconds);
+}
+export function updateScoreSparkle(dt) {
+  if (scoreSparkTimer > 0) scoreSparkTimer = Math.max(0, scoreSparkTimer - dt);
+  const on = scoreSparkTimer > 0;
+  // Write classList ONLY on an edge. Setting it every frame would restart the
+  // CSS animation each frame and the sheen would appear frozen at its first
+  // keyframe — the classic "why isn't my animation moving" bug.
+  if (on === scoreSparkOn) return;
+  scoreSparkOn = on;
+  const el = document.getElementById('scorefill');
+  if (el) el.classList.toggle('spark', on);
+}
+
+// ---------------------------------------------------------------------------
 // Size pill (Hole.io "Size N" readout under the player hole)
 // ---------------------------------------------------------------------------
 
@@ -620,4 +759,16 @@ export function setSizePill(opts = {}) {
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
   el.classList.add('show');
+  // `punch: true` on the frame the size tier goes UP: a one-shot scale/glow
+  // kick on the number that just changed, so the readout announces itself
+  // instead of silently swapping a digit. The class must be removed and
+  // reflowed before re-adding or a second tier-up within the animation window
+  // would not restart it (standard CSS-animation restart dance). A pill kick
+  // is not vestibular motion, so it is NOT gated on reduced motion — it is
+  // the readable half of the growth beat (tech-architecture §6).
+  if (opts.punch) {
+    el.classList.remove('punch');
+    void el.offsetWidth; // force reflow: restarts the animation
+    el.classList.add('punch');
+  }
 }

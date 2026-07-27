@@ -1,9 +1,18 @@
 # 0003 — Hole feel & visual fidelity: investigation findings
 
 **Date:** 2026-07-27
-**Status:** investigated, then fixed. §1–§4 record the diagnosis; §6 records
-what shipped, what was deliberately deferred, and the one merge gate that
-could not be satisfied.
+**Status:** investigated, then fixed, then the hero visual was replaced again
+same day, then further reworked by three more parallel passes (material,
+placement, juice/effects) before the branch closed out. §1–§4 record the
+diagnosis; §6 records what shipped at the merge (`d9bd536`/`11ee128`),
+including the vortex-funnel hero this section describes; §8 records open
+art defects raised on live review, now annotated with their resolutions;
+§9 records the flat-flywheel rebuild that replaced the vortex funnel, and
+its own same-day supersession by the extruded thick wheel — read
+`art-direction.md` §2 for the hero's current form; §10 is the single
+consolidated list of everything still open or deliberately not built
+across all four passes. Treat every funnel/swirl/wake/dust reference below
+as history, not current code.
 
 Two complaints drove this investigation, both against the Hole.io reference
 set now stored in `assets/references/holeio/`:
@@ -400,6 +409,17 @@ buildings landed as terraces kept the mean pacing correct (0.646) but
 exploded the variance — levels ranged 0.40 to 0.94 and two became
 uncompletable. This is the largest remaining visual gap.
 
+**Tree crown width — open art question with a known gameplay coupling.**
+The tree now stands 5.00m, but its crown is only 2.25m across, so it reads
+columnar rather than as the broad canopy in the reference. Widening it is
+*not* a free art change: unlike height, crown width is `DIMENSIONS.tree.w/d`,
+which feeds `kindFootprintRadius` → `kindRenderScale` → every clearance and
+kerb calculation in `districts.js`, and would move placement for ~6% of props.
+Team lead's call (2026-07-27) is to ship the columnar tree as-is and judge it
+on the live URL rather than change coupled geometry blind. If it is widened
+later, re-run `node scripts/placement-audit.mjs` and the invariant suite — it
+is a placement change, not a texture change.
+
 **Diagonal street grid.** The reference's roads run at a fixed isometric
 diagonal. `BASE_YAW` is held at 0 instead, because the seeded spawn-framing
 corridor and its two logic-suite assertions are expressed in axis-aligned
@@ -440,6 +460,74 @@ actually hold, or making the soak bot's route less sensitive to exact prop
 positions. All three are larger than this change and none should be done
 silently.
 
+### 6.2a Resolution — option two taken (2026-07-27)
+
+*§6.2 above is preserved verbatim as the historical record. This subsection
+records how it was closed.*
+
+**Authority.** Nico ruled, relayed via the 3D team lead, that option two
+(widening invariant 6) was the change to make. The authorisation was scoped
+strictly to invariant 6's tolerance in `scripts/invariant-test.js` — explicitly
+*not* to `formulas.js`, timers, mass values, or the size gate. Option one
+(re-tuning the economy) was ruled out; option three (route insensitivity) was
+left open as future work.
+
+**Constraint on the derivation.** The band was required to be derived from the
+measured noise distribution, not reverse-fitted to whatever makes the current
+tree pass.
+
+**Evidence.** 23 perturbations of the untouched pre-art-pass generator were
+run — 11 worldgen seed salts and 12 rigid whole-layout translations of 1–45
+world units — for 2254 level samples. None change any gameplay quantity; they
+only move props.
+
+| quantity | result |
+| --- | --- |
+| per-level `completionFraction` | min 0.198, p5 0.453, p50 0.658, p95 0.880, max 0.996 |
+| per-config **mean** | 0.635 – 0.672 (spread 0.037) |
+| per-config **median** | 0.633 – 0.673 (spread 0.040) |
+
+**The finding that decided it: no per-level band works.** The per-level spread
+is ~0.80 wide. Under pure layout noise, `[0.55, 0.80]` passed as few as
+**47/100**; `[0.50, 0.85]` reached 65; `[0.40, 0.95]` reached 87; even
+`[0.30, 1.00]` only reached **92/100**. A per-level band wide enough to be
+noise-proof would assert nothing at all. Widening in place was therefore not
+available — the metric had to be aggregated.
+
+**What shipped.** Invariant 6 now gates the **mean** `completionFraction`
+across all completed levels, band **[0.61, 0.69]**. Per-level values are
+printed (min/p5/p50/p95/max) but are not individually fatal. This is a
+structural change to the gate as well as a tolerance change, which is wider
+than the literal "widen the band" wording; it is the only form the evidence
+supports, and it is flagged as such rather than presented as a pure retune.
+
+**Retained value.** Measured by scaling the level target multiplier (all runs
+still completed):
+
+| target × | mean (pre-art-pass tree) | mean (current tree) |
+| --- | --- | --- |
+| 0.85 | — | 0.590 **FAIL** |
+| 0.90 | 0.601 **FAIL** | 0.613 pass |
+| 0.95 | 0.618 pass | 0.637 pass |
+| 1.00 | 0.651 | 0.669 |
+| 1.05 | 0.674 pass | 0.691 **FAIL** |
+| 1.10 | 0.698 **FAIL** | 0.726 **FAIL** |
+
+The gate catches an effective economy shift of ~10% either way for a
+mid-envelope layout, and ~15% guaranteed for a layout sitting at an envelope
+edge (sensitivity trades between directions rather than vanishing). It is
+blind to shifts of a few percent. Per-level teeth are retained by invariant 5
+(completability) and invariant 7 (route mass budget), both unaffected.
+
+**Do not re-tighten** this band or restore the per-level form on the evidence
+of one layout looking healthy — that is exactly how the original golden master
+formed. The real fix remains option three: make the bot's route insensitive to
+prop positions. Full reasoning is duplicated as a comment block at
+`COMPLETION_PACING_BAND` in `scripts/invariant-test.js`.
+
+**Result.** `npm test`: logic 153/153, all 9 invariants PASS, BUILD CEILING
+PASS, 0 failures (from 10 at HEAD before the art pass).
+
 ## 7. Reproducing this
 
 ```
@@ -469,6 +557,10 @@ responsible code most likely is. The 3D agent definitions
    interiors get `GROUND_ZONE_MIX.block` (a 0.06 mix toward white, i.e.
    almost the raw metro ground colour) and nothing else — no surface, no
    detail, no props. `src/content/groundtex.js`.
+   **RESOLVED (2026-07-27, material pass).** The `block` ground class no
+   longer exists; block interiors default to pavement, which now carries
+   real surface detail (paving-slab grids, kerb joints, gutter lines, rim
+   shadows) like every other class. See `art-direction.md` §1.
 2. **Buildings in the middle of the street.** §2 measured *centres* out of
    street rects and got 25.7% → 0.2%, but that metric ignores FOOTPRINT. A
    building whose centre clears the kerb by 10u still overhangs the
@@ -476,6 +568,22 @@ responsible code most likely is. The 3D agent definitions
    `BUILDING_ROAD_CLEARANCE = 10` margin both need revisiting against
    footprint rather than centre. `src/content/districts.js`,
    `scripts/placement-audit.mjs`.
+   **RESOLVED (2026-07-27, placement pass).** Re-measured on FOOTPRINT
+   rather than centre, the true violation rate was 67.6%, not 0.2%. The
+   audit metric was rebuilt to check footprint; the placement generator
+   was fixed to match, and all 8 placement-audit checks now PASS over 100
+   levels. Render scale for props was also decoupled from gameplay radius
+   in the same pass (`propkit.kindRenderScale`), proven byte-identical to
+   HEAD across all 100 levels' prop counts/mass/radius — only positions
+   moved (73.3% of props, mean 19.5u), and rendered heights corrected to
+   metric truth (root cause: footprint-normalisation inflated slender
+   objects — at HEAD a bicycle rendered 59% taller than a car). Rendered-
+   height deltas vs. HEAD: trash -36%, bike -52%, car 0%, bus +60%,
+   building-small +17%, building-medium/large +25%, tree +108% (2.40m →
+   5.00m), person +5%, streetlamp +20%. Height feeds no gameplay quantity
+   (never enters `kindFootprintRadius`), so none of this touches the eat
+   gate, mass, or the difficulty ladder. See §10 for the tree-crown-width
+   question this reopened.
 3. **Cars not scaled to the road.** Vehicle render scale is
    `radius / kindFootprintRadius(kind)` — normalised to the GAMEPLAY radius,
    which is a difficulty quantity, not an art one. Nothing ties a car's width
@@ -483,13 +591,104 @@ responsible code most likely is. The 3D agent definitions
    Note this is load-bearing for the size ladder: changing it changes what is
    edible when. `src/main.js` `propBaseScale`, `src/content/propkit.js`
    `kindFootprintRadius`.
+   **Still open.** The placement pass (item 2) corrected relative prop
+   heights and decoupled render scale from gameplay radius, but did not tie
+   any prop's render scale to lane width specifically — this defect is
+   unaddressed.
 4. **Ground textures stretched, not tiled.** The bake maps a single canvas
    across the whole world plane, so surface detail is stretched by the world
    size instead of repeating at a fixed world-space texel density. Zone
    tiling exists (`TILE_WORLD`) but the noise pass and the composite are
    whole-canvas. `src/content/groundtex.js`.
+   **RESOLVED (2026-07-27, material pass).** The bake is now driven by a
+   single world-space transform at a constant `GROUND_TEXELS_PER_UNIT`
+   (0.55 tx/u); texel density was 0.212–0.107 (varying 2× across the
+   level ladder), now constant 0.550 up to world ~3724, degrading only
+   where the 2048px cap binds. See `art-direction.md` §1.
 
 The reviewer's framing is worth carrying over verbatim: *"those are just a few
 very small examples of errors in the design"* — treat this list as a sample,
 not a backlog. A full pass by the modeler / material / lighting agents against
 `assets/references/holeio/` is the right next step, not four point fixes.
+
+---
+
+## 9. Follow-up: the vortex funnel replaced with a flywheel (2026-07-27, same day)
+
+`src/engine/avatar.js` (and the one-line comment update in `src/main.js`
+where rivals share the same factory) was rewritten again after §6 shipped,
+before this branch was fully closed out. Removed entirely: the swirl GLSL
+vertex/fragment shader, the paraboloid `LatheGeometry` funnel, the pooled
+debris stream, the ground wake decals, the dust puffs, the ±3% rim pulse,
+and every constant that drove them (`DEBRIS_*`, `WAKE_*`, `DUST_*`,
+`RIM_PULSE*`, `THROAT_Y`, `FUNNEL_DEPTH`) plus the `createPool` import.
+
+In their place: a procedural flat **flywheel**, four pieces in local units
+where 1.0 == `radius()` — aperture disc (0→1.005, unlit, `colorA`), wheel
+body (1.18→1.35, lit, `colorB`), 8 merged spokes (1.00→1.18, half-width
+0.055, shaded by the repurposed `swirl` field), hub collar (1.00→1.06,
+unlit, `ring`/`ringOpacity`). Full description, ground-stack heights, and
+the skin-field remapping now live in `art-direction.md` §2 — that is the
+current source of truth for the hero visual, not §1–§4 above.
+
+Carried over unchanged from §1–§6: the movement math (radius formula,
+`BASE_SPEED` 340, growth drag, scale-parent-by-`r`), the camera-decoupling
+fix (§1), and the logic suite (153/153). The idle spin runs on a new inner
+`spinner` group specifically so it cannot re-couple with the steering-facing
+damp the way the old single-group rotation nearly did — see the header
+comment in `avatar.js` and the wrap-safety note at `avatar.js` `update()`.
+(The eat-pop itself was separately retuned to 3.5%/110ms the same day, by
+the juice/effects pass — see `art-direction.md` §5; the "2%/80ms" figure
+below is that pass's *before* value, not current.)
+
+**Cost:** 256 triangles / 4 draw calls per hole at first ship, down from
+~1,600 tris plus a `ShaderMaterial` program and up to 46 pooled meshes on
+the player.
+
+**Superseded same day — the wheel was subsequently extruded.** The
+"flat annuli" state above did not survive the day: the body, spokes and
+collar were rebuilt as one-unit-tall solid geometries with a per-frame
+`scale.y = worldThickness / radius` correction, giving each piece a fixed
+WORLD thickness (aperture stays flat at 0.30; body 0.35→3.35; spokes
+0.35→2.15; collar 0.20→3.55) instead of a flat annulus. Cost rose to 704
+tris / 4 draw calls. Full description in `art-direction.md` §2, which is
+the current source of truth for the hero visual.
+
+**Left open, undecided (Nico has not ruled) — consolidated in §10:** the
+aperture disc itself is still an unextruded flat circle and has no depth
+cue; the 5 skins differentiate less now that the swirl bands are gone and
+the only per-skin cue is spoke-shade contrast. Neither §8's open art
+defects nor this hero change affect each other — the flywheel factory is
+radially symmetric like the funnel it replaced, so nothing about camera,
+placement, or ground rendering moves.
+
+---
+
+## 10. Consolidated open items (2026-07-27, after all four follow-up passes)
+
+Scattered "open/undecided" notes from the geometry, material, placement and
+juice passes, gathered in one place per the working agreement in `INDEX.md`
+— see each linked section for the measurement behind it.
+
+| item | where raised | status |
+|---|---|---|
+| Aperture disc is unextruded, may read as a sticker | §9, `art-direction.md` §2 | open, cosmetic |
+| 5 hero skins differentiate less (swirl bands gone, only spoke-shade contrast left) | §9, `art-direction.md` §2 | open, cosmetic |
+| Ground texture ~16–22MB at high levels (`maxSize` in `groundTextureSize()` is the dial) | material pass, `art-direction.md` §1 | open, needs Nico (memory/quality trade-off) |
+| Prop material count: 18 in use vs. a 12-material mobile cap | material pass | open, needs Nico (pre-existing, needs trim-sheet atlasing) |
+| Per-part prop materials are impossible post-merge (only `.color` survives instancing) | material pass, `art-direction.md` §3 | open, architectural constraint — not fixable without breaking the draw-call budget |
+| Tier-up prop re-tint sweep (props flash their edibility tint on crossing a tier) | juice pass, `art-direction.md` §5 | **deferred by choice**, not rejected — highest-rated unbuilt effect, needs the instancing tint path |
+| In-aperture eat sparkles | juice pass, `art-direction.md` §5 | **decided against** (Nico's call — too close to the deleted vortex clutter), do not re-propose |
+| Camera punch on tier-up | juice pass, `art-direction.md` §5 | **decided against**, do not re-propose |
+| Cars not scaled to lane width (§8 item 3) | this doc §8 | open, load-bearing for the size ladder if touched |
+| Tree crown width (5.0m tree reads columnar/narrow) | placement pass | **deliberately not built** — crown width feeds `kindFootprintRadius` → render scale → clearance geometry, so widening is gameplay-coupled, not a pure tuning knob; to be judged on the live URL |
+| Diagonal street grid (reference roads run at a fixed isometric diagonal) | §6.1 | deferred, self-contained follow-up |
+| Row-building block perimeters (blocks not built out shoulder-to-shoulder) | §6.1 | deferred, largest remaining visual gap |
+| `scripts/flow-test.cjs` hardcodes `http://localhost:3003/` | pre-existing, noticed during this reconciliation | open — this repo's own dev/E2E harness, not a player-facing default; still worth a live-URL/env-var fallback so the script isn't silently a no-op away from that port |
+
+**None of this has been visually verified on the live URL.** Every measurement
+above comes from headless scripts (`motion-probe.mjs`, `placement-audit.mjs`,
+`invariant-test.js`) or code-level reasoning about the Three.js scene graph —
+not a browser render. A pass against the deployed build, per the standing
+rule (never localhost), is the right next step before any of the "open,
+cosmetic" or "open, needs Nico" rows above are acted on.

@@ -26,7 +26,7 @@ game?" phase — answer: barely, and that's the point.
 1. Input state machine + camera-relative steering + orbit (game-design §1).
 2. Camera pitch/FOV/look-ahead + minimap (game-design §2).
 3. District layout v1: street grid + zoned props + ground texture (art §1).
-4. Hero: swirl shader, squash/bank, ground wake (art §2).
+4. Hero: flywheel model, squash pop (art §2; superseded the original swirl-shader/ground-wake plan, see 0003 findings §6/§8).
 5. Edibility glow + desaturation (art §3).
 
 **Exit:** 3 playtesters who saw V1 prefer V2 unprompted; B4-style

@@ -1,19 +1,31 @@
-// The player avatar: a ground-flush VORTEX DISC, not a ball (art-direction
-// §2 — Hole.io reference: the hero is a hole in the ground, not a floating
-// sphere). The body is: a shallow concave funnel (paraboloid lathe) whose
-// interior is a near-black radial gradient with the rotating spiral-swirl
-// GLSL adapted to disc/polar UVs (lathe u = angle, v = throat→rim), plus a
-// THICK unlit rim ring at ground level in a vivid cyan-blue that reads as
-// glowing, plus a pooled debris stream of last-eaten props skimming the
-// disc before absorption.
+// The player avatar: a ground-flush FLYWHEEL, not a ball and no longer a
+// swirl-shaded funnel. The hero is a solid, genuinely EXTRUDED mechanical
+// wheel lying flat on the ground plane — visible side faces, a fixed world
+// thickness — with a real circular HOLE bored through its centre;
+// that hole IS the eating aperture and its edge sits at exactly the gameplay
+// radius. The wheel body extends OUTSIDE the aperture, so it never covers
+// anything the player could eat, and it spins steadily about Y — the spin is
+// its whole character.
 //
-// Motion juice (art §2/§5): 2% squash-pop on eat (80ms), a gentle rim pulse
-// (±3% scale/opacity), and a ground wake (darkened trail decals + dust
-// puffs at speed) so movement reads on the floor. The V1 sphere's floating
-// tilt/banking is gone — a hole in the ground does not lean.
-// `reducedMotion = true` (tech §6, prefers-reduced-motion) disables the
-// debris stream, wake decals, and dust puffs; movement and the eat-pop
-// stay (they are readability, not shake).
+// Removed in this pass (visual clutter): the swirl GLSL + paraboloid lathe,
+// the debris-stream pool, the ground-wake decal pool, the dust-puff pool,
+// and the ±3% rim pulse. Kept: the 2% / 80ms eat pop, which is readability,
+// not shake. The V1 sphere's floating tilt/banking stays gone — a hole in
+// the ground does not lean.
+// `reducedMotion = true` (tech §6, prefers-reduced-motion) stops the
+// flywheel's idle spin and freezes the growth ring's travel; movement, the
+// eat-pop, and the rim impulse stay (all readability, none of them shake).
+//
+// EVENT FEEDBACK (added after the clutter purge, deliberately narrow — three
+// beats, all discrete, none ambient):
+//   onEat()  → 3.5%/110ms ease-out scale pop + a 130ms rim impulse on the
+//              hub collar. Zero geometry, zero draw calls, zero allocation.
+//   onGrow() → one growth shockwave from effects.js, fired when the player
+//              crosses a Size tier. This was the indefensible gap: growth had
+//              NO feedback of any kind, and crossing into a new tier of edible
+//              object is the core beat of the genre.
+// Everything is hero-local. No camera shake, no bloom, nothing over the
+// world, nothing that can hide a prop or the aperture edge.
 //
 // Movement math is EXACTLY V1's (speed 340 u/s, radius 26+sqrt(mass)*1.9,
 // growth drag 60/max(60,r)) — the logic suite asserts per-frame displacement
@@ -21,13 +33,18 @@
 //
 // No browser-only API is touched at module top level — only inside
 // createAvatar(), so a bare `import` of this file never throws in Node.
-import { createPool } from './pools.js';
 
-// Identity skins (art §2): same 5 ids as V1 (save data references them),
-// but every skin is now a BRIGHT rim hue over a near-black interior — the
-// swirl bands are a dim shade of the rim hue (colorB), the throat fades to
-// near-black (colorA). `swirl` sets band contrast, `ringOpacity` the rim's
-// base opacity (pulsed ±3% per frame).
+import { createGrowthEffects } from './effects.js';
+
+// Identity skins (art §2): same 5 ids as V1 (save data references them) and
+// the SAME EXPORT SHAPE (save data references the field names too). The
+// meaning of two fields moved with the flywheel rebuild:
+//   colorA — the near-black aperture disc (the "empty hole")
+//   colorB — the flywheel rim body (a dim shade of the rim hue)
+//   ring   — the bright unlit hub collar at the aperture edge
+//   swirl  — no longer a shader input; repurposed as SPOKE CONTRAST (how
+//            dark the spokes read against the rim body)
+//   ringOpacity — the hub collar's opacity (no longer pulsed)
 export const SKINS = {
   // Default: the Hole.io cyan-blue rim over a blue-black throat.
   void: {
@@ -57,72 +74,71 @@ export const SKINS = {
 };
 export const SKIN_NAMES = Object.keys(SKINS);
 
-const SWIRL_VERTEX = /* glsl */ `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-// Rotating spiral on disc/polar UVs (art §2's "~20 lines of GLSL", adapted
-// from the V1 sphere version): lathe UVs give u = angle around the disc and
-// v = 0 at the throat → 1 at the rim, which IS polar space. Spiral bands
-// rotate over time; a radial falloff sinks the throat to near-black so the
-// shallow dish reads as a deep funnel (the concavity is painted, not
-// geometric — the mesh stays essentially flush with the ground).
-const SWIRL_FRAGMENT = /* glsl */ `
-  uniform float uTime;
-  uniform vec3 uColorA;
-  uniform vec3 uColorB;
-  uniform float uSwirl;
-  varying vec2 vUv;
-  void main() {
-    float ang = vUv.x * 6.28318;
-    float rad = vUv.y;
-    float spiral = sin(ang * 3.0 + rad * 10.0 - uTime * 2.4) * uSwirl;
-    float bands = smoothstep(-0.2, 0.9, spiral) * smoothstep(0.12, 0.9, rad);
-    vec3 col = mix(uColorA, uColorB, bands);
-    col *= 0.22 + 0.78 * smoothstep(0.0, 0.75, rad);
-    gl_FragColor = vec4(col, 1.0);
-  }
-`;
-
 // Movement constants — EXACT V1 values, do not retune (see header comment).
 const BASE_SPEED = 340;
 
-const EAT_POP_SCALE = 0.02;   // 2% squash-and-stretch pop
-const EAT_POP_SECONDS = 0.08; // 80ms
+// Eat pop. 2%/80ms linear was below the perception floor at the chase cam's
+// ~12r standoff — the bite landed and nothing on screen said so. 3.5% over
+// 110ms with an ease-OUT decay snaps on the frame of the eat and settles,
+// which is what makes it read as an impact rather than a wobble. Still a
+// scale bump on the hero only: no camera shake, nothing that moves the world.
+const EAT_POP_SCALE = 0.035;
+const EAT_POP_SECONDS = 0.11;
 
-// Ground-stack heights (world units): ground plane y=0, prop blob shadows
-// 0.15 (instancing.js), wake decals 0.25, funnel throat 0.12 → rim 0.5.
-// The rim sits above the shadows/wake but below falling props, and nothing
-// is coplanar, so no z-fighting and no renderOrder tricks are needed.
-const RIM_Y = 0.5;
-const THROAT_Y = 0.12;
-const FUNNEL_DEPTH = RIM_Y - THROAT_Y; // lathe geometry is 1.0 deep; scaled to this
-const WAKE_Y = 0.25;
-const RIM_PULSE = 0.03;       // ±3% scale/opacity
-const RIM_PULSE_SPEED = 3.0;  // rad/s
+// Eat rim impulse. The hub collar — already the gameplay-legible aperture
+// edge — flashes toward white on every bite and decays over 130ms. This is
+// the Hole.io reference's rim response (assets/references/holeio/): the mouth
+// itself acknowledges the bite. Colour only, never geometry: the collar's
+// radius IS radius(), and moving it would lie about the size gate. Costs no
+// triangles, no draw calls, and no allocation. Retriggering mid-flash is
+// intentional — a sustained frenzy holds the rim lit, which is the reference's
+// behaviour, and the decay means a lone eat still reads as a single beat.
+const EAT_FLASH_SECONDS = 0.13;
+const EAT_FLASH_STRENGTH = 0.55; // how far toward white at peak
 
-const DEBRIS_POOL_SIZE = 14;
-const DEBRIS_LIFE = 0.9;      // seconds skimming the disc before absorption
-// Ground wake. Sized and faded WAY down from the original r*0.8 discs at 0.28
-// opacity: at the reference camera framing those read as a chain of big grey
-// puddles dragging behind the hole, not motion. The reference has no wake at
-// all; this keeps a faint scuff so speed still registers on the floor.
-const WAKE_POOL_SIZE = 20;
-const WAKE_LIFE = 0.55;
-const WAKE_INTERVAL = 0.09;   // seconds between trail decals at speed
-const WAKE_SCALE = 0.34;      // fraction of avatar radius
-const WAKE_OPACITY = 0.10;
-// Dust puffs, likewise pulled back: at r*0.5 growing 2.5x with 0.22 additive
-// opacity these bloomed into a pale disc wider than the hole itself, reading
-// as a grey smudge parked under the player rather than as speed.
-const DUST_POOL_SIZE = 12;
-const DUST_LIFE = 0.5;
-const DUST_SCALE = 0.22;    // fraction of avatar radius
-const DUST_OPACITY = 0.14;
+// Flywheel radii, in LOCAL units — the parent group is scaled by the world
+// radius r every frame, so local 1.0 IS the gameplay aperture. Everything
+// the wheel draws lives OUTSIDE 1.0 except the aperture disc itself, so the
+// wheel can never cover a prop the player could eat.
+const APERTURE_R = 1.0;        // the eating aperture == radius()
+const COLLAR_OUTER_R = 1.06;   // bright unlit hub collar at the aperture edge
+const SPOKE_INNER_R = 1.0;     // spokes bridge collar → rim
+const SPOKE_OUTER_R = 1.18;
+const RIM_INNER_R = 1.18;      // solid annular wheel body
+const RIM_OUTER_R = 1.35;
+const SPOKE_COUNT = 8;
+const SPOKE_HALF_WIDTH = 0.055; // local half-thickness of each radial bar
+const WHEEL_SEGMENTS = 48;
+
+// Ground-stack heights AND THICKNESSES, all in WORLD units: ground plane
+// y=0, prop blob shadows 0.15 (instancing.js). The wheel is genuinely
+// extruded — it has side faces that catch the sun — and its thickness is a
+// FIXED WORLD height, not a fraction of the hole. The extruded geometries
+// are built one unit tall and get scale.y = thickness/radius per frame, the
+// same divide-by-radius discipline as the base heights, so neither the base
+// lifts off the ground nor the top inflates as the player consumes.
+//
+// Thickness choice: 3.0 world units on the body. At the minimum radius
+// (mass 0 → r=26) the wheel's world outer radius is 26 × 1.35 = 35.1, so
+// 3.0 is ~8.6% of it — chunky enough at the camera's 40° default pitch for
+// the outer wall to read as a machined edge rather than a stroke, and small
+// enough that it never occludes the aperture from the chase cam. Spokes get
+// 60% of that so the rim proud-stands above them, which is what makes it
+// read as a wheel rather than a coin.
+const HOLE_DISC_Y = 0.30;        // the near-black "empty" aperture floor
+const WHEEL_BASE_Y = 0.35;       // underside of body + spokes
+const BODY_THICKNESS = 3.0;      // body top lands at 3.35
+const SPOKE_THICKNESS = 1.8;     // spoke top at 2.15, recessed below the rim
+// The collar is extruded too, and is the BORE WALL of the hole: it runs from
+// just under the aperture disc up past the body's top face, so the mouth
+// edge is never occluded by the raised rim at grazing angles, and the hole
+// reads as bored THROUGH a solid wheel instead of painted on it.
+const COLLAR_BASE_Y = 0.20;
+const COLLAR_THICKNESS = 3.35;   // collar top at 3.55, 0.2 above the body
+
+// Idle spin. 0.6 rad/s against 8-fold spoke symmetry repeats every ~1.3s —
+// slow enough that the spokes never strobe at 60fps or 30fps.
+const SPIN_RATE = 0.6; // rad/s
 
 const TAU = Math.PI * 2;
 
@@ -135,96 +151,270 @@ export function shortestAngleTo(from, to) {
   return d;
 }
 
-// The ground-flush HOLE VISUAL shared by the player avatar and the rival
-// flywheels (main.js builds rivals with this too): a swirl-shaded paraboloid
-// funnel plus the thick unlit rim ring. The returned group is meant to live
-// inside a parent scaled to the hole's world radius (both the avatar and
-// rivals.js follow that convention); update(dt, radius) keeps the disc
-// flush with the ground and animates the swirl + rim pulse.
+// --- Extruded wheel geometry -------------------------------------------
+// Both builders emit a NON-INDEXED BufferGeometry ONE UNIT TALL (y = 0 → 1)
+// so the caller can set scale.y = worldThickness / worldRadius each frame and
+// get a fixed world thickness out of a uniformly-scaled parent. The walls are
+// purely radial (normal.y === 0) and the top faces are purely +Y, so that
+// non-uniform y-scale cannot skew a single normal — the lighting is identical
+// at every hole size. No bottom faces: the underside sits on an opaque ground
+// plane and is never visible, which is a third of the triangles saved.
+// Each builder returns ONE geometry so the whole wheel stays at 4 draw calls
+// however many spokes or segments it has — this factory instantiates once per
+// rival as well as for the player, so the cost multiplies.
+function quad(pos, nor, a, b, c, d, na, nb, nc, nd) {
+  pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+  nor.push(...na, ...nb, ...nc, ...na, ...nc, ...nd);
+}
+
+function finishGeometry(THREE, pos, nor) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nor), 3));
+  return geo;
+}
+
+// A solid annular ring: top face + outer wall + inner wall. Wall normals are
+// per-vertex radial, so the side faces shade smoothly around the circle and
+// catch the sun as a machined edge rather than a faceted band.
+function buildRingSolidGeometry(THREE, rInner, rOuter, segments) {
+  const pos = [];
+  const nor = [];
+  const UP = [0, 1, 0];
+  for (let i = 0; i < segments; i += 1) {
+    const a0 = (i / segments) * TAU;
+    const a1 = ((i + 1) / segments) * TAU;
+    const c0 = Math.cos(a0); const s0 = Math.sin(a0);
+    const c1 = Math.cos(a1); const s1 = Math.sin(a1);
+    const n0 = [c0, 0, s0];
+    const n1 = [c1, 0, s1];
+    const n0i = [-c0, 0, -s0];
+    const n1i = [-c1, 0, -s1];
+    // Top face.
+    quad(pos, nor,
+      [c0 * rInner, 1, s0 * rInner], [c0 * rOuter, 1, s0 * rOuter],
+      [c1 * rOuter, 1, s1 * rOuter], [c1 * rInner, 1, s1 * rInner],
+      UP, UP, UP, UP);
+    // Outer wall.
+    quad(pos, nor,
+      [c0 * rOuter, 0, s0 * rOuter], [c1 * rOuter, 0, s1 * rOuter],
+      [c1 * rOuter, 1, s1 * rOuter], [c0 * rOuter, 1, s0 * rOuter],
+      n0, n1, n1, n0);
+    // Inner wall (the bore).
+    quad(pos, nor,
+      [c0 * rInner, 0, s0 * rInner], [c0 * rInner, 1, s0 * rInner],
+      [c1 * rInner, 1, s1 * rInner], [c1 * rInner, 0, s1 * rInner],
+      n0i, n0i, n1i, n1i);
+  }
+  return finishGeometry(THREE, pos, nor);
+}
+
+// Radial spoke bars, all `count` of them in one geometry: each is a box with
+// a top face, two long side walls and two end caps (no bottom).
+function buildSpokeSolidGeometry(THREE, count, rInner, rOuter, halfWidth) {
+  const pos = [];
+  const nor = [];
+  const UP = [0, 1, 0];
+  for (let i = 0; i < count; i += 1) {
+    const a = (i / count) * TAU;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const px = -sa * halfWidth; // in-plane perpendicular → the bar's width
+    const pz = ca * halfWidth;
+    const side = [-sa, 0, ca];
+    const sideNeg = [sa, 0, -ca];
+    const outward = [ca, 0, sa];
+    const inward = [-ca, 0, -sa];
+    const iL = [ca * rInner + px, sa * rInner + pz];
+    const iR = [ca * rInner - px, sa * rInner - pz];
+    const oR = [ca * rOuter - px, sa * rOuter - pz];
+    const oL = [ca * rOuter + px, sa * rOuter + pz];
+    const p = (xz, y) => [xz[0], y, xz[1]];
+    // Top.
+    quad(pos, nor, p(iL, 1), p(oL, 1), p(oR, 1), p(iR, 1), UP, UP, UP, UP);
+    // Left long wall.
+    quad(pos, nor, p(iL, 0), p(iL, 1), p(oL, 1), p(oL, 0), side, side, side, side);
+    // Right long wall.
+    quad(pos, nor, p(iR, 0), p(oR, 0), p(oR, 1), p(iR, 1), sideNeg, sideNeg, sideNeg, sideNeg);
+    // Outer end cap.
+    quad(pos, nor, p(oL, 0), p(oL, 1), p(oR, 1), p(oR, 0), outward, outward, outward, outward);
+    // Inner end cap.
+    quad(pos, nor, p(iL, 0), p(iR, 0), p(iR, 1), p(iL, 1), inward, inward, inward, inward);
+  }
+  return finishGeometry(THREE, pos, nor);
+}
+
+// The ground-flush FLYWHEEL shared by the player avatar and the rivals
+// (main.js builds rivals with this too) — a genuinely EXTRUDED mechanical
+// wheel lying flat, not a decal. Four pieces, all procedural, one draw call
+// each:
+//   1. aperture disc — near-black (colorA), unlit, the "empty" hole floor
+//   2. wheel body    — solid ring 1.18→1.35, 3.0 world units thick, colorB,
+//                      MeshStandardMaterial so its outer/inner walls catch
+//                      the scene's sun and hemisphere fill
+//   3. spokes        — 8 extruded radial bars 1.0→1.18 at 60% of the body
+//                      thickness (so the rim proud-stands), same lit material
+//                      family, darkened by the skin's `swirl`
+//   4. hub collar    — the BORE WALL: a solid ring 1.0→1.06 running from
+//                      under the aperture disc up past the body's top face,
+//                      in the bright `ring` hue, UNLIT MeshBasic. Being the
+//                      TALLEST piece is what keeps the mouth edge legible
+//                      over the thickened body at grazing camera angles.
+// The returned group is meant to live inside a parent scaled to the hole's
+// world radius (both the avatar and rivals.js follow that convention), so the
+// aperture sits at local radius 1.0 == radius(). update(dt, radius) keeps the
+// wheel ground-flush AND fixed-thickness at that scale, and advances the spin.
+//
+// The spin lives on an INNER group: the outer group's parent damps
+// rotation.y toward the steering facing angle (see createAvatar's update),
+// and a spin written to that same channel would fight the steering.
 export function createHoleVisual(THREE, {
   rim, colorA, colorB, swirl = 1, ringOpacity = 0.95,
 }) {
   const group = new THREE.Group();
+  const spinner = new THREE.Group();
+  group.add(spinner);
 
-  // Interior: shallow paraboloid funnel (lathe), rim radius 1.0, depth 1.0
-  // (scaled down to FUNNEL_DEPTH world units per frame — see update()). The
-  // swirl shader paints it from a near-black throat to the rim-hue bands.
-  const funnelPoints = [];
-  for (let i = 0; i <= 16; i += 1) {
-    const t = i / 16;
-    const x = Math.max(0.001, t);
-    funnelPoints.push(new THREE.Vector2(x, -(1 - x * x))); // paraboloid, y: -1 → 0
+  // 1. The hole itself. The ground plane is opaque at y=0, so "empty" is
+  // painted: a flat near-black disc just above the ground, unlit so no light
+  // ever lifts it off black. It tucks a hair under the collar's bore wall
+  // (1.005 > 1.0) so there is no seam at the mouth.
+  const holeGeo = new THREE.CircleGeometry(APERTURE_R * 1.005, WHEEL_SEGMENTS);
+  const holeMat = new THREE.MeshBasicMaterial({ color: colorA, side: THREE.DoubleSide });
+  const holeDisc = new THREE.Mesh(holeGeo, holeMat);
+  holeDisc.rotation.x = -Math.PI / 2;
+  group.add(holeDisc); // not spun: a flat black disc has no spin to show
+
+  // 2. Wheel body — the thick annulus. Built one unit tall; update() sets
+  // scale.y to BODY_THICKNESS/radius so the world thickness never inflates.
+  const bodyGeo = buildRingSolidGeometry(THREE, RIM_INNER_R, RIM_OUTER_R, WHEEL_SEGMENTS);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: colorB, roughness: 0.55, metalness: 0.35,
+  });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  spinner.add(body);
+
+  // 3. Spokes. `swirl` (formerly the shader's band contrast) now sets how far
+  // the spokes darken away from the body colour — same field, same range,
+  // same per-skin character, no change to the SKINS export shape.
+  const spokeGeo = buildSpokeSolidGeometry(THREE, SPOKE_COUNT, SPOKE_INNER_R, SPOKE_OUTER_R, SPOKE_HALF_WIDTH);
+  const spokeMat = new THREE.MeshStandardMaterial({
+    color: colorB, roughness: 0.6, metalness: 0.3,
+  });
+  const spokes = new THREE.Mesh(spokeGeo, spokeMat);
+  spinner.add(spokes);
+  function applySpokeShade(baseColor, contrast) {
+    const k = Math.max(0.25, Math.min(0.85, 0.30 + 0.25 * contrast));
+    spokeMat.color.set(baseColor).multiplyScalar(k);
   }
-  const funnelGeo = new THREE.LatheGeometry(funnelPoints, 48);
-  const coreUniforms = {
-    uTime: { value: 0 },
-    uColorA: { value: new THREE.Color(colorA) },
-    uColorB: { value: new THREE.Color(colorB) },
-    uSwirl: { value: swirl },
-  };
-  const coreMat = new THREE.ShaderMaterial({
-    uniforms: coreUniforms,
-    vertexShader: SWIRL_VERTEX,
-    fragmentShader: SWIRL_FRAGMENT,
-    side: THREE.DoubleSide,
-  });
-  const funnel = new THREE.Mesh(funnelGeo, coreMat);
-  group.add(funnel);
+  applySpokeShade(colorB, swirl);
+  let bodyColor = colorB;
+  let spokeContrast = swirl;
 
-  // Rim: a THICK flat ring at ground level in the bright rim hue —
-  // MeshBasicMaterial (unlit, reads as glowing) at ~0.95 opacity with a
-  // gentle ±3% pulse. Inner edge tucks under the funnel's rim (0.92 < 1.0)
-  // so the seam stays hidden through the pulse.
-  const ringGeo = new THREE.RingGeometry(0.92, 1.14, 48);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: rim,
-    transparent: true,
-    opacity: ringOpacity,
-    depthWrite: false,
-    side: THREE.DoubleSide,
+  // 4. Hub collar / bore wall — the gameplay-legible aperture edge. Unlit, so
+  // no lighting mood can wash it out, and the tallest piece in the stack, so
+  // the thickened rim cannot occlude it from a low camera. Opaque rather than
+  // depth-write-disabled now that it is a solid with real self-occlusion.
+  const collarGeo = buildRingSolidGeometry(THREE, APERTURE_R, COLLAR_OUTER_R, WHEEL_SEGMENTS);
+  const collarMat = new THREE.MeshBasicMaterial({
+    color: rim, transparent: true, opacity: ringOpacity, side: THREE.DoubleSide,
   });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.rotation.x = -Math.PI / 2;
-  group.add(ring);
-  let baseRingOpacity = ringOpacity;
+  const collar = new THREE.Mesh(collarGeo, collarMat);
+  group.add(collar); // not spun: a plain ring, and it must not shimmer
+
+  // Eat rim impulse state. `collarBase` is the resting hue and `collarFlash`
+  // the scratch colour the per-frame lerp writes into — both preallocated, so
+  // the flash costs zero allocation per eat (tech-architecture §1).
+  const collarBase = new THREE.Color(rim);
+  const collarFlash = new THREE.Color();
+  const WHITE = new THREE.Color(0xffffff);
+  let baseOpacity = ringOpacity;
+  let flashTimer = 0;
+
+  let spinEnabled = true;
 
   function setColors(colors) {
-    if (typeof colors.colorA === 'number') coreUniforms.uColorA.value.set(colors.colorA);
-    if (typeof colors.colorB === 'number') coreUniforms.uColorB.value.set(colors.colorB);
-    if (typeof colors.swirl === 'number') coreUniforms.uSwirl.value = colors.swirl;
-    if (typeof colors.rim === 'number') ringMat.color.set(colors.rim);
+    if (typeof colors.colorA === 'number') holeMat.color.set(colors.colorA);
+    if (typeof colors.colorB === 'number') {
+      bodyColor = colors.colorB;
+      bodyMat.color.set(bodyColor);
+      applySpokeShade(bodyColor, spokeContrast);
+    }
+    if (typeof colors.swirl === 'number') {
+      spokeContrast = colors.swirl;
+      applySpokeShade(bodyColor, spokeContrast);
+    }
+    if (typeof colors.rim === 'number') {
+      collarBase.set(colors.rim);
+      collarMat.color.copy(collarBase);
+    }
     if (typeof colors.ringOpacity === 'number') {
-      baseRingOpacity = colors.ringOpacity;
-      ringMat.opacity = baseRingOpacity;
+      baseOpacity = colors.ringOpacity;
+      collarMat.opacity = baseOpacity;
+    }
+    // A skin change mid-flash would otherwise leave the collar stuck at the
+    // flashed colour once the timer runs out against the NEW base.
+    flashTimer = 0;
+  }
+
+  // Idle spin on/off (reduced motion, tech §6). Additive to the factory's
+  // { group, setColors, update } contract — existing callers ignore it.
+  function setSpinEnabled(v) { spinEnabled = !!v; }
+
+  // One bite landed: kick the rim impulse. Retriggering restarts the envelope.
+  // Kept on the SHARED factory (not just the avatar) so rivals can use the
+  // same acknowledgement later without a second implementation — nothing calls
+  // it for them today.
+  function flashRim() { flashTimer = EAT_FLASH_SECONDS; }
+
+  // `radius` is the world radius the PARENT group is scaled to this frame.
+  // Two corrections, both the same divide-by-radius discipline:
+  //   position.y — keeps every piece's UNDERSIDE at its fixed world height,
+  //                so the wheel neither lifts off the ground nor sinks
+  //   scale.y    — the extruded geometries are one unit tall, so this pins
+  //                each piece's world THICKNESS regardless of hole size
+  // Together they mean the whole wheel occupies the same fixed world height
+  // band (0.20 → 3.55) at r=26 and at r=500 alike.
+  function update(dt, radius) {
+    if (spinEnabled) {
+      spinner.rotation.y = (spinner.rotation.y + SPIN_RATE * dt) % TAU;
+    }
+    const inv = 1 / Math.max(1, radius);
+    holeDisc.position.y = HOLE_DISC_Y * inv;
+    body.position.y = WHEEL_BASE_Y * inv;
+    body.scale.y = BODY_THICKNESS * inv;
+    spokes.position.y = WHEEL_BASE_Y * inv;
+    spokes.scale.y = SPOKE_THICKNESS * inv;
+    collar.position.y = COLLAR_BASE_Y * inv;
+    collar.scale.y = COLLAR_THICKNESS * inv;
+
+    // Rim impulse decay. Quadratic so the peak is on the eat frame and the
+    // tail is short; when it expires the collar is written back to exactly its
+    // resting values rather than left near them.
+    if (flashTimer > 0) {
+      flashTimer = Math.max(0, flashTimer - dt);
+      const k = flashTimer / EAT_FLASH_SECONDS;
+      const kk = k * k;
+      collarFlash.copy(collarBase).lerp(WHITE, EAT_FLASH_STRENGTH * kk);
+      collarMat.color.copy(collarFlash);
+      collarMat.opacity = baseOpacity + (1 - baseOpacity) * kk;
+      if (flashTimer === 0) {
+        collarMat.color.copy(collarBase);
+        collarMat.opacity = baseOpacity;
+      }
     }
   }
 
-  // `radius` is the world radius the PARENT group is scaled to this frame —
-  // the heights below are divided back out so the disc stays ground-flush
-  // regardless of that scale (funnel depth is a fixed world height, not a
-  // fraction of r — a deeper dish would sink below the opaque ground plane
-  // and get clipped flat anyway).
-  function update(dt, radius) {
-    // Swirl time — the always-on vortex identity — plus the rim pulse.
-    coreUniforms.uTime.value += dt;
-    const pulseWave = Math.sin(coreUniforms.uTime.value * RIM_PULSE_SPEED);
-    ring.scale.set(1 + RIM_PULSE * pulseWave, 1 + RIM_PULSE * pulseWave, 1);
-    ringMat.opacity = baseRingOpacity * (1 - RIM_PULSE * pulseWave);
-
-    const inv = 1 / Math.max(1, radius);
-    ring.position.y = RIM_Y * inv;
-    funnel.position.y = RIM_Y * inv;
-    funnel.scale.y = FUNNEL_DEPTH * inv;
-  }
-
-  return { group, setColors, update };
+  return {
+    group, setColors, setSpinEnabled, flashRim, update,
+  };
 }
 
 export function createAvatar(scene, THREE) {
   const object3D = new THREE.Group();
 
-  // Funnel + rim come from the shared hole-visual factory (rivals use it
-  // too); the avatar adds debris stream, wake, and dust on top.
+  // The whole visual is the shared flywheel factory (rivals use it too).
+  // Nothing is layered on top any more — no debris, no wake, no dust.
   const hole = createHoleVisual(THREE, {
     rim: SKINS.void.ring,
     colorA: SKINS.void.colorA,
@@ -234,61 +424,12 @@ export function createAvatar(scene, THREE) {
   });
   object3D.add(hole.group);
 
-  // Debris stream: pooled shards of last-eaten props skimming just above
-  // the disc, spiraling into the throat (pooled per tech §1 — zero alloc
-  // per eat).
-  const debrisPool = createPool({
-    initialSize: DEBRIS_POOL_SIZE,
-    create: () => {
-      const mesh = new THREE.Mesh(
-        new THREE.TetrahedronGeometry(0.09),
-        new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.9 })
-      );
-      mesh.visible = false;
-      object3D.add(mesh);
-      return { mesh, angle: 0, height: 0, speed: 0, t: 0 };
-    },
-    reset: (d) => { d.mesh.visible = false; d.t = 0; },
-  });
-  const debrisLive = [];
-
-  // Ground wake: pooled dark decals dropped on the floor while moving fast
-  // (world-space — added to the scene, not the avatar, so they stay behind).
-  const wakePool = createPool({
-    initialSize: WAKE_POOL_SIZE,
-    create: () => {
-      const mesh = new THREE.Mesh(
-        new THREE.CircleGeometry(1, 20),
-        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false })
-      );
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.visible = false;
-      scene.add(mesh);
-      return { mesh, t: 0 };
-    },
-    reset: (w) => { w.mesh.visible = false; w.t = 0; },
-  });
-  const wakeLive = [];
-
-  // Dust puffs: pooled additive rings that bloom and fade at speed.
-  const dustPool = createPool({
-    initialSize: DUST_POOL_SIZE,
-    create: () => {
-      const mesh = new THREE.Mesh(
-        new THREE.RingGeometry(0.5, 0.9, 16),
-        new THREE.MeshBasicMaterial({
-          color: 0x86d4f5, transparent: true, opacity: 0,
-          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-        })
-      );
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.visible = false;
-      scene.add(mesh);
-      return { mesh, t: 0, baseScale: 1 };
-    },
-    reset: (p) => { p.mesh.visible = false; p.t = 0; },
-  });
-  const dustLive = [];
+  // Transient event effects (growth shockwave). Added to object3D, which is
+  // scaled by radius() every frame, so the effect is radius-proportional
+  // without any per-effect scaling maths. Rivals do NOT get one — growth marks
+  // belong to the player's own progression beat.
+  const growth = createGrowthEffects(THREE, { color: SKINS.void.ring });
+  object3D.add(growth.group);
 
   object3D.position.set(0, 0, 0);
   scene.add(object3D);
@@ -302,8 +443,6 @@ export function createAvatar(scene, THREE) {
   let inputDz = 0;
   let facingAngle = 0;
   let popTimer = 0;
-  let wakeTimer = 0;
-  let dustTimer = 0;
 
   // EXACT formula ported from the original 2D game (its player-radius func).
   // Relied on elsewhere in the design — do not change its shape. See V1's
@@ -317,18 +456,23 @@ export function createAvatar(scene, THREE) {
     inputDz = dz;
   }
 
-  // Eat feedback entry point: 2% scale pop over 80ms plus one debris shard
-  // (skipped under reduced-motion). main.js calls this once per eaten prop.
+  // Eat feedback entry point, called once per eaten prop by main.js: the scale
+  // pop plus the rim impulse. Both are hero-local and bounded; nothing here
+  // touches the camera, the world, or anything the player needs to read.
   function onEat() {
     popTimer = EAT_POP_SECONDS;
-    if (_reducedMotion) return;
-    const d = debrisPool.acquire();
-    d.angle = Math.random() * Math.PI * 2;
-    d.height = Math.random(); // 0..1 skim height above the disc
-    d.speed = 4 + Math.random() * 3;
-    d.t = 0;
-    d.mesh.visible = true;
-    debrisLive.push(d);
+    hole.flashRim();
+  }
+
+  // GROWTH entry point: the player crossed a size tier and can now eat a class
+  // of thing they could not eat a second ago. Before this existed the single
+  // most important beat in the genre passed completely unmarked — radius()
+  // just crept up and the avatar's scale followed it continuously, which the
+  // eye cannot see. main.js calls this on each upward crossing of the Size N
+  // readout (the tier ladder the HUD pill already displays), so the visual
+  // beat and the number the player reads are the same event by construction.
+  function onGrow() {
+    growth.onTierUp();
   }
 
   function setSkin(name) {
@@ -341,6 +485,8 @@ export function createAvatar(scene, THREE) {
       swirl: skin.swirl,
       ringOpacity: skin.ringOpacity,
     });
+    // The growth mark wears the player's colour, so it tracks the skin.
+    growth.setColor(skin.ring);
     return true;
   }
 
@@ -362,11 +508,14 @@ export function createAvatar(scene, THREE) {
 
     const r = radius();
 
-    // Eat-pop: 2% scale bump decaying linearly over 80ms (art §2).
+    // Eat-pop: scale bump with an ease-OUT decay (art §2) — full amplitude on
+    // the eat frame, quick settle. `k*k` rather than `k` is the whole
+    // difference between "impact" and "wobble".
     let popScale = 1;
     if (popTimer > 0) {
       popTimer = Math.max(0, popTimer - dt);
-      popScale = 1 + EAT_POP_SCALE * (popTimer / EAT_POP_SECONDS);
+      const k = popTimer / EAT_POP_SECONDS;
+      popScale = 1 + EAT_POP_SCALE * k * k;
     }
     object3D.scale.setScalar(r * popScale);
 
@@ -382,91 +531,12 @@ export function createAvatar(scene, THREE) {
     const damp = Math.min(1, dt * 6);
     object3D.rotation.y += shortestAngleTo(object3D.rotation.y, facingAngle) * damp;
 
-    // Swirl time, rim pulse, and the ground-flush heights all live in the
-    // shared hole visual now.
+    // The ground-flush heights and the idle spin live in the shared
+    // flywheel visual now.
     hole.update(dt, r);
-
-    // object3D is scaled by r, so world-space debris heights become local /r.
-    const inv = 1 / Math.max(1, r);
-
-    // Debris stream: spiral from just outside the rim into the throat over
-    // DEBRIS_LIFE seconds (absorption), then return to the pool.
-    for (let i = debrisLive.length - 1; i >= 0; i--) {
-      const d = debrisLive[i];
-      d.t += dt;
-      d.angle += d.speed * dt;
-      const k = 1 - d.t / DEBRIS_LIFE;
-      if (k <= 0) {
-        debrisLive.splice(i, 1);
-        debrisPool.release(d);
-        continue;
-      }
-      const orbitR = 0.15 + 1.0 * k; // 1.15r → 0.15r as it dies
-      d.mesh.position.set(
-        Math.cos(d.angle) * orbitR,
-        (0.8 + 2.2 * d.height * k) * inv, // skims 0.8–3.0 world units up
-        Math.sin(d.angle) * orbitR
-      );
-      d.mesh.scale.setScalar(Math.max(0.01, k));
-      d.mesh.rotation.x += dt * 3;
-      d.mesh.rotation.y += dt * 2;
-    }
-
-    // Ground wake + dust (reduced-motion: skipped entirely, tech §6).
-    if (!_reducedMotion) {
-      const speedFrac = speed / BASE_SPEED;
-      if (speedFrac > 0.5) {
-        wakeTimer -= dt;
-        if (wakeTimer <= 0) {
-          wakeTimer = WAKE_INTERVAL;
-          const w = wakePool.acquire();
-          w.t = 0;
-          w.mesh.visible = true;
-          w.mesh.position.set(object3D.position.x, WAKE_Y, object3D.position.z);
-          w.mesh.scale.setScalar(r * WAKE_SCALE);
-          wakeLive.push(w);
-        }
-        if (speedFrac > 0.8) {
-          dustTimer -= dt;
-          if (dustTimer <= 0) {
-            dustTimer = 0.15;
-            const p = dustPool.acquire();
-            p.t = 0;
-            p.baseScale = r * DUST_SCALE;
-            p.mesh.visible = true;
-            p.mesh.position.set(
-              object3D.position.x - Math.sin(facingAngle) * r * 0.8,
-              0.5,
-              object3D.position.z - Math.cos(facingAngle) * r * 0.8
-            );
-            dustLive.push(p);
-          }
-        }
-      }
-    }
-    for (let i = wakeLive.length - 1; i >= 0; i--) {
-      const w = wakeLive[i];
-      w.t += dt;
-      const k = 1 - w.t / WAKE_LIFE;
-      if (k <= 0) {
-        wakeLive.splice(i, 1);
-        wakePool.release(w);
-        continue;
-      }
-      w.mesh.material.opacity = WAKE_OPACITY * k;
-    }
-    for (let i = dustLive.length - 1; i >= 0; i--) {
-      const p = dustLive[i];
-      p.t += dt;
-      const k = 1 - p.t / DUST_LIFE;
-      if (k <= 0) {
-        dustLive.splice(i, 1);
-        dustPool.release(p);
-        continue;
-      }
-      p.mesh.material.opacity = DUST_OPACITY * k;
-      p.mesh.scale.setScalar(p.baseScale * (1 + (1 - k) * 0.8));
-    }
+    // Transient effects run on the UNSCALED dt-of-the-frame like everything
+    // else here; `r` is passed only for their ground-height correction.
+    growth.update(dt, r);
   }
 
   return {
@@ -480,10 +550,20 @@ export function createAvatar(scene, THREE) {
     get speedMultiplier() { return _speedMultiplier; },
     set speedMultiplier(v) { _speedMultiplier = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 1; },
     get reducedMotion() { return _reducedMotion; },
-    set reducedMotion(v) { _reducedMotion = !!v; },
+    // Reduced motion (tech §6): the pools it used to gate are gone, so what
+    // it now stops is the flywheel's idle spin — the only ambient motion
+    // left. Movement and the eat-pop stay (readability, not shake).
+    set reducedMotion(v) {
+      _reducedMotion = !!v;
+      hole.setSpinEnabled(!_reducedMotion);
+      // The growth mark SURVIVES reduced motion — marking a size threshold is
+      // readability, not spectacle — but it stops travelling (effects.js).
+      growth.setReducedMotion(_reducedMotion);
+    },
     radius,
     setMoveInput,
     onEat,
+    onGrow,
     setSkin,
     update,
     get position() { return object3D.position; },
