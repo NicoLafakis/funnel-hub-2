@@ -455,3 +455,41 @@ block fails if camera yaw is ever rederived from the avatar's heading.
 
 Reference art: `assets/references/holeio/` (10 screenshots, the visual target).
 Evidence for this document: `evidence/`.
+
+---
+
+## 8. Open art defects — handoff to the 3D team
+
+Raised on live review of the build at `d9bd536`, after the §1–§7 work landed.
+None of these is diagnosed yet; they are the reviewer's words plus where the
+responsible code most likely is. The 3D agent definitions
+(`.claude/agents/`) are now committed and will load in a new session.
+
+1. **Bare brown ground.** Large untextured expanses between blocks. Block
+   interiors get `GROUND_ZONE_MIX.block` (a 0.06 mix toward white, i.e.
+   almost the raw metro ground colour) and nothing else — no surface, no
+   detail, no props. `src/content/groundtex.js`.
+2. **Buildings in the middle of the street.** §2 measured *centres* out of
+   street rects and got 25.7% → 0.2%, but that metric ignores FOOTPRINT. A
+   building whose centre clears the kerb by 10u still overhangs the
+   carriageway by most of its width. The 0.5% audit tolerance and the
+   `BUILDING_ROAD_CLEARANCE = 10` margin both need revisiting against
+   footprint rather than centre. `src/content/districts.js`,
+   `scripts/placement-audit.mjs`.
+3. **Cars not scaled to the road.** Vehicle render scale is
+   `radius / kindFootprintRadius(kind)` — normalised to the GAMEPLAY radius,
+   which is a difficulty quantity, not an art one. Nothing ties a car's width
+   to lane width, so vehicles do not sit in their lane at a believable size.
+   Note this is load-bearing for the size ladder: changing it changes what is
+   edible when. `src/main.js` `propBaseScale`, `src/content/propkit.js`
+   `kindFootprintRadius`.
+4. **Ground textures stretched, not tiled.** The bake maps a single canvas
+   across the whole world plane, so surface detail is stretched by the world
+   size instead of repeating at a fixed world-space texel density. Zone
+   tiling exists (`TILE_WORLD`) but the noise pass and the composite are
+   whole-canvas. `src/content/groundtex.js`.
+
+The reviewer's framing is worth carrying over verbatim: *"those are just a few
+very small examples of errors in the design"* — treat this list as a sample,
+not a backlog. A full pass by the modeler / material / lighting agents against
+`assets/references/holeio/` is the right next step, not four point fixes.
