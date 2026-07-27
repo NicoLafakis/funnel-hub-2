@@ -799,6 +799,14 @@ header comment of `src/data/levels.js`.
 
 ## 13. Invariants 5 and 7 and the build ceiling are golden masters of one prop layout (2026-07-27)
 
+> **THIS SWEEP WAS NOT EXHAUSTIVE — see §19.** It covered invariants 5, 7 and
+> the build ceiling only. Invariants **3 and 4 are also partial golden masters**
+> and were missed here purely because they were never swept, not because they
+> were checked and cleared. They fail at some salts on layouts where they report
+> 100/100 at salt 0. Do not read this section as a clean bill of health for the
+> invariants it does not name; assume any un-swept gate is un-tested rather than
+> sound.
+
 This is the blocker on all remaining re-layout work (built-out blocks, prop
 variety, alleys, elevated rail). It needs a decision from Nico before any of
 that can proceed. **Nothing was changed in response to it.**
@@ -1728,3 +1736,187 @@ frontage versus anchoring a corner. Task C's taxonomy can key off both — a
 corner anchor and a mid-terrace infill are different buildings in a real city,
 and that distinction is now available in the data where before every building
 claimed to be on a corner.
+
+## 19. Prop occupancy: nothing ever checked whether two props shared ground (2026-07-27)
+
+The largest visual defect found this session, and the most direct answer to
+Nico's actual complaint about accurate placement of buildings and objects.
+
+### The measurement that reframed everything
+
+§18 reported 15.8% of BUILDINGS intersecting another building. That metric was
+too narrow. Measured across ALL kinds, over 100 levels and 47,750 props:
+
+**18.73% of every prop in the game intersected at least one other prop.**
+
+Per kind, share of that kind intersecting something: building-large **67.8%**,
+building-medium 50.6%, building-small 41.1%, then trash 17.7%, tree 16.2%,
+bike 14.7%, bus 13.4%, car 12.8%, streetlamp 12.6%, person 10.6%.
+
+The dominant failures are CROSS-KIND — bike/building-small, trash/tree,
+building-small/person — which is exactly why no previous measurement found
+them. Every earlier check, including §18's, compared buildings against
+buildings.
+
+### Severity: this was never cosmetic
+
+Raw penetration depth is not comparable across kinds (17u into a bin is most of
+the bin; 17u into a tower is a seam), so severity is normalised as the fraction
+of the SMALLER prop's width buried in the other. Of 6,590 intersecting pairs at
+baseline: seam (<10%) 5.3%, visible (10-35%) 15.3%, bad (35-75%) 22.4%,
+**buried (>75%) 57.0%**. The majority case was one prop essentially INSIDE
+another — bins inside bins, pedestrians inside walls — not a shared edge.
+
+### The root cause, and the wrong hypothesis that preceded it
+
+The plan of record was to make the road-escape pass occupancy-aware, on the
+assumption that it caused the overlap by pushing props onto each other.
+**Measured, that hypothesis was false.** Overlap immediately before and after
+the pass, on the pre-fix tree:
+
+| | intersecting pairs |
+|---|---|
+| before road-escape | 8,987 |
+| after road-escape | 6,590 |
+
+The pass REDUCES overlap by 27% while moving 26.9% of props. Fixing it would
+have optimised a step that was already helping and left 6,590 pre-existing
+intersections untouched. **"The last thing that touched it" is not the same as
+"the thing that caused it".**
+
+The actual root cause: **no pass anywhere checked prop-vs-prop occupancy.** Site
+pools are generated independently per zone — building corners and frontage,
+sidewalk, park, plaza, road lanes — and each avoided only the ROAD. A sidewalk
+bike site could not know about the ~90u building footprint over it. Large
+buildings were worst because they cover the most ground and therefore swallow
+the most independently-chosen sites.
+
+### The fix, and why it took BOTH steps
+
+1. **Occupancy at placement.** A shared spatial grid every pool consults, so a
+   site that would bury an already-placed prop is rejected and another is tried.
+2. **An occupancy TIE-BREAK in the road-escape pass.** Step 1 alone only reached
+   15.80% final, because the escape pass then moved 26.7% of props with no
+   knowledge of each other and undid part of the gain. Road clearance strictly
+   outranks occupancy — the audit gates the road and nothing gates occupancy —
+   so occupancy only chooses among candidates that ALREADY clear the road.
+
+**The ordering is the finding, and neither half is true alone.** The escape pass
+was not the root cause, AND it still had to be touched — in that order. Fixing
+only the escape pass would have been optimising a helper; fixing only placement
+would have left a quarter of all props being shuffled blind afterwards.
+
+| | props intersecting |
+|---|---|
+| baseline | 18.73% |
+| placement occupancy only | 15.80% |
+| + escape-pass tie-break | **11.36%** |
+
+Pairs 6,590 to 3,694. building-large 67.8% to 42.1%, medium 50.6% to 30.6%,
+small 41.1% to 25.3%. The audit's building-vs-building row: 15.8% to 9.2%.
+
+(An intermediate build read 8.4% on that last row. It is 9.2% on the landed
+tree: the outward-escape fallback had to be restored to its original ranking —
+first road-clear step, else shallowest — because preferring empty ground in the
+FALLBACK pushed buildings-in-roadway to 0.6% and tripped the audit's 0.5%
+ceiling. Road clearance outranks occupancy, so the slightly worse overlap number
+is the correct trade and 8.4% was never a legitimate reading.)
+
+### Controls — what makes the number believable
+
+**Neutral-mechanism control.** With occupancy disabled but every other change
+(largest-first order, live grid, commit calls) left in place, the result is
+18.73% — identical to baseline. With it active, 11.36%. The improvement comes
+from the mechanism and not from incidental reordering. This is §17's rule
+applied to this change: set the intended mechanism to neutral and re-run.
+
+**Salt sweep** (position perturbation) 10.46-11.40%, spread 0.94pp.
+**Stream sweep** (rngProps constant) 11.36-12.10%, spread 0.74pp. Stable on both.
+
+### LARGEST-FIRST WAS NOT VALIDATED — it is a tie-break, not a finding
+
+The rationale was that buildings should claim ground first because they have the
+fewest viable sites. Tested: **smallest-first scores 11.07% against
+largest-first's 11.36%** — marginally BETTER, with the gap comfortably inside
+the 0.94pp salt spread. Placement order is therefore not a meaningful lever and
+the hypothesis did not hold.
+
+Largest-first is KEPT, but as the defensible deterministic tie-break (first
+placed keeps the spot; order fixed by size rather than luck), **not** because it
+was measured superior. Do not cite it as evidence for anything.
+
+### The residue, reported rather than hidden
+
+**4,859 props kept an overlapping site** after exhausting `MAX_SITE_TRIES`:
+trash 1012, person 901, bike 817, streetlamp 685, car 588, tree 545, bus 295,
+building-small 16. D2 forbids dropping a budgeted prop, so placing it
+overlapping and REPORTING that is the only honest outcome; silently leaving it
+is not. Buildings almost never exhaust retries, which is why the building
+numbers improved most.
+
+**58.4% of what remains is still `buried`.** The survivors are the hard cases,
+not near-misses — so 11.36% must NOT be read as "mostly solved". It is better,
+not good.
+
+**Spawn feast** is registered in the occupancy grid so later props avoid it,
+which took feast-involved pairs from 16.2% to 11.7% as an incidental gain. Feast
+props are still not checked against EACH OTHER, deliberately: they are a
+gameplay guarantee (a tier-0 ring at spawn) and moving one changes that
+guarantee rather than just its looks.
+
+### NOT GATED, and deliberately so
+
+No threshold is proposed for the overlap number. 11.36% is better, not good, and
+a gate set now would enshrine a figure nobody would defend. The audit reports it
+as INFORMATIONAL. Whoever drives it down further derives the threshold from the
+fixed behaviour.
+
+### THE COST — invariants 3 and 4 are DEGRADED
+
+Un-stacking props genuinely spreads the food out. 8,942 props that shared ground
+now occupy distinct positions, so the greedy walked bot travels further for the
+same mass. **Removing overlap makes the map slightly harder.** That is a real
+gameplay consequence of a visual fix, not a bug.
+
+Invariant 3 (rival hoard) now 99/100, worst n64: hoard 2,337,466 against
+2,038,784 reachable. Invariant 4 (capstone edible) now 99/100, worst n98:
+edible at 77.2s against a 76.5s deadline — a miss of 0.7 seconds.
+
+**Both gates were ALREADY SOFT before this change**, which is the load-bearing
+part of this entry. Salt sweep, committed tree versus after:
+
+| salt | 0 | 1 | 2 | 3 | 5 |
+|---|---|---|---|---|---|
+| COMMITTED inv3 | 100 | 99 | 100 | 100 | 100 |
+| COMMITTED inv4 | 100 | 100 | 99 | 100 | 99 |
+| AFTER inv3 | 99 | 100 | 98 | 100 | 100 |
+| AFTER inv4 | 99 | 99 | 98 | 97 | 100 |
+
+They failed at some salts BEFORE anything was touched. They report 100/100 on
+the authored layout partly by luck of that layout — the §13 defect in a milder
+form. §13 missed them because it swept 5, 7 and the ceiling only, never 3 and 4.
+This change degrades an already-fragile gate (inv4 min 99 to 97); it did not
+break a solid one.
+
+Accepted as a documented cost rather than tuned away. Invariant 5 holds 100/100
+at every salt, invariant 6's mean is 65.5% and in band, the build ceiling is
+173/300 and inside its noise envelope, logic 186/186, placement audit 8/8,
+determinism byte-identical.
+
+### Open items handed to the ECONOMY workstream
+
+Six items, one pass, none of them art:
+
+1. **n64** — rival hoard 2,337,466 vs 2,038,784 reachable (invariant 3).
+2. **n98** — capstone edible at 77.2s vs a 76.5s deadline (invariant 4).
+3. **L6** — greedy walked bot reaches 95.4% of target (§18).
+4. **L61** — 97% of target on one stream/salt combination (§17).
+5. **Mega props** — tier-uniform draw over tiers 4-6, live from L26+ (§17).
+6. **The utility build** — the build ceiling's dominant failure (§16).
+
+### Still unverified visually
+
+Every number here is a claim about footprint RECTANGLES computed from the
+descriptor. Nobody has looked at any of it in a browser. "Buried" means two
+rectangles interpenetrate in the data, not that anyone has seen a bin inside a
+wall on screen. The visual verification pass is owed regardless.

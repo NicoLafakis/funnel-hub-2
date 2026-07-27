@@ -278,11 +278,17 @@ if (totals.buildingsInRoad) {
 }
 
 // Building-on-building intersection: INFORMATIONAL, deliberately not gated.
-// See findings §18. No pass threshold is given because any threshold today's
-// number satisfies would be one invented to be satisfied, rather than one
-// derived from what a city should look like. The number is printed so it stays
-// visible and so a future change can be read against it.
-console.log('\n  INFORMATIONAL (not gated, see findings §18):');
+// See findings §18 and §19. No pass threshold is given because any threshold
+// today's number satisfies would be one invented to be satisfied, rather than
+// one derived from what a city should look like. The number is printed so it
+// stays visible and so a future change can be read against it.
+//
+// NOTE this row counts BUILDINGS ONLY. The all-kind figure is worse and is the
+// real measure — 11.36% of all props, of which 58.4% are still `buried` rather
+// than near-misses (§19). Do not read a falling number here as the map being
+// clean; cross-kind overlap (a bike inside a shopfront) is invisible to this
+// row by construction, which is exactly how the defect stayed hidden.
+console.log('\n  INFORMATIONAL (not gated, see findings §18, §19):');
 console.log(`    buildings intersecting another building: ${totals.buildingsIntersecting}`
   + ` of ${totals.buildingPairs} close pairs`
   + `  (${fmt(totals.buildingsIntersecting, totals.buildings)} of all buildings)`);

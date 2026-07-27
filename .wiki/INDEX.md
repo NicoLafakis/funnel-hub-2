@@ -53,7 +53,23 @@ builds on.
     consolidates every open/deferred/decided-against item from that day's
     four follow-up passes (geometry, material, placement, juice) in one
     place, including the standing note that none of it has been visually
-    verified on the live URL.
+    verified on the live URL. §12-§19 (same day) are the test-instrument and
+    placement work: invariant 8 is tautological (§12); invariants 5, 7 and the
+    build ceiling were golden masters of one prop layout, rebuilt on a
+    layout-insensitive reachability model (§13, §15) — §13 also carries the
+    warning that its sweep was NOT exhaustive and that invariants 3 and 4 are
+    partial golden masters it never checked; prop counts move TWO levers, not
+    one (§14); the BUILD CEILING now fails honestly at 173/300 with a named
+    owner rather than being tuned green (§16); the golden lottery is
+    tier-weighted, with the general rule that any acceptance test touching a
+    random draw must sweep the RNG STREAM as well as the layout (§17);
+    built-out blocks give blocks a contiguous street wall (§18); and §19 is the
+    session's largest visual finding — **18.73% of ALL props intersected
+    another prop**, 57% of those with one prop essentially inside the other,
+    fixed to 11.36% by adding the prop-vs-prop occupancy test that had never
+    existed. §19 also records the six open items handed to the economy
+    workstream and the cost paid: invariants 3 and 4 are DEGRADED to 99/100,
+    accepted and documented rather than tuned away. Still unverified visually.
 
 11. [`0004-false-level-failure/00-findings.md`](0004-false-level-failure/00-findings.md)
     — 2026-07-27 root-cause analysis of "I got over the required amount of

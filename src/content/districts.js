@@ -639,16 +639,126 @@ function buildingPitch(budget) {
 // already placed. Measured at 2 exactly-coincident buildings on level 90 —
 // see findings §18. Any future pool that is a view over another one inherits
 // the fix for free; one that is a genuine copy is unaffected.
-function takeSite(pool) {
+// `accept` is the OCCUPANCY test (findings §19). It is optional so the street
+// -prop pass and any future caller can opt out. A rejected site is NOT
+// discarded — it goes back to the pool, because site pools are budgeted and
+// throwing candidates away would starve later kinds. Retries are bounded:
+// after MAX_SITE_TRIES rejections the FIRST rejected site is taken anyway and
+// the caller counts it, per the tie-break — D2 forbids dropping a budgeted
+// prop, so placing it overlapping and REPORTING that is the only honest
+// outcome. Silently leaving it is not.
+const MAX_SITE_TRIES = 12;
+function takeSite(pool, accept) {
+  const rejected = [];
+  let chosen = null;
+  let overlapped = false;
   while (pool.length) {
     const site = pool.pop();
     if (site.claimed) continue;
-    site.claimed = true;
-    return site;
+    if (!accept || accept(site)) { chosen = site; break; }
+    rejected.push(site);
+    if (rejected.length >= MAX_SITE_TRIES) break;
   }
-  return null;
+  if (!chosen && rejected.length) {
+    chosen = rejected.shift();
+    overlapped = true;
+  }
+  // Return the untried rejects, preserving pop order for determinism.
+  for (let i = rejected.length - 1; i >= 0; i -= 1) pool.push(rejected[i]);
+  if (chosen) chosen.claimed = true;
+  return chosen ? { site: chosen, overlapped } : null;
 }
-function fillFromPools(count, pools, rng, fallbackWorld) {
+
+// Spatial occupancy grid over placed prop FOOTPRINTS. The root cause of the
+// overlap defect (§19) is that every site pool was generated independently and
+// each avoided only the ROAD, never other props — so a sidewalk bike site knew
+// nothing about the 90u building footprint sitting over it. This is the shared
+// memory those pools never had.
+const OCCUPANCY_CELL = 96;
+const OCCUPANCY_EPSILON = 0.25;
+function createOccupancy() {
+  const grid = new Map();
+  const cells = (r) => {
+    const reach = Math.hypot(r.hw, r.hd);
+    const out = [];
+    for (let cx = Math.floor((r.x - reach) / OCCUPANCY_CELL); cx <= Math.floor((r.x + reach) / OCCUPANCY_CELL); cx += 1) {
+      for (let cz = Math.floor((r.z - reach) / OCCUPANCY_CELL); cz <= Math.floor((r.z + reach) / OCCUPANCY_CELL); cz += 1) {
+        out.push(`${cx},${cz}`);
+      }
+    }
+    return out;
+  };
+  return {
+    add(r) {
+      for (const k of cells(r)) {
+        if (!grid.has(k)) grid.set(k, []);
+        grid.get(k).push(r);
+      }
+      return r;
+    },
+    // Tombstone rather than splice: a prop being MOVED must not block its own
+    // destination, and rebuilding the grid per move would be quadratic.
+    remove(r) {
+      if (r) r.dead = true;
+    },
+    // True when `r` would intersect anything already placed. `self` is skipped
+    // so a prop can be tested against everything except itself.
+    blocked(r, self) {
+      for (const k of cells(r)) {
+        const bucket = grid.get(k);
+        if (!bucket) continue;
+        for (const o of bucket) {
+          if (o.dead || o === self) continue;
+          if (rectOverlapDepth(r, o) > OCCUPANCY_EPSILON) return true;
+        }
+      }
+      return false;
+    },
+  };
+}
+
+// The rect the occupancy grid reasons about: the TRUE rendered footprint, with
+// no pavement pad (that pad belongs to road clearance, not to whether two props
+// occupy the same ground) and including vehicles, which propFootprintRect
+// deliberately excludes because the road is where they belong — they still must
+// not be parked inside each other.
+//
+// `unrotated` is for tier 0-1 props, whose final yaw is drawn AFTER the site is
+// chosen. Testing them at yaw 0 and then spinning them would let a prop rotate
+// into its neighbour, so they are tested as the rotation-invariant square that
+// bounds them at every yaw. Slightly conservative, and correct at every yaw.
+function occupancyRect(kind, radius, x, z, rotY, unrotated) {
+  const dim = kindFootprint(kind);
+  const s = kindRenderScale(kind, radius);
+  const hw = (dim.w / 2) * s;
+  const hd = (dim.d / 2) * s;
+  if (unrotated) {
+    const r = Math.hypot(hw, hd);
+    return { x, z, hw: r, hd: r, rotY: 0 };
+  }
+  return { x, z, hw, hd, rotY: rotY || 0 };
+}
+
+// Separating-axis penetration depth for two oriented rects, 0 when clear.
+// Mirrors scripts/placement-audit.mjs so the generator and the audit agree.
+function rectOverlapDepth(a, b) {
+  let min = Infinity;
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  for (const r of [a, b]) {
+    const c = Math.cos(r.rotY);
+    const s = Math.sin(r.rotY);
+    for (const axis of [{ x: c, z: -s }, { x: s, z: c }]) {
+      const dist = Math.abs(dx * axis.x + dz * axis.z);
+      const depth = projectedHalf(a, axis.x, axis.z) + projectedHalf(b, axis.x, axis.z) - dist;
+      if (depth <= 0) return 0;
+      if (depth < min) min = depth;
+    }
+  }
+  return min;
+}
+
+function fillFromPools(count, pools, rng, fallbackWorld, accept) {
   const quotas = pools.map((p) => Math.round(count * p.share));
   // Fix rounding drift on the largest pool.
   const drift = count - quotas.reduce((a, b) => a + b, 0);
@@ -658,17 +768,18 @@ function fillFromPools(count, pools, rng, fallbackWorld) {
   pools.forEach((p, i) => {
     let q = quotas[i];
     while (q > 0 && p.sites.length) {
-      const site = takeSite(p.sites);
-      if (!site) break;
-      out.push({ site, zone: p.zone }); q -= 1;
+      const taken = takeSite(p.sites, accept);
+      if (!taken) break;
+      out.push({ site: taken.site, zone: p.zone, overlapped: taken.overlapped }); q -= 1;
     }
     leftovers.push(...p.sites);
     while (q > 0 && leftovers.length) {
-      const site = takeSite(leftovers);
-      if (!site) break;
+      const taken = takeSite(leftovers, accept);
+      if (!taken) break;
+      const site = taken.site;
       // A spill lands in a pool other than the one budgeted for it, so tag it
       // 'spill' rather than lying about which zone it came from.
-      out.push({ site, zone: 'spill' }); q -= 1;
+      out.push({ site, zone: 'spill', overlapped: taken.overlapped }); q -= 1;
     }
     while (q > 0) {
       // Defensive fallback: site pools are sized generously above budgets, so
@@ -718,22 +829,36 @@ export function generateDistrict(level, opts = {}) {
 
   const props = [];
   const perTier = {};
+  // Shared occupancy across EVERY pool — the memory the independently
+  // generated site pools never had (findings §19).
+  const occupancy = createOccupancy();
+  const keptOverlapping = {};
 
   // Spawn feast first: a tier-0 ring at the origin so ANY first move eats
   // within a second (V1's "0 mass after 10s" fix, now deterministic).
+  //
+  // It is placed before everything and is never displaced — it is a gameplay
+  // guarantee, not decoration — but it IS registered in the occupancy grid, so
+  // every later prop avoids it instead of being dropped on top of it. Its own
+  // ring angles are seeded and unchecked against each other; feast-vs-feast
+  // overlap is therefore still possible and is noted in §19 rather than fixed
+  // here, because moving a feast prop changes a gameplay guarantee.
   const tier0 = budget[0];
   const feastCount = Math.min(SPAWN_FEAST_COUNT, tier0.baseCount);
   for (let i = 0; i < feastCount; i += 1) {
     const a = rngProps() * Math.PI * 2;
     const r = SPAWN_FEAST_RING[0] + rngProps() * (SPAWN_FEAST_RING[1] - SPAWN_FEAST_RING[0]);
+    const fx = Math.cos(a) * r;
+    const fz = Math.sin(a) * r;
     props.push({
       kind: tier0.kind, tierIndex: 0,
-      x: Math.cos(a) * r, z: Math.sin(a) * r,
+      x: fx, z: fz,
       rotY: rngProps() * Math.PI * 2,
       radius: tier0.baseRadius, mass: tier0.baseMass,
       golden: false, elite: false, variant: null, zone: 'park',
       onRoad: false, moving: null, mega: false, scaleMult: 1, spawnFeast: true,
     });
+    occupancy.add(occupancyRect(tier0.kind, tier0.baseRadius, fx, fz, 0, true));
   }
 
   // Per-tier zoned placement. Fractions route each tier to its reading zone:
@@ -755,17 +880,31 @@ export function generateDistrict(level, opts = {}) {
     'building-large': [{ sites: largeCorners.length ? largeCorners : corners, share: 1.0, zone: 'corner' }],
   };
 
-  for (const tier of budget) {
+  // LARGEST FIRST. Placement used to run tier 0 upward, so bins and bikes
+  // claimed ground before the buildings that would later be dropped on top of
+  // them. With a shared occupancy grid the order decides who wins a contested
+  // spot, and the big immovable thing should win: a building has few viable
+  // sites and covers the most ground, while a bin has thousands and can go
+  // anywhere. This is also the deterministic tie-break — first placed keeps the
+  // spot, and the order is fixed by size, not by luck.
+  const placementOrder = [...budget].sort((a, b) => b.baseRadius - a.baseRadius);
+  for (const tier of placementOrder) {
     const plan = PLACEMENT[tier.kind];
     const count = tier.baseCount - (tier.tierIndex === 0 ? feastCount : 0);
-    const picks = fillFromPools(count, plan, rngProps, world);
+    const unrotated = tier.tierIndex <= 1;
+    const accept = (site) => !occupancy.blocked(
+      occupancyRect(tier.kind, tier.baseRadius, site.x, site.z, site.rotY, unrotated),
+    );
+    const picks = fillFromPools(count, plan, rngProps, world, accept);
     // The zone tag is the pool the site actually came from, tracked through the
     // pop. It used to be hardcoded to `plan[0].zone`, which tagged every
     // building 'corner' including the ones on frontage — harmless for placement
     // (position is what matters) but actively misleading for anything that
     // reads zone to decide surface treatment or taxonomy. See findings §18.
     const onRoad = tier.kind === 'car' || tier.kind === 'bus';
-    for (const { site, zone } of picks) {
+    for (const { site, zone, overlapped } of picks) {
+      if (overlapped) keptOverlapping[tier.kind] = (keptOverlapping[tier.kind] || 0) + 1;
+      occupancy.add(occupancyRect(tier.kind, tier.baseRadius, site.x, site.z, site.rotY, unrotated));
       props.push({
         kind: tier.kind,
         tierIndex: tier.tierIndex,
@@ -946,8 +1085,17 @@ export function generateDistrict(level, opts = {}) {
       streetPropCounts[tier.kind] = 0;
       continue;
     }
-    const picks = fillFromPools(count, plan, rngStreet, world);
-    for (const { site, zone } of picks) {
+    // Street furniture is the smallest thing on the map and is placed LAST, so
+    // it fills the ground the buildings and vehicles have already claimed
+    // rather than being buried by them. Lamps and trees take a fixed yaw or a
+    // random one drawn below, so they are tested rotation-invariantly.
+    const acceptStreet = (site) => !occupancy.blocked(
+      occupancyRect(tier.kind, tier.baseRadius, site.x, site.z, 0, true),
+    );
+    const picks = fillFromPools(count, plan, rngStreet, world, acceptStreet);
+    for (const { site, zone, overlapped } of picks) {
+      if (overlapped) keptOverlapping[tier.kind] = (keptOverlapping[tier.kind] || 0) + 1;
+      occupancy.add(occupancyRect(tier.kind, tier.baseRadius, site.x, site.z, 0, true));
       const descriptor = resolveVisualArchetype(
         variants[Math.floor(rngStreet() * variants.length)], tier.kind,
       );
@@ -993,6 +1141,30 @@ export function generateDistrict(level, opts = {}) {
   // few units past ±world/2, and a prop outside the world is a prop the
   // player can never eat.
   const bound = world / 2 - 30;
+  // LIVE occupancy for the repair passes below. The placement-time grid above
+  // reflects where props were PUT; this one tracks where they ARE, because the
+  // road-escape pass moves about a quarter of them and, before this, moved
+  // them with no knowledge of each other — which is why placement-time
+  // occupancy alone only got part of the way (findings §19). Mega scaling is
+  // already applied at this point, so scaleMult is included here and not above.
+  const live = createOccupancy();
+  const liveRect = new Map();
+  for (const p of props) {
+    const r = occupancyRect(p.kind, p.radius * (p.scaleMult || 1), p.x, p.z, p.rotY, p.tierIndex <= 1);
+    liveRect.set(p, live.add(r));
+  }
+  // True when moving `p` to (x, z) would land it inside another prop.
+  const collides = (p, x, z) => {
+    const own = liveRect.get(p);
+    const probe = occupancyRect(p.kind, p.radius * (p.scaleMult || 1), x, z, p.rotY, p.tierIndex <= 1);
+    return live.blocked(probe, own);
+  };
+  const commit = (p) => {
+    const own = liveRect.get(p);
+    live.remove(own);
+    const r = occupancyRect(p.kind, p.radius * (p.scaleMult || 1), p.x, p.z, p.rotY, p.tierIndex <= 1);
+    liveRect.set(p, live.add(r));
+  };
   for (const p of props) {
     p.x = clamp(p.x, -bound, bound);
     p.z = clamp(p.z, -bound, bound);
@@ -1152,12 +1324,22 @@ export function generateDistrict(level, opts = {}) {
         const limit = worst.limit + KERB_EPSILON;
         const near = rectPoint(worst.st, worst.lx, sign * limit);
         const far = rectPoint(worst.st, worst.lx, -sign * limit);
+        // Road clearance still outranks occupancy — the audit gates the road
+        // and nothing gates occupancy — so the kerb candidates are filtered by
+        // `acceptable` FIRST and occupancy only breaks the tie between them.
+        // Landing on another prop is better than standing in traffic, but
+        // where both kerbs clear the road, take the empty one.
         let pushed = null;
-        if (acceptable(near)) pushed = near;
-        else if (acceptable(far)) pushed = far;
+        const nearOk = acceptable(near);
+        const farOk = acceptable(far);
+        if (nearOk && !collides(p, near.x, near.z)) pushed = near;
+        else if (farOk && !collides(p, far.x, far.z)) pushed = far;
+        else if (nearOk) pushed = near;
+        else if (farOk) pushed = far;
         if (!pushed) break;
         p.x = pushed.x;
         p.z = pushed.z;
+        commit(p);
       }
 
       // Outward escape — the last 1-2% the kerb push cannot reach. Two site
@@ -1186,14 +1368,34 @@ export function generateDistrict(level, opts = {}) {
         const MAX_STEPS = 18;
         let best = null;
         let bestDepth = depthAt(p.x, p.z);
+        // Two-tier preference, same rule as the kerb push: clearing the ROAD
+        // is the objective, and occupancy only chooses between steps that
+        // already clear it. `clear` is the first road-clear step that is also
+        // empty ground; `best` is the first road-clear step of any kind. Taking
+        // `clear` when it exists stops the walk parking one prop on another
+        // while both sit legally off the carriageway.
+        // Three candidates, strictly ranked. `clear` clears the road AND is
+        // empty ground; `firstClear` clears the road at any cost; `best` is the
+        // shallowest road penetration when nothing clears it. Road clearance is
+        // the objective and occupancy only chooses among steps that already
+        // satisfy it, so the fallback behaviour is exactly what it was before
+        // occupancy existed — that ordering is what keeps the audit's
+        // buildings-in-roadway ceiling met.
+        let clear = null;
+        let firstClear = null;
         for (let i = 1; i <= MAX_STEPS; i += 1) {
           const q = { x: p.x + dx * STEP * i, z: p.z + dz * STEP * i };
           if (!acceptable(q)) break;
           const d = depthAt(q.x, q.z);
-          if (d <= 0) { best = q; break; }
+          if (d <= 0) {
+            if (!firstClear) firstClear = q;
+            if (!collides(p, q.x, q.z)) { clear = q; break; }
+            continue;
+          }
           if (d < bestDepth) { bestDepth = d; best = q; }
         }
-        if (best) { p.x = best.x; p.z = best.z; }
+        const landing = clear || firstClear || best;
+        if (landing) { p.x = landing.x; p.z = landing.z; commit(p); }
       }
     }
 
@@ -1250,6 +1452,11 @@ export function generateDistrict(level, opts = {}) {
       perTier,
       streetProps: streetPropCounts,
       novelty,
+      // Props that exhausted MAX_SITE_TRIES and kept a site overlapping
+      // something already placed, per kind. D2 forbids dropping a budgeted
+      // prop, so this is the honest residue of the occupancy pass rather than
+      // a hidden failure — the placement audit reports it (findings §19).
+      keptOverlapping,
     },
   };
 }
