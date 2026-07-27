@@ -113,6 +113,17 @@ const WAKE_INTERVAL = 0.09;   // seconds between trail decals at speed
 const DUST_POOL_SIZE = 12;
 const DUST_LIFE = 0.5;
 
+const TAU = Math.PI * 2;
+
+// Signed shortest angular distance from `from` to `to`, wrapped to (-PI, PI].
+// Exported so the logic suite can assert the wrap directly.
+export function shortestAngleTo(from, to) {
+  let d = (to - from) % TAU;
+  if (d > Math.PI) d -= TAU;
+  else if (d <= -Math.PI) d += TAU;
+  return d;
+}
+
 // The ground-flush HOLE VISUAL shared by the player avatar and the rival
 // flywheels (main.js builds rivals with this too): a swirl-shaded paraboloid
 // funnel plus the thick unlit rim ring. The returned group is meant to live
@@ -350,8 +361,15 @@ export function createAvatar(scene, THREE) {
 
     // Orientation: damped facing (V1's `Math.min(1, dt*6)`). No tilt, no
     // banking — a ground-flush hole does not lean into turns.
+    //
+    // The difference MUST be wrapped to (-PI, PI] first: facingAngle comes
+    // from Math.atan2 and so lives in (-PI, PI], while rotation.y accumulates
+    // unbounded. Damping toward the raw difference makes the avatar spin the
+    // long way round every time atan2 wraps — measured as a +27deg snap
+    // against the steer, then a 15 Hz limit cycle
+    // (`.wiki/0003-hole-feel-and-visual-fidelity/00-findings.md` §1.3b).
     const damp = Math.min(1, dt * 6);
-    object3D.rotation.y += (facingAngle - object3D.rotation.y) * damp;
+    object3D.rotation.y += shortestAngleTo(object3D.rotation.y, facingAngle) * damp;
 
     // Swirl time, rim pulse, and the ground-flush heights all live in the
     // shared hole visual now.

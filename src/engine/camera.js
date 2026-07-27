@@ -1,14 +1,15 @@
-// 3rd-person chase camera (game-design §2): higher default pitch (~40°),
-// FOV 70, the avatar framed in the lower third, manual orbit with
-// auto-recenter, size-adaptive lag, and a subtle look-ahead bias toward the
-// nearest edible cluster.
+// 3rd-person follow camera (game-design §2): a FIXED world orientation (see
+// BASE_YAW below — this is load-bearing, not a default), high pitch (~55°),
+// FOV 40, a long standoff so the city rather than the avatar fills the frame,
+// manual orbit with auto-recenter, size-adaptive lag, and a subtle look-ahead
+// bias toward the nearest edible cluster.
 //
 // COORDINATE CONTRACT (lesson B7): the world is a square centered on the
 // origin (0, 0) with extents ±worldSize/2; units are world units; the ground
-// plane is y = 0 with +Y up. Yaw convention matches avatar.js: a yaw of
-// avatar.object3D.rotation.y means "facing (sin(yaw), 0, cos(yaw))" — the
-// camera sits BEHIND that direction by default, and `yaw` (exported for the
-// input layer's camera-relative rotation) is the camera's view direction.
+// plane is y = 0 with +Y up. Yaw convention matches avatar.js: a yaw of Y
+// means "looking along (sin(Y), 0, cos(Y))" — the camera sits BEHIND that
+// direction, and `yaw` (exported for the input layer's camera-relative
+// rotation) is the camera's view direction.
 //
 // Lesson B2: every distance/height below is derived from the framed object's
 // radius (avatar.radius()), never from absolute constants — V1 shipped a
@@ -20,17 +21,47 @@
 
 const DEG = Math.PI / 180;
 
-// Framing (§2): pitch ~40° default puts the avatar in the lower third with
-// most of the frame on the floor ahead — "the food is the game."
-const PITCH_DEFAULT = 40 * DEG;
-const PITCH_MIN = 15 * DEG;
-const PITCH_MAX = 55 * DEG;
-const FOV_DEFAULT = 70;
+// FIXED WORLD YAW (§2, and the whole reason steering used to fight you).
+//
+// This camera's base orientation is a CONSTANT world direction. It does NOT
+// track the avatar's heading, and nothing may make it do so again.
+//
+// Why: game-design §1 makes movement camera-relative (screen intent rotated
+// by `yaw`), so if `yaw` were derived from the avatar's heading the two would
+// form a closed loop — heading feeds yaw feeds the world direction feeds
+// heading. Any input with a lateral component then diverges: measured at
+// -540°/s of camera slew plus a 15 Hz snap-back limit cycle once atan2 wraps
+// (2394° of rotation and 85 direction reversals per 3s of held input). That
+// is the "it fights you turning left and right / feels like rolling a ball"
+// report — the world literally rotated under the player. See
+// `.wiki/0003-hole-feel-and-visual-fidelity/00-findings.md` §1 and
+// `scripts/motion-probe.mjs`, which regression-tests this to zero.
+//
+// With a fixed base, camera-relative IS world-relative and the loop cannot
+// close: W is always world -Z, D is always world +X. The player's only yaw
+// authority is `orbitYaw` below, which is explicit input, decays back to zero,
+// and therefore cannot self-excite. The Hole.io reference does the same thing
+// — its road grid holds one screen orientation from Size 1 to Size 16
+// (assets/references/holeio/).
+//
+// Kept at 0 (view direction +Z, camera behind spawn along -Z) so the seeded
+// spawn-framing corridor in districts.js stays valid.
+const BASE_YAW = 0;
 
-// Eye distance as a multiple of avatar radius (B2: radius-derived). At 40°
-// pitch this yields ~3.1r horizontal standoff / ~2.6r height — close to the
-// post-live-fix V1 proportions (2.6r/1.5r at ~30°) but pitched higher.
-const DIST_RADIUS_MULT = 4.0;
+// Framing (§2): the reference shows FAR more city than avatar — at spawn the
+// hole is ~23% of the frame width, where the old 40°/FOV 70/4r framing put it
+// at ~85% and the city was invisible. A high pitch with a longish lens (low
+// FOV, large standoff) is what gives the genre its flat, toy-city read;
+// a wide FOV up close reads as a fisheye at the player's feet.
+const PITCH_DEFAULT = 55 * DEG;
+const PITCH_MIN = 35 * DEG;
+const PITCH_MAX = 65 * DEG;
+const FOV_DEFAULT = 40;
+
+// Eye distance as a multiple of avatar radius (B2: radius-derived — never an
+// absolute constant; V1 shipped a camera inside the avatar that way). At 55°
+// pitch this yields ~6.9r horizontal standoff / ~9.8r height.
+const DIST_RADIUS_MULT = 12.0;
 
 // Orbit limits (game-design §1/§2): yaw ±120° from behind-avatar, pitch
 // clamped to 15°–55° absolute. Q/E steps are 45°.
@@ -112,7 +143,7 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
 
   function update(dt) {
     const r = typeof avatar.radius === 'function' ? avatar.radius() : 30;
-    const facing = avatar.object3D.rotation.y;
+    // BASE_YAW, never avatar.object3D.rotation.y — see the BASE_YAW comment.
     const pitch = clamp(PITCH_DEFAULT + orbitPitchOffset, PITCH_MIN, PITCH_MAX);
 
     sinceOrbitInput += dt;
@@ -136,7 +167,7 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
       if (Math.abs(orbitPitchOffset) < 0.001) orbitPitchOffset = 0;
     }
 
-    const effectiveYaw = facing + orbitYaw;
+    const effectiveYaw = BASE_YAW + orbitYaw;
     const dirX = Math.sin(effectiveYaw);
     const dirZ = Math.cos(effectiveYaw);
 
@@ -218,9 +249,12 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
     setObstacles,
     orbitBy,
     stepOrbit,
-    // The camera's view yaw (avatar facing + orbit offset) — the input layer
-    // rotates its screen-space intent by exactly this (game-design §1).
-    get yaw() { return avatar.object3D.rotation.y + orbitYaw; },
+    // The camera's view yaw (fixed world base + player orbit offset) — the
+    // input layer rotates its screen-space intent by exactly this
+    // (game-design §1). Deriving this from the avatar's heading is the bug
+    // documented at BASE_YAW; `scripts/motion-probe.mjs` guards it.
+    get yaw() { return BASE_YAW + orbitYaw; },
+    get baseYaw() { return BASE_YAW; },
     get orbitYaw() { return orbitYaw; },
     get pitch() {
       return clamp(PITCH_DEFAULT + orbitPitchOffset, PITCH_MIN, PITCH_MAX);

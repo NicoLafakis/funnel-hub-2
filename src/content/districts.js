@@ -31,6 +31,24 @@ export const ZONES = ['plaza', 'avenue', 'park', 'residential'];
 const SPAWN_FEAST_COUNT = 12;
 const SPAWN_FEAST_RING = [50, 130];
 
+// Margins used when rejecting sites that overlap a street rect. These are
+// deliberately modest: the defect being fixed is objects standing IN the road
+// (a building's centre on the carriageway), not a facade or a lamp head
+// overhanging a kerb, which is what real streets look like. Demanding the
+// whole footprint clear pushed buildings so far inboard that block frontages
+// emptied out and every level's pacing shifted.
+const BUILDING_ROAD_CLEARANCE = 10;
+const LAMP_ROAD_CLEARANCE = 4;
+
+// Spawn-camera sightline kept clear of building tiers (see the relocation pass
+// at the end of generateDistrict). The -Z bound must stay BEHIND the camera's
+// spawn standoff: at spawn r=26 with camera.js DIST_RADIUS_MULT=12 and
+// PITCH_DEFAULT=55° the eye sits at z ~= -179, and the orbit pitch floor (35°)
+// pushes it to ~= -256. The half-width is widened by each prop's own radius.
+const CAMERA_CORRIDOR_HALF_WIDTH = 90;
+const CAMERA_CORRIDOR_Z_MIN = -280;
+const CAMERA_CORRIDOR_Z_MAX = 35;
+
 function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
 }
@@ -51,6 +69,51 @@ function rectPoint(rect, lx, lz) {
   const c = Math.cos(rect.rotY);
   const s = Math.sin(rect.rotY);
   return { x: rect.x + lx * c + lz * s, z: rect.z - lx * s + lz * c };
+}
+
+// Same rotation, applied to a DIRECTION (no translation) — used to turn a
+// block-local outward normal into a world heading.
+function rectDir(rect, lx, lz) {
+  const c = Math.cos(rect.rotY);
+  const s = Math.sin(rect.rotY);
+  return { x: lx * c + lz * s, z: -lx * s + lz * c };
+}
+
+// --- Prop heading helpers ----------------------------------------------------
+// Props are authored in propkit.js with a consistent local frame, and getting
+// these wrong is invisible in the data but glaring on screen (every vehicle in
+// the game used to sit broadside across its lane). Two conventions matter:
+//
+//   * BODIES run LONG on local +Z  (car d=4.2 > w=2.0; bus d=9.0 > w=2.6;
+//     buildings put their street door on the +Z face). yawAlong() points that
+//     axis at a world direction.
+//   * The STREET LAMP arm overhangs local +X (propkit buildStreetlamp arcs the
+//     torus out to +X). yawArmToward() points that axis at a world direction,
+//     so the lamp head hangs over the road rather than into a facade.
+//
+// Streets themselves run LONG on local +X (see the header contract), which is
+// exactly the 90° mismatch that produced the sideways traffic.
+function yawAlong(dx, dz) {
+  return Math.atan2(dx, dz);   // local +Z -> (sin y, cos y)
+}
+function yawArmToward(dx, dz) {
+  return Math.atan2(-dz, dx);  // local +X -> (cos y, -sin y)
+}
+
+// Is a footprint of half-extent `half` centred at (x, z) clear of every road?
+// Props carry their gameplay `radius` as a footprint half-diagonal (main.js
+// normalises render scale so that holds), so passing p.radius is conservative.
+function clearOfStreets(x, z, half, streets) {
+  for (const st of streets) {
+    const c = Math.cos(st.rotY);
+    const s = Math.sin(st.rotY);
+    const dx = x - st.x;
+    const dz = z - st.z;
+    const lx = dx * c - dz * s;
+    const lz = dx * s + dz * c;
+    if (Math.abs(lx) <= st.w / 2 + half && Math.abs(lz) <= st.d / 2 + half) return false;
+  }
+  return true;
 }
 
 function streetWidth(world) {
@@ -304,9 +367,10 @@ function roadSites(streets, rng) {
       const count = Math.max(2, Math.floor(st.w / 90));
       for (let i = 0; i < count; i += 1) {
         const lx = ((i + 0.5) / count - 0.5) * st.w * 0.94 + (rng() - 0.5) * 16;
+        const along = rectDir(st, lane >= 0 ? 1 : -1, 0);
         sites.push({
           ...rectPoint(st, lx, lz),
-          rotY: st.rotY,
+          rotY: yawAlong(along.x, along.z),
           streetIndex,
           lane,
         });
@@ -640,13 +704,19 @@ export function generateDistrict(level, opts = {}) {
   for (const p of props) {
     p.x = clamp(p.x, -bound, bound);
     p.z = clamp(p.z, -bound, bound);
-    // The initial chase camera sits behind spawn along -Z. Keep building
-    // tiers out of that sightline so a seeded corner/frontage site cannot
-    // put the camera inside an instanced facade on frame one. Relocation is
-    // deterministic and changes no count, mass, radius, flags, or RNG stream.
+    // The initial camera sits behind spawn along -Z at a FIXED world yaw
+    // (camera.js BASE_YAW = 0). Keep building tiers out of that sightline so a
+    // seeded corner/frontage site cannot put the camera inside an instanced
+    // facade on frame one. Relocation is deterministic and changes no count,
+    // mass, radius, flags, or RNG stream.
+    //
+    // The -Z bound must stay BEHIND the camera's spawn standoff: at spawn
+    // r=26 with camera.js DIST_RADIUS_MULT=12 and PITCH_DEFAULT=55°, the eye
+    // sits at z ≈ -179, and the orbit pitch floor (35°) pushes it to ≈ -256.
     if (p.tierIndex >= 4) {
-      const clearHalfWidth = 90 + p.radius;
-      if (Math.abs(p.x) < clearHalfWidth && p.z > -200 && p.z < 35) {
+      const clearHalfWidth = CAMERA_CORRIDOR_HALF_WIDTH + p.radius;
+      if (Math.abs(p.x) < clearHalfWidth
+        && p.z > CAMERA_CORRIDOR_Z_MIN && p.z < CAMERA_CORRIDOR_Z_MAX) {
         p.x = clamp((p.x < 0 ? -1 : 1) * (clearHalfWidth + 45), -bound, bound);
       }
     }
@@ -658,6 +728,64 @@ export function generateDistrict(level, opts = {}) {
       const angle = Math.atan2(p.z, p.x);
       p.x = clamp(Math.cos(angle) * clearRadius, -bound, bound);
       p.z = clamp(Math.sin(angle) * clearRadius, -bound, bound);
+    }
+    // Road clearance: buildings and street lamps must not stand in traffic.
+    // 25.7% of buildings and 45.6% of street lamps used to, because the site
+    // pools inset a fixed 26u from a block edge and never consulted the street
+    // rects at all — which the organic and radial archetypes' rotated and
+    // diagonal avenues defeat completely.
+    //
+    // This is a POSITION-ONLY repair, deliberately: it draws no RNG and
+    // changes no count, mass, radius or flag, so the seeded layout stream is
+    // untouched (D2: never drop a budgeted prop). Push the prop out along the
+    // offending street's local cross-axis, re-checking up to MAX_PUSHES times
+    // so props sitting on an intersection get cleared of both streets.
+    // Bounded, because pushing once per street compounds the displacement and
+    // walks props out to the world edge wherever diagonals overlap.
+    const roadHalf = p.kind === 'streetlamp'
+      ? LAMP_ROAD_CLEARANCE
+      : (p.kind.startsWith('building') ? BUILDING_ROAD_CLEARANCE : 0);
+    if (roadHalf > 0) {
+      const MAX_PUSHES = 8;
+      for (let attempt = 0; attempt < MAX_PUSHES; attempt += 1) {
+        // Resolve the DEEPEST overlap each pass, not the first one found.
+        // Escaping an arbitrary street lets a prop on an intersection bounce
+        // between two carriageways without ever leaving either.
+        let worst = null;
+        let worstDepth = 0;
+        for (const st of streets) {
+          const c = Math.cos(st.rotY);
+          const s = Math.sin(st.rotY);
+          const lx = (p.x - st.x) * c - (p.z - st.z) * s;
+          const lz = (p.x - st.x) * s + (p.z - st.z) * c;
+          const limit = st.d / 2 + roadHalf;
+          if (Math.abs(lx) > st.w / 2 + roadHalf || Math.abs(lz) > limit) continue;
+          const depth = limit - Math.abs(lz);
+          if (depth > worstDepth) {
+            worstDepth = depth;
+            worst = { st, lx, lz, limit };
+          }
+        }
+        if (!worst) break;
+        // Prefer the nearer kerb, but take the far one when the nearer push
+        // would leave the playable square or drop the prop back into the
+        // spawn-camera corridor cleared above — the world clamp would drag it
+        // straight back into the road, and re-entering the corridor would put
+        // a facade over the lens on frame one. Camera safety outranks the kerb
+        // preference; if neither kerb is acceptable the prop keeps its spot.
+        const sign = worst.lz < 0 ? -1 : 1;
+        const near = rectPoint(worst.st, worst.lx, sign * worst.limit);
+        const far = rectPoint(worst.st, worst.lx, -sign * worst.limit);
+        const acceptable = (q) => Math.abs(q.x) <= bound && Math.abs(q.z) <= bound
+          && !(p.tierIndex >= 4 && Math.abs(q.x) < CAMERA_CORRIDOR_HALF_WIDTH + p.radius
+            && q.z > CAMERA_CORRIDOR_Z_MIN && q.z < CAMERA_CORRIDOR_Z_MAX);
+        let pushed = null;
+        if (acceptable(near)) pushed = near;
+        else if (acceptable(far)) pushed = far;
+        if (!pushed) break;
+        p.x = pushed.x;
+        p.z = pushed.z;
+      }
     }
   }
   landmark.x = clamp(landmark.x, -bound, bound);

@@ -1018,6 +1018,87 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------
+  // Steering stability (.wiki/0003-hole-feel-and-visual-fidelity §1). These
+  // guard the two defects that made the hole "fight you" turning left/right:
+  // a camera yaw derived from the avatar's heading (closed feedback loop),
+  // and an unnormalised atan2 difference in the facing damp (wrap snap).
+  console.log('STEERING STABILITY:');
+  {
+    const { cameraRelativeMove, createInputMachine } = await import('../src/engine/input.js');
+    const { shortestAngleTo } = await import('../src/engine/avatar.js');
+
+    // The wrap itself: damping across the +/-PI seam must take the short way.
+    check('shortest angle across the +PI/-PI seam is small and correctly signed',
+      Math.abs(shortestAngleTo(Math.PI * 0.98, -Math.PI * 0.98) - (Math.PI * 0.04)) < 1e-9);
+    check('shortest angle is stable for an unbounded accumulated rotation',
+      Math.abs(shortestAngleTo(Math.PI * 6 + 0.1, 0.2) - 0.1) < 1e-9);
+    check('shortest angle is always within (-PI, PI]',
+      [0.3, 3.0, -3.0, 12.7, -40.1, 99.9].every((a) =>
+        [0.1, 2.9, -2.9, 7.3].every((b) => {
+          const d = shortestAngleTo(a, b);
+          return d > -Math.PI - 1e-9 && d <= Math.PI + 1e-9;
+        })));
+
+    // The loop: replay the production input -> camera -> avatar chain for 3s
+    // of held input and require every direction to travel a STRAIGHT line.
+    // With camera yaw fixed (camera.js BASE_YAW) this holds; if anything ever
+    // reconnects camera yaw to avatar facing, lateral inputs curve and this
+    // fails. Mirrors scripts/motion-probe.mjs.
+    const DT = 1 / 60;
+    function travel(keys, cameraYaw) {
+      const machine = createInputMachine({});
+      keys.forEach((k) => machine.handleKeyDown(k));
+      let x = 0;
+      let z = 0;
+      let rotY = 0;
+      let reversals = 0;
+      let prev = 0;
+      for (let i = 0; i < 180; i += 1) {
+        machine.update(DT, { cameraYaw });
+        const mv = cameraRelativeMove(machine.move, cameraYaw);
+        const len = Math.hypot(mv.dx, mv.dz);
+        if (len <= 0.0001) continue;
+        const nx = mv.dx / len;
+        const nz = mv.dz / len;
+        const speed = 340 * Math.min(1, len) * (60 / Math.max(60, 26));
+        x += nx * speed * DT;
+        z += nz * speed * DT;
+        const step = shortestAngleTo(rotY, Math.atan2(nx, nz)) * Math.min(1, DT * 6);
+        rotY += step;
+        if (prev !== 0 && Math.sign(step) !== Math.sign(prev)) reversals += 1;
+        prev = step;
+      }
+      return { x, z, distance: Math.hypot(x, z), reversals };
+    }
+
+    const CAM_YAW = 0; // camera.js BASE_YAW
+    const runs = [['w'], ['a'], ['s'], ['d'], ['w', 'd']].map((keys) => travel(keys, CAM_YAW));
+    const ideal = 340 * (60 / Math.max(60, 26)) * 3;
+    check('every held direction travels a straight line at full speed (no curving)',
+      runs.every((r) => r.distance > ideal * 0.97));
+    check('no held direction reverses the avatar heading mid-run (no judder)',
+      runs.every((r) => r.reversals === 0));
+
+    // Direction correctness in the fixed frame. With BASE_YAW = 0 the eye sits
+    // at -Z and looks along +Z, so "away from camera" (W) is world +Z. Screen
+    // right is (up x view) = -X, matching input.js's documented mapping.
+    // These are absolute world directions now, and stay absolute for the whole
+    // run — that constancy IS the fix.
+    const [fw, left, back, right] = runs;
+    check('W drives up-screen (world +Z) and S drives down-screen (world -Z)',
+      fw.z > ideal * 0.9 && back.z < -ideal * 0.9 && Math.abs(fw.x) < 1 && Math.abs(back.x) < 1);
+    check('D strafes screen-right (world -X) and A strafes screen-left (world +X)',
+      right.x < -ideal * 0.9 && left.x > ideal * 0.9 && Math.abs(right.z) < 1 && Math.abs(left.z) < 1);
+
+    // Structural guard: the camera must not expose the avatar's heading.
+    const { readFileSync } = await import('node:fs');
+    const cameraSrc = readFileSync(new URL('../src/engine/camera.js', import.meta.url), 'utf8');
+    const yawGetter = cameraSrc.match(/get yaw\(\)\s*\{[^}]*\}/);
+    check('camera.yaw is not derived from avatar.object3D.rotation.y',
+      !!yawGetter && !yawGetter[0].includes('rotation.y'));
+  }
+
+  // ---------------------------------------------------------------------
   console.log('AUDIO:');
   {
     const { Audio } = audioMod;

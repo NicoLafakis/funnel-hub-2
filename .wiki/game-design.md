@@ -14,13 +14,28 @@ camera swings, your keys no longer match the screen.
 **V2:**
 - **Move input is camera-relative.** W always means "away from camera,"
   A/D strafe relative to the view. The avatar's velocity is input vector
-  rotated by camera yaw. This is how every 3rd-person game since 1998 works;
-  V1 skipped it because the camera yaw was nearly static. Once the camera
-  can orbit (below), it's mandatory.
+  rotated by camera yaw.
+- **The camera's base yaw is FIXED in world space** (`camera.js` `BASE_YAW`),
+  so camera-relative *is* world-relative unless the player is actively
+  orbiting. This is a hard constraint, not a default.
+
+  *Amended 2026-07-27.* This section previously paired camera-relative
+  movement with §2's chase camera that yawed to the avatar's heading. Those
+  two are jointly unshippable: heading feeds camera yaw feeds the world
+  move direction feeds heading, and any lateral input diverges — measured at
+  −540°/s of camera slew plus a 15 Hz snap-back cycle (2394° of rotation and
+  85 direction reversals per 3s of held input). That was the shipped
+  "steering fights you left/right, feels like rolling a ball" report. V1
+  avoided it only because, as this doc already noted, "the camera yaw was
+  nearly static" — that static yaw was load-bearing and V2 removed it
+  without removing the dependency. Full analysis and the regression probe:
+  `0003-hole-feel-and-visual-fidelity/00-findings.md` §1,
+  `scripts/motion-probe.mjs`.
 - **Camera orbit:** right-drag (mouse) or second-finger drag (touch) orbits
-  yaw ±120° and pitch 15°–55°. Q/E rotate 45° stepped for keyboard-only
-  players. Auto-recenter behind the avatar after 2s of movement with no
-  orbit input.
+  yaw ±120° and pitch 35°–65°. Q/E rotate 45° stepped for keyboard-only
+  players. Auto-recenter to the fixed base yaw after 2s of movement with no
+  orbit input. Orbit is the player's *only* yaw authority, and because it
+  decays back to zero it cannot self-excite.
 - **Drag-to-move (mouse) stays**, but it sets a *world-space target* (raycast
   the pointer onto the ground plane) rather than a screen-center direction —
   the avatar pathfinds straight to it and stops on arrival. Fixes the
@@ -44,9 +59,18 @@ the live fix — B2). The ball still dominates center-frame; food is visible
 only in a narrow forward cone (D2).
 
 **V2:**
-- **Higher default pitch (~40°) and slightly wider FOV (65→70)**, pushing
-  the avatar to the lower third. Genre reference: hole.io shows far more
-  floor than avatar for a reason — the food *is* the game.
+- **Fixed world yaw.** The camera never rotates to follow the avatar's
+  heading — see §1's amendment for why that is mandatory rather than
+  stylistic. The Hole.io reference holds one screen orientation from Size 1
+  to Size 16 (`assets/references/holeio/`).
+- **High pitch (55°), long lens (FOV 40), long standoff (12r).** *Amended
+  2026-07-27*: the original 40° / FOV 70 / 4r put the hole at ~85% of the
+  frame width at spawn against the reference's ~23%, which inverted this
+  section's own goal. A high pitch with a narrow FOV at distance is what
+  gives the genre its flat toy-city read; a wide FOV up close reads as a
+  fisheye at the player's feet. Orbit pitch range moves to 35°–65° to match.
+  Genre reference: hole.io shows far more floor than avatar for a reason —
+  the food *is* the game.
 - **Size-adaptive lag:** camera damping decreases as radius grows so big
   avatars don't feel like steering a blimp through molasses.
 - **Edge look-ahead:** camera biases ~15% toward the dominant nearby edible
