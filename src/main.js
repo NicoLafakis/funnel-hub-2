@@ -471,8 +471,15 @@ export async function main() {
     const skyColor = new THREE.Color(metro.sky);
     if (night) skyColor.multiplyScalar(0.28);
     engine.scene.background = skyColor;
-    const fogNear = level.world * (night ? 0.12 : 0.18);
-    const fogFar = level.world * (night ? 0.7 : 0.95);
+    // Fog is a HORIZON fade, not an atmosphere: the reference keeps the whole
+    // district crisp to the edge of the map (assets/references/holeio/). The
+    // old 0.18x/0.95x-of-world band started washing geometry toward the sky
+    // colour well inside the play area — and it got worse with the longer
+    // camera standoff, which sees further. Pushed out so it only softens the
+    // far map edge. Night keeps a tighter band; that one is deliberate mood,
+    // and the fog-closes-in twist scales off these same base values.
+    const fogNear = level.world * (night ? 0.35 : 0.85);
+    const fogFar = level.world * (night ? 1.1 : 2.0);
     engine.scene.fog = new THREE.Fog(skyColor.getHex(), fogNear, fogFar);
     state.baseFog = { near: fogNear, far: fogFar };
     if (typeof engine.setMood === 'function') {
@@ -504,6 +511,8 @@ export async function main() {
     }
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
+    // The street plane is what every cast shadow lands on (scene.js sun).
+    ground.receiveShadow = true;
     root.add(ground);
 
     // Props: the district layout's seeded placements, turned into the runtime
@@ -1441,6 +1450,11 @@ export async function main() {
 
     avatar.update(gdt);
     const r = avatar.radius();
+    // Keep the sun's orthographic shadow box centred on the player and sized
+    // to roughly what the camera can see (camera.js frames ~12r of standoff).
+    // A single box spanning the whole 2400-4800u world would quantise the
+    // shadows to mush; following the avatar keeps them crisp as the hole grows.
+    engine.followShadow(avatar.position.x, avatar.position.z, r * 14);
     // Tide twists shrink the playable water-line as the clock runs down:
     // rising-tide floods every edge; high-tide only advances from the south.
     let half = level.world / 2;

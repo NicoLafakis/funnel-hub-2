@@ -177,8 +177,20 @@ const PALETTE_HUE_SPREAD = [0, 0.09, -0.09, 0.18, -0.18, 0.5];
 // Kinds whose instanced geometry bakes with a neutral white accent so
 // per-instance palette picks (instancing.js) carry the full body hue.
 // Small clutter (trash, bikes) keeps accent-derived vertex colors.
+// Kinds that bake WHITE vertex colors so the per-instance pastel palette pick
+// becomes their body colour (instancing.js `set()`).
+//
+// trash and bike were left out, so they baked the metro ACCENT into their
+// vertex colours instead — and since they are the two most numerous kinds
+// (126 + 90 on level 1), every scene came out dominated by one hue: metro 1's
+// accent is #3fa9f5, and the spawn ring is nothing but blue crates and blue
+// bikes. The reference has no such uniformity; its street clutter is as varied
+// as its buildings. Trees, pedestrians and lamps stay out of this set on
+// purpose — they carry their own identity tints from archetypes.js, which is
+// why a tree must stay green in every metro.
 export const PALETTE_BASE_KINDS = new Set([
   'building-small', 'building-medium', 'building-large', 'car', 'bus',
+  'trash', 'bike',
 ]);
 
 // Fixed DETAIL colors for palette-base (white) bakes: glass/trim must stay
@@ -960,8 +972,14 @@ export function createInstancedPropField(kind, count, THREE, accentColorHex, opt
   });
   // White base material: the real per-part colors live in the vertex colors;
   // instance colors multiply on top (jitter / edibility / golden).
-  const material = standardMat(THREE, 0xffffff, { roughness: 0.7, metalness: 0.1 });
+  const material = standardMat(THREE, 0xffffff, { roughness: 0.85, metalness: 0.0 });
   material.vertexColors = true;
+  // Flat shading: the reference art is unmistakably faceted low-poly — hard
+  // value steps between faces are what give the props their chunky, readable
+  // silhouettes. Smooth-shading a 6-face box (which is most of this kit) just
+  // washes the form out. Costs nothing: the shader derives face normals from
+  // derivatives, no extra geometry.
+  material.flatShading = true;
   // Realistic facade texture (textures.js, building kinds only): the merged
   // geometry's uv attribute maps the facade box's side faces onto the image
   // and everything else onto its trim swatch. Instance colors (jitter /

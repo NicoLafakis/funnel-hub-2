@@ -31,7 +31,17 @@ import { mulberry32, hashStr } from '../data/seeds.js';
 
 const FOG_CULL_MARGIN = 1.2;  // props beyond 1.2x fog distance skip updates
 const SHADOW_COLOR = 0x000000;
-const SHADOW_OPACITY = 0.32;
+const SHADOW_OPACITY = 0.26;
+// Fraction of a prop's footprint half-diagonal used for its contact decal.
+// Below 1/sqrt(2) (~0.707) so the disc sits INSIDE a square footprint rather
+// than ringing it. See writeInstanceMatrix for why this matters.
+const SHADOW_FOOTPRINT_SCALE = 0.55;
+
+// Edibility signalling (art §3, revised — see setEdibility for the full note).
+// Value-only, never hue: a prop's authored colour must survive the tint, or
+// the whole district collapses to the metro accent.
+const EDIBLE_LIFT = 1.06;
+const TOO_BIG_DIM = 0.62;
 
 // Kinds that get Hole.io-style per-instance pastel hue variety (propkit's
 // metroPalette). These kinds bake their instanced geometry with a neutral
@@ -229,6 +239,13 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       shadowMesh.renderOrder = -1; // under everything else on the ground
       scene.add(shadowMesh);
     }
+    // Props cast into the sun's shadow map (scene.js). Only the real geometry
+    // casts — the blob decals are contact darkening under the footprint and
+    // must never cast, or every prop would grow a second floating shadow.
+    for (const group of groups.values()) {
+      group.mesh.castShadow = true;
+      group.mesh.receiveShadow = true;
+    }
 
     // Write every prop's matrix NOW (level-build-time cost): update() culls
     // out-of-view props and keeps their last matrix, so without an initial
@@ -282,9 +299,14 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     group.matrixDirty = true;
 
     if (shadowMesh) {
+      // Contact darkening only, now that the sun casts real shadows: a tight
+      // disc tucked under the footprint so props read as grounded even where
+      // the shadow map is at a grazing angle. `p.radius` is the footprint
+      // HALF-DIAGONAL, so the old 0.9x made a puddle ~27% wider than the prop
+      // itself — a scene full of grey saucers. 0.55x sits inside the footprint.
       tmpPos.y = 0.15; // float just above the ground plane to avoid z-fighting
       tmpQuat.identity();
-      const sr = Math.max(0.5, (p.radius || 2) * 0.9);
+      const sr = Math.max(0.5, (p.radius || 2) * SHADOW_FOOTPRINT_SCALE);
       tmpScale.set(sr, 1, sr);
       tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
       shadowMesh.setMatrixAt(i, tmpMatrix);
@@ -359,13 +381,21 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     const slot = propSlot[propIndex];
     tmpColor.copy(group.baseColors[slot]);
     if (edible) {
-      // Soft blend toward the accent + slight brighten — reads as a glow
-      // rim against the dimmed too-big props without flattening the palette
-      // (the base color now carries the per-instance pastel palette pick,
-      // so the modulation stays ON TOP of it).
-      tmpColor.lerp(accentColor, 0.30).multiplyScalar(1.15);
+      // Edible props keep their OWN colour. The previous 30%-toward-accent
+      // blend plus a 1.15x brighten turned the whole scene one hue: at spawn
+      // nearly everything is edible, the metro accent is a single strong
+      // colour (#3fa9f5 for metro 1), and the base colours are near-neutral
+      // multipliers, so the blend dominated instead of tinting. Probed
+      // instance colours came back IDENTICAL (0.79, 0.91, 1.09 — note the
+      // clipped >1 channel) across trees, pedestrians, lamps and bikes.
+      //
+      // The reference signals edibility with no recolour at all: size against
+      // the rim is the cue, backed by the "Too big" popup. We keep a hint of
+      // that read with a faint lift only — enough to separate edible from
+      // too-big without touching hue.
+      tmpColor.multiplyScalar(EDIBLE_LIFT);
     } else {
-      tmpColor.multiplyScalar(0.7); // dim 30%
+      tmpColor.multiplyScalar(TOO_BIG_DIM);
     }
     group.mesh.setColorAt(slot, tmpColor);
     group.colorDirty = true;
