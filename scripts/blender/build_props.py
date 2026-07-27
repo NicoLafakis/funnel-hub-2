@@ -54,10 +54,24 @@ CAR_GLASS = srgb('#a8c4d4')
 CAR_WHEEL = srgb('#141414')
 CAR_TRIM = srgb('#5f6b7a')
 
+# Building-only fixed colors. Deliberately the same swatches propkit's
+# procedural bake uses (PALETTE_GLASS_TINT / PALETTE_TRIM_TINT) so a Blender
+# building and a procedural one read as the same city under any metro accent.
+WINDOW = srgb('#a8c4d4')         # fixed, glazing (== PALETTE_GLASS_TINT)
+TRIM = srgb('#5f6b7a')           # fixed, roof plant / canopies (== PALETTE_TRIM_TINT)
+DOOR_GLASS = srgb('#38495e')     # fixed, dark ground-floor entrance glass
+ROOF = srgb('#8b93a2')           # fixed, roof deck — a distinct slate value
+AWNING = srgb('#e2725b')         # fixed, shopfront awning pop (Hole.io refs)
+BEACON = srgb('#ff3b30')         # fixed, mast-tip aviation light (matches propkit)
+
 WHITE = (1.0, 1.0, 1.0)          # tintable, full strength
 CANOPY = (0.85, 0.85, 0.85)      # tintable, canopy body (tufts stay WHITE = lighter)
 MID = (0.75, 0.75, 0.75)         # tintable, mid shade (lamp base)
 DARK = (0.5, 0.5, 0.5)           # tintable, darker shade (person legs)
+
+WALL = WHITE                     # tintable, main facade (full metro accent)
+WALL_DARK = (0.72, 0.72, 0.72)   # tintable, recessed ground floor / podium
+WALL_LIGHT = (1.18, 1.18, 1.18)  # tintable, cornices / floor ledges / parapets
 
 # --- Mesh helpers -------------------------------------------------------------
 def clean_scene():
@@ -77,14 +91,24 @@ def apply_bevel(obj, width, segments=2):
     bpy.ops.object.modifier_apply(modifier=mod.name)
 
 
-def box(dims, loc, bevel=0.0):
+def box(dims, loc, bevel=0.0, rot_x=0.0):
     bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
     o = bpy.context.active_object
     o.scale = (dims[0], dims[1], dims[2])
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    if rot_x:
+        o.rotation_euler = (math.radians(rot_x), 0, 0)
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
     if bevel:
         apply_bevel(o, bevel)
     return o
+
+
+def cyl(r, depth, loc, vertices=8):
+    """Upright (Z-axis) cylinder — water tanks, rooftop masts, vent pipes."""
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=vertices, radius=r, depth=depth, location=loc)
+    return bpy.context.active_object
 
 
 def cone(r1, r2, depth, loc, vertices=8, bevel=0.0):
@@ -179,6 +203,30 @@ def finish_prop(parts_with_colors, name):
     for poly in prop.data.polygons:
         poly.use_smooth = False
     return prop
+
+
+def fit_to_box(obj, w, d, h):
+    """Snap the finished prop's bounding box to EXACTLY (w, d, h) — Blender
+    X=width, Y=depth, Z=height — centered on X/Y with its base at z=0.
+
+    propkit's bakeModelPart() rescales every authored model per-axis onto the
+    procedural build's bounding box, so gameplay radii never move. Landing on
+    that box here makes the runtime remap a no-op, which is the only way an
+    authored silhouette survives the swap undistorted."""
+    mesh = obj.data
+    xs = [v.co.x for v in mesh.vertices]
+    ys = [v.co.y for v in mesh.vertices]
+    zs = [v.co.z for v in mesh.vertices]
+    sx = w / max(1e-6, max(xs) - min(xs))
+    sy = d / max(1e-6, max(ys) - min(ys))
+    sz = h / max(1e-6, max(zs) - min(zs))
+    cx = (min(xs) + max(xs)) / 2
+    cy = (min(ys) + max(ys)) / 2
+    obj.scale = (sx, sy, sz)
+    obj.location = (-cx * sx, -cy * sy, -min(zs) * sz)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.transform_apply(location=True, rotation=False, scale=True)
+    return obj
 
 
 def export_prop(obj, name):
@@ -276,6 +324,149 @@ def build_car():
     ], 'car')
 
 
+# --- Buildings ---------------------------------------------------------------
+# Art target: assets/references/holeio — geometry + flat colour, no textures.
+# Per-floor window bands broken by mullions, chunky cornices/floor ledges, a
+# recessed glazed ground floor with an entrance, a parapet with a distinct roof
+# deck colour, and roof plant (AC units, water tank, stair housing, mast).
+#
+# TARGET BOXES below are the *procedural* bounding boxes propkit builds for
+# each tier (buildBuilding + DIMENSIONS), including the parts that overshoot
+# the nominal w/h/d: the window bands flare the footprint to w*1.02, the door
+# proudness adds 0.09 on +z (small tier only), and on the tiered mid/large the
+# setback + antenna + beacon carry the top well past `h`:
+#   small   w7  h11  -> 7.14 x 7.16 x 11.00
+#   medium  w11 h24  -> 11.22 x 11.22 x 35.83   (h + 0.22h setback + 0.25h mast + beacon)
+#   large   w15 h42  -> 15.30 x 15.30 x 62.49
+# Each builder ends in fit_to_box() so the exported mesh matches byte-for-byte
+# and the runtime normalization introduces zero distortion.
+
+BUILDING_BOXES = {
+    'building_small': (7.14, 7.16, 11.00),
+    'building_medium': (11.22, 11.22, 35.83),
+    'building_large': (15.30, 15.30, 62.49),
+}
+
+
+def window_mullions(half, z, height, thickness=0.36, offset=1.65):
+    """Four thin slabs that split a wrap-around window band into three windows
+    per face. Each slab is thin on one axis and OVERSHOOTS the band on the
+    other, so it only surfaces on the two faces it is meant to divide — three
+    windows on all four elevations for 4 boxes instead of 12."""
+    return [
+        (box((thickness, half * 2, height), (-offset, 0, z)), WALL),
+        (box((thickness, half * 2, height), (offset, 0, z)), WALL),
+        (box((half * 2, thickness, height), (0, -offset, z)), WALL),
+        (box((half * 2, thickness, height), (0, offset, z)), WALL),
+    ]
+
+
+def build_building_small():
+    """Tier 4 — squat 3-storey corner shophouse. Silhouette cue: WIDE, with a
+    recessed glazed shopfront under a striped-awning overhang and a single
+    chunky parapet. No mast: this tier must read as the "small" rung."""
+    parts = [
+        (box((6.30, 6.30, 9.90), (0, 0, 4.95)), WALL),
+        # Recessed glazed ground floor — the upper floors overhang it.
+        (box((5.90, 5.90, 3.40), (0, 0, 1.70)), WALL_DARK),
+        (box((6.05, 6.05, 2.10), (0, 0, 1.95)), WINDOW),
+        (box((1.40, 0.22, 2.60), (-1.75, 3.02, 1.30)), DOOR_GLASS),
+        (box((1.90, 0.55, 0.22), (-1.75, 3.20, 0.11)), WALL_LIGHT),
+        # Awning: tilted slab reaching exactly to the cornice line (y 3.575).
+        (box((4.40, 0.66, 0.26), (0.55, 3.22, 3.18), rot_x=-22.0), AWNING),
+        (box((2.60, 0.16, 0.70), (0.40, 3.20, 4.10)), TRIM),
+        (box((7.14, 7.16, 0.36), (0, 0, 3.58)), WALL_LIGHT),
+        (box((6.45, 6.45, 1.80), (0, 0, 5.35)), WINDOW),
+    ]
+    parts += window_mullions(3.30, 5.35, 1.80)
+    parts += [
+        (box((7.00, 7.00, 0.30), (0, 0, 6.42)), WALL_LIGHT),
+        (box((6.45, 6.45, 1.80), (0, 0, 7.90)), WINDOW),
+    ]
+    parts += window_mullions(3.30, 7.90, 1.80)
+    parts += [
+        (box((7.14, 7.16, 0.72), (0, 0, 10.04)), WALL_LIGHT),
+        (box((6.40, 6.40, 0.30), (0, 0, 9.83)), ROOF),
+        (box((1.50, 1.20, 0.70), (1.50, -1.30, 10.33)), TRIM),
+        (box((1.10, 0.90, 0.12), (1.50, -1.30, 10.74)), WALL_DARK),
+        (box((2.00, 1.80, 1.02), (-1.40, 1.10, 10.49)), WALL),
+        (cyl(0.18, 0.85, (-0.30, -2.10, 10.40), vertices=6), TRIM),
+    ]
+    prop = finish_prop(parts, 'building_small')
+    return fit_to_box(prop, *BUILDING_BOXES['building_small'])
+
+
+def build_building_medium():
+    """Tier 5 — mid-rise block. Silhouette cue: HORIZONTAL — five strongly
+    ledged floors over a tall glazed podium, one setback crowned with a water
+    tank on a stand, then a short mast."""
+    parts = [
+        (box((10.60, 10.60, 24.00), (0, 0, 12.00)), WALL),
+        (box((10.95, 10.95, 3.80), (0, 0, 1.90)), WALL_DARK),
+        (box((11.10, 11.10, 2.30), (0, 0, 1.95)), WINDOW),
+        (box((2.40, 0.24, 3.00), (0, 5.48, 1.50)), DOOR_GLASS),
+        (box((3.80, 0.80, 0.34), (0, 5.20, 3.30)), TRIM),
+        (box((11.22, 11.22, 0.52), (0, 0, 4.06)), WALL_LIGHT),
+    ]
+    for i in range(5):
+        base = 4.32 + i * 3.82
+        parts.append((box((10.90, 10.90, 2.30), (0, 0, base + 1.35)), WINDOW))
+        parts.append((box((11.08, 11.08, 0.36), (0, 0, base + 3.60)), WALL_LIGHT))
+    parts += [
+        (box((11.22, 11.22, 1.10), (0, 0, 23.85)), WALL_LIGHT),
+        (box((7.30, 7.30, 5.28), (0, 0, 26.64)), WALL),
+        (box((7.45, 7.45, 2.40), (0, 0, 26.40)), WINDOW),
+        (box((7.70, 7.70, 0.76), (0, 0, 28.90)), WALL_LIGHT),
+        (box((7.00, 7.00, 0.30), (0, 0, 28.67)), ROOF),
+        (box((1.80, 1.80, 0.60), (2.10, -1.70, 29.12)), WALL_DARK),
+        (cyl(1.00, 1.70, (2.10, -1.70, 30.27), vertices=8), TRIM),
+        (box((1.90, 1.50, 0.95), (-2.30, 1.70, 29.30)), TRIM),
+        (box((2.30, 2.10, 1.40), (-2.00, -2.10, 29.52)), WALL),
+        (box((1.10, 1.10, 0.50), (0, 0, 29.53)), TRIM),
+        (cyl(0.34, 6.00, (0, 0, 32.28), vertices=6), TRIM),
+        (sphere(0.55, (0, 0, 35.28), segments=6, rings=3), BEACON),
+    ]
+    prop = finish_prop(parts, 'building_medium')
+    return fit_to_box(prop, *BUILDING_BOXES['building_medium'])
+
+
+def build_building_large():
+    """Tier 6 — curtain-wall tower. Silhouette cue: VERTICAL — four corner
+    pilasters running the full shaft, sparse spandrel ledges, a TWO-step
+    tapering crown and a long mast, so it never reads as a taller medium."""
+    parts = [
+        (box((14.90, 14.90, 6.20), (0, 0, 3.10)), WALL_DARK),
+        (box((15.05, 15.05, 3.80), (0, 0, 2.70)), WINDOW),
+        (box((3.40, 0.30, 4.20), (0, 7.42, 2.10)), DOOR_GLASS),
+        (box((5.20, 1.20, 0.50), (0, 7.05, 4.85)), TRIM),
+        (box((15.30, 15.30, 0.75), (0, 0, 6.32)), WALL_LIGHT),
+        (box((14.10, 14.10, 35.10), (0, 0, 23.75)), WALL),
+        (box((14.35, 14.35, 33.00), (0, 0, 23.60)), WINDOW),
+    ]
+    for sx in (-6.60, 6.60):
+        for sy in (-6.60, 6.60):
+            parts.append((box((1.60, 1.60, 34.60), (sx, sy, 23.60)), WALL))
+    for i in range(6):
+        parts.append((box((14.50, 14.50, 0.40), (0, 0, 10.50 + i * 5.60)), WALL_LIGHT))
+    parts += [
+        (box((15.30, 15.30, 0.90), (0, 0, 41.30)), WALL_LIGHT),
+        (box((11.60, 11.60, 5.20), (0, 0, 43.90)), WALL),
+        (box((11.75, 11.75, 3.00), (0, 0, 43.70)), WINDOW),
+        (box((12.10, 12.10, 0.60), (0, 0, 46.30)), WALL_LIGHT),
+        (box((8.40, 8.40, 4.74), (0, 0, 48.87)), WALL),
+        (box((8.55, 8.55, 2.60), (0, 0, 48.60)), WINDOW),
+        (box((8.90, 8.90, 0.80), (0, 0, 50.84)), WALL_LIGHT),
+        (box((8.10, 8.10, 0.32), (0, 0, 50.60)), ROOF),
+        (box((2.30, 1.80, 1.10), (2.30, -1.90, 51.31)), TRIM),
+        (box((2.60, 2.30, 1.70), (-2.10, 1.70, 51.61)), WALL),
+        (box((1.40, 1.40, 0.70), (0, 0, 51.59)), TRIM),
+        (cyl(0.42, 10.50, (0, 0, 56.49), vertices=6), TRIM),
+        (sphere(0.75, (0, 0, 61.74), segments=6, rings=3), BEACON),
+    ]
+    prop = finish_prop(parts, 'building_large')
+    return fit_to_box(prop, *BUILDING_BOXES['building_large'])
+
+
 BUILDERS = [
     build_tree_blob,
     build_tree_cone,
@@ -283,6 +474,9 @@ BUILDERS = [
     build_person,
     build_streetlamp,
     build_car,
+    build_building_small,
+    build_building_medium,
+    build_building_large,
 ]
 
 
@@ -294,4 +488,8 @@ def main():
     print('PROP PACK DONE ->', OUT_DIR)
 
 
-main()
+# Works both ways: `blender -b --factory-startup --python <this>` (package.json
+# "models") sets __name__ to '__main__', and so does running it directly under
+# a bpy-as-a-python-module venv: `/path/to/venv/bin/python <this>`.
+if __name__ == '__main__':
+    main()
