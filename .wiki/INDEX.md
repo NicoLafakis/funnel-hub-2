@@ -32,6 +32,17 @@ builds on.
    â€” implementation-ready plan for district-specific object catalogs, visible
    variants, and a tested 25% level-to-level visual-novelty contract.
 
+10. [`0003-hole-feel-and-visual-fidelity/00-findings.md`](0003-hole-feel-and-visual-fidelity/00-findings.md)
+    — 2026-07-27 investigation of the "hole fights you when turning" motion
+    complaint and the gap to the Hole.io reference art
+    (`assets/references/holeio/`). Findings: the motion problem is a single
+    closed feedback loop between camera yaw and avatar facing (2394° of camera
+    rotation and 85 direction reversals per 3s of held input) plus an
+    unnormalised `atan2` difference; 100% of road vehicles are placed
+    perpendicular to their road, 26% of buildings and 46% of street lamps
+    stand in the roadway; and the camera frames ~3.5x too close. Reproduce
+    with `scripts/motion-probe.mjs` and `scripts/placement-audit.mjs`.
+
 ## Working agreements (edit as the project evolves)
 
 - Docs are source-of-truth for *intent*; code comments for *mechanism*.
