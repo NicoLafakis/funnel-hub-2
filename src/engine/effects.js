@@ -90,6 +90,19 @@ export const RIVAL_RING = {
 // hole size.
 const RING_Y = 0.24;
 
+// ...but a ground-flush height in WORLD units is not on its own enough to win
+// the depth test, because the chase camera stands off at 12·radius and the
+// depth buffer's resolving power at the mouth collapses quadratically with
+// that distance: 0.24 units of clearance over the ground is ~4 depth quanta
+// at r=26 but ~0.01 at r=500 (see the depth-priority note in avatar.js). Left
+// unbiased, a big player's growth mark would z-fight the ground it is sweeping
+// across. This bias is denominated in quanta, so it holds at every hole size.
+// It is deliberately WEAKER than the aperture disc's (-2) and the collar's
+// (-6): the ring is supposed to lose to them and emerge from beneath the
+// hole, which is the read this effect was designed for. It only has to beat
+// the ground.
+const RING_DEPTH_BIAS = -1;
+
 function easeOutCubic(t) {
   const u = 1 - t;
   return 1 - u * u * u;
@@ -173,6 +186,9 @@ export function createGrowthEffects(THREE, opts = {}) {
         opacity: 0,
         side: THREE.DoubleSide,
         depthWrite: false, // a fading overlay must not occlude the ground
+        polygonOffset: true,
+        polygonOffsetFactor: RING_DEPTH_BIAS,
+        polygonOffsetUnits: RING_DEPTH_BIAS,
       });
       const mesh = new THREE.Mesh(ringGeo, mat);
       mesh.rotation.x = -Math.PI / 2;

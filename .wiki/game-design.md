@@ -155,6 +155,19 @@ growth mass.
 **Acceptance:** all nine invariants, the full determinism pass, and the
 representative maximum-build ceiling run in CI. Any failure blocks merge.
 
+**Correction (2026-07-27):** the maximum-build ceiling above described "5
+sampled levels, 100/100" — actually a sampling artefact. Run over the full
+100 levels it fails 31/300 (walked bot) to 120/300 (competent-play model)
+combinations, worst 4.8%, concentrated in the utility build. This gate is
+now deliberately left RED as known debt (owner `src/meta/upgrades.js`), not
+blocking merge, until the builds are retuned. See
+`0003-hole-feel-and-visual-fidelity/00-findings.md` §13–§16 for the full
+derivation and why the floor was not lowered to paper over it. Also: a
+required capstone being "edible by 90% of the timer" (invariant 4) is
+necessary but not sufficient for completion — `0004-false-level-failure/
+00-findings.md` found 91 of 100 levels require the landmark be actually
+swallowed as a second win condition alongside mass, not merely edible.
+
 ## 6. Death/fail texture
 
 **V1:** only the timer kills you.

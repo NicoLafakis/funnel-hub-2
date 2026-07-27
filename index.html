@@ -42,6 +42,19 @@
   #scorefill::after{content:"";position:absolute;inset:0;transform:translateX(-120%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);width:45%;}
   #scorefill.spark::after{animation:scoreSheen .7s linear infinite;}
   @keyframes scoreSheen{from{transform:translateX(-120%);}to{transform:translateX(320%);}}
+  /* GATED FILL: the mass target is met (or nearly) but the level still cannot
+     be won because the landmark is standing. Amber and striped, and held short
+     of full by overlays.js, so that a full green bar keeps meaning exactly one
+     thing: this level is won. Colour alone is not the signal — the width stops
+     short and the #capstonechip states the requirement in words. */
+  #scorefill.gated{background:repeating-linear-gradient(115deg,#f5a623 0 10px,#d98b12 10px 20px);}
+  /* Landmark chip. The `ready` state is a solid high-contrast green rather
+     than an animated one on purpose: index.html's reduced-motion block kills
+     every animation globally, so any state that only reads as "act now" while
+     moving would silently vanish for those players. */
+  #capstonechip{font-size:12.5px;letter-spacing:.4px;background:#e8eef3;color:#3d5060;}
+  #capstonechip.ready{background:linear-gradient(180deg,#8bea45,#5fc41d);color:#12300a;}
+  #capstonechip.done{background:#fff;color:#7d8f9c;opacity:.65;}
   #sizehint{font-size:11.5px;font-weight:700;letter-spacing:.3px;color:#1c2733;padding:4px 12px;background:#fff;border:2px solid #1c2733;border-radius:99px;box-shadow:0 2px 0 rgba(28,39,51,.3);}
 
   /* ---------- Banner (big center announcements) ---------- */
@@ -257,6 +270,11 @@
   <div class="hud-right">
     <span class="pill" id="timer">⏱ 60</span>
     <span class="pill" id="score">Mass <b>0</b> / 100</span>
+    <!-- The landmark win condition, always on while it applies. 91 of 100
+         levels need the district landmark swallowed as well as the mass
+         target, and before this chip existed the game said so exactly once,
+         on the pre-level intro screen (.wiki/0004-false-level-failure). -->
+    <span class="pill" id="capstonechip" hidden></span>
   </div>
 </div>
 

@@ -76,6 +76,11 @@ THREE passed in, never imported by systems; pure functions where possible.
   2. *Flow*: start → map → intro → play → win → shop, scripted.
   3. *Soak*: the greedy bot plays seeded levels 1/25/50/75/100 to
      completion, asserting the 5 difficulty invariants (game-design §5).
+     **Note (2026-07-27):** sampling only these 5 of 100 levels is exactly
+     the defect that let the maximum-build ceiling ship broken — see
+     `0003-hole-feel-and-visual-fidelity/00-findings.md` §16. Any ceiling/ease
+     assertion (as opposed to a difficulty floor) needs the full 100-level
+     sweep, not this sample.
 - **Visual regression:** screenshot 5 fixed frames (title, map, spawn L1,
   mid-L1, spawn L50) against golden images with a small pixel tolerance.
   B8 (unstyled accordion) is exactly the bug this catches.

@@ -72,9 +72,14 @@ const MINUTE_PROBE_SECONDS = 60; // invariant 3 probes rival hoard at minute 1
  *
  * @param {number} n - level number, 1..100
  * @param {{
- *   landmarkRadius: number,       // boundingRadius of the level's landmark
- *                                 // (src/content/landmarks.js — computed by
- *                                 // the caller, which may use THREE)
+ *   landmarkRadius?: number,      // IGNORED, kept so existing callers keep
+ *                                 // working. The capstone size gate is the
+ *                                 // economy-derived radius at every metro
+ *                                 // (main.js scales an oversized mesh down to
+ *                                 // it), so landmark GEOMETRY is no longer an
+ *                                 // input to this sim. Passing a placeholder
+ *                                 // here used to make every capstone level
+ *                                 // report completed=false (.wiki/0004 §4.2).
  *   dt?: number,                  // sim step, seconds (default 0.2)
  *   maxComboMult?: number,        // clamp the combo multiplier (invariant 4
  *                                 // uses 2); default Infinity = real combos
@@ -93,12 +98,13 @@ const MINUTE_PROBE_SECONDS = 60; // invariant 3 probes rival hoard at minute 1
 export function simulateLevel(n, opts = {}) {
   const dt = typeof opts.dt === 'number' && opts.dt > 0 ? opts.dt : 0.2;
   const maxComboMult = typeof opts.maxComboMult === 'number' ? opts.maxComboMult : Infinity;
-  const landmarkRadius = typeof opts.landmarkRadius === 'number' && opts.landmarkRadius > 0
-    ? opts.landmarkRadius
-    : 100; // caller should always pass the real one; fallback stays playable
 
-  const level = generateLevel(n);
-  const layout = generateDistrict(level);
+  const level = opts.level || generateLevel(n);
+  // Callers that run several passes over the same level (the invariant suite
+  // runs two bot passes plus the reachability model) can generate the district
+  // once and hand it in — district generation dominates the suite's runtime.
+  // Nothing here mutates it: propObjects below are fresh objects built from it.
+  const layout = opts.layout || generateDistrict(level);
   const ivm = level.itemValueMultiplier;
   const twistParams = level.isCapstone && level.capstoneTwist
     ? (level.capstoneTwist.params || {})
@@ -132,13 +138,16 @@ export function simulateLevel(n, opts = {}) {
 
     // Capstone landmark, mirroring main.js buildLevelWorld: mass = largest
     // tier base * 8, gated by capstoneGate(n) — gate 0 while shielded (L61+).
-    // The size-gate radius is max(geometry, the economy-derived gate) via
-    // the SAME shared helper main.js uses (formulas.capstoneGateRadius).
+    // The size-gate radius is the economy-derived value from the SAME shared
+    // helper main.js uses (formulas.capstoneGateRadius); main.js scales any
+    // landmark MESH that is larger down to it, so geometry never raises the
+    // gate. That is why `landmarkRadius` no longer feeds this and why the
+    // standalone CLI below is now honest about completion (.wiki/0004 §4.3).
     const capstoneTier = level.template[level.template.length - 1];
     let shieldRemaining = level.mechanics && level.mechanics.landmarkShield ? level.mechanics.landmarkShield : 0;
     const capstone = {
       position: { x: layout.landmark.x, y: 0, z: layout.landmark.z },
-      radius: Math.max(landmarkRadius, capstoneGateRadius(level)),
+      radius: capstoneGateRadius(level),
       mass: capstoneTier.baseMass * 8,
       kind: level.metro.landmarkType,
       golden: false,
@@ -402,7 +411,7 @@ export function simulateLevel(n, opts = {}) {
 if (process.argv[1] && import.meta.url === new URL(`file:///${process.argv[1].replace(/\\/g, '/')}`).href) {
   const ns = process.argv.slice(2).map(Number).filter((v) => Number.isInteger(v) && v >= 1 && v <= 100);
   for (const n of ns.length ? ns : [1]) {
-    const run = simulateLevel(n, { landmarkRadius: 100 });
+    const run = simulateLevel(n);
     console.log(JSON.stringify(run, null, 2));
   }
 }

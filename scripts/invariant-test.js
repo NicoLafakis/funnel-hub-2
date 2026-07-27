@@ -25,7 +25,11 @@ const SPOT_LEVELS = [1, 25, 50, 75, 100];
 async function main() {
   const startedAt = Date.now();
   const { simulateLevel } = await import('./soak-bot.js');
+  // Invariants 5 and 7 are scored by the layout-insensitive reachability model,
+  // NOT by the walked bot — see scripts/reachability-model.js and findings §15.
+  const { estimateCompletion } = await import('./reachability-model.js');
   const { generateLevel, LEVEL_COUNT } = await import('../src/data/levels.js');
+  const { generateDistrict } = await import('../src/content/districts.js');
   const { METROS } = await import('../src/data/metros.js');
   const { radiusFromMass } = await import('../src/data/formulas.js');
   const { applyBuilds } = await import('../src/meta/upgrades.js');
@@ -63,9 +67,12 @@ async function main() {
   for (let n = 1; n <= LEVEL_COUNT; n += 1) {
     const level = generateLevel(n);
     const lr = landmarkRadiusByType[level.metro.landmarkType];
-    const runA = simulateLevel(n, { landmarkRadius: lr });
-    const runB = simulateLevel(n, { landmarkRadius: lr, maxComboMult: 2 });
-    runs.push({ level, runA, runB });
+    // One district generation shared by all three passes (see soak-bot.js).
+    const layout = generateDistrict(level);
+    const runA = simulateLevel(n, { landmarkRadius: lr, level, layout });
+    const runB = simulateLevel(n, { landmarkRadius: lr, level, layout, maxComboMult: 2 });
+    const model = estimateCompletion(n, { level, layout });
+    runs.push({ level, layout, runA, runB, model });
   }
 
   // --- Evaluate the nine invariants ----------------------------------------
@@ -141,7 +148,7 @@ async function main() {
   const COMPLETION_PACING_BAND = [0.61, 0.69];
   const completionSamples = [];
 
-  for (const { level, runA, runB } of runs) {
+  for (const { level, runA, runB, model } of runs) {
     const n = level.n;
 
     // 1. Bounded normal timer.
@@ -174,16 +181,22 @@ async function main() {
       });
     }
 
-    // 5. Completable by the bot without upgrades.
-    if (runA.completed) margins[4].push({ n, ratio: runA.completionTime / level.time });
+    // 5. Completable WITHOUT upgrades — scored by the layout-insensitive
+    // reachability model, not by the walked bot. The intent is unchanged and
+    // still per-level and binary: every level must be completable. What
+    // changed is that "completable" no longer means "one greedy walk happened
+    // to work on these exact coordinates". See findings §13 (the defect) and
+    // §15 (the model). Do NOT revert this to runA without reading both.
+    if (model.completed) margins[4].push({ n, ratio: model.completionTime / level.time });
     else {
       results[4].push({
         n,
-        finalMass: runA.finalMass,
+        finalMass: Math.round(model.finalMass),
         target: level.target,
-        capstoneEaten: runA.capstoneEaten,
-        capstoneRequired: runA.capstoneRequired,
-        stuck: runA.stuck,
+        reachedFraction: +(model.finalMass / level.target).toFixed(3),
+        capstoneEaten: model.capstoneEaten,
+        capstoneRequired: model.capstoneRequired,
+        stuck: model.stuck,
       });
     }
 
@@ -195,7 +208,11 @@ async function main() {
       margins[5].push({ n, ratio: completion });
     }
 
-    const budget = runA.budgetConsumptionFraction;
+    // 7. Route mass budget — derived from the same model run as invariant 5.
+    // It was never independent of 5 (an uncompleted level reports null and
+    // fails the band), so leaving it on the walked bot would have kept it
+    // layout-coupled for no gain.
+    const budget = model.budgetConsumptionFraction;
     if (budget !== null && budget >= 0.45 && budget <= 0.70) {
       margins[6].push({ n, ratio: budget });
     } else {
@@ -253,10 +270,34 @@ async function main() {
     1: 'wide-maw', 2: 'greased-axle', 3: 'second-stomach',
     4: 'golden-touch', 5: 'devourer',
   };
+  // === BUILD CEILING — READ findings §16 BEFORE TOUCHING THIS ==============
+  //
+  // TWO defects were fixed here on 2026-07-27, and the gate now FAILS. That
+  // failure is the correct, measured verdict, not a regression to tune away.
+  //
+  // 1. IT SAMPLED 5 LEVELS OUT OF 100. It only ever probed n in {1,25,50,75,
+  //    100}, and it passed because those five happened to be clean. Run the
+  //    SAME walked bot over all 100 levels and 31 of the 300 level/build
+  //    combinations already sat under the 0.25 floor, worst 18%. The gate was
+  //    passing by not looking.
+  // 2. IT USED THE WALKED BOT, which plays badly — it walks to the nearest
+  //    prop, not the best one. "Can a maxed-out player trivialise this level?"
+  //    is a question about COMPETENT play, so the reachability model is the
+  //    right instrument for it (unlike invariant 6, where the model's
+  //    adaptiveness costs sensitivity — see §16). The model also makes the
+  //    full 100-level sweep cheap: ~24ms per 100 runs against ~875ms.
+  //
+  // Under the model, across all 100 levels, 120 of 300 combinations fall below
+  // the floor, worst 4.8% (utility build, low levels). The floor was NOT
+  // lowered to accommodate that: no measurement supports a lower one, and the
+  // fact that the gate fails on BOTH instruments once the sample is widened is
+  // what distinguishes "the floor was miscalibrated" from "the builds are
+  // overpowered". It is the latter. See §16 for the full evidence.
+  const BUILD_COMPLETION_FLOOR = 0.25;
   const buildFailures = [];
-  for (const n of SPOT_LEVELS) {
-    const level = generateLevel(n);
-    const lr = landmarkRadiusByType[level.metro.landmarkType];
+  const buildSamples = [];
+  for (let n = 1; n <= LEVEL_COUNT; n += 1) {
+    const { level, layout } = runs[n - 1];
     for (const [name, build] of [
       ['growth', maxGrowthBuild],
       ['utility', maxUtilityBuild],
@@ -267,21 +308,28 @@ async function main() {
         timeSeconds: level.time,
         itemValueMultiplier: level.itemValueMultiplier,
       }, build);
-      const run = simulateLevel(n, { landmarkRadius: lr, buildStats: stats });
-      if (!run.completed || run.completionFraction < 0.25 || run.maxSingleAwardFraction > 0.15 + 1e-9) {
+      const run = estimateCompletion(n, { level, layout, buildStats: stats });
+      if (run.completed) buildSamples.push({ n, name, ratio: run.completionFraction });
+      if (!run.completed || run.completionFraction < BUILD_COMPLETION_FLOOR) {
+        // The old record also asserted maxSingleAwardFraction <= 0.15 here.
+        // That is dropped: it is the same tautology as invariant 8 (§12) —
+        // capProgressionAward clamps the award before it is ever recorded, so
+        // it could not fail. Nothing is lost by removing it.
         buildFailures.push({
           n,
           name,
           completed: run.completed,
-          completionFraction: run.completionFraction,
-          maxSingleAwardFraction: run.maxSingleAwardFraction,
+          completionFraction: run.completed ? +run.completionFraction.toFixed(3) : null,
         });
       }
     }
   }
 
+  // The build ceiling counts as ONE failure however many combinations breach
+  // it — 120 of 300 do, and letting that dominate the tally would bury the
+  // nine invariants it sits beside.
   let totalFails = deterministic ? 0 : 1;
-  totalFails += buildFailures.length;
+  totalFails += buildFailures.length ? 1 : 0;
   console.log('\nINVARIANTS (game-design.md §5, all 100 levels):');
   for (let i = 0; i < INVARIANT_NAMES.length; i += 1) {
     const failures = results[i];
@@ -319,8 +367,29 @@ async function main() {
       console.log(`       tightest: ${tightest.map((m) => `n=${m.n} (${(m.ratio * 100).toFixed(0)}%)`).join(', ')}`);
     }
   }
-  console.log(`  BUILD CEILING: [${buildFailures.length ? 'FAIL' : 'PASS'}] maximum builds stay >=25% timer and <=15% target/event`);
-  for (const failure of buildFailures) console.log(`       worst: ${JSON.stringify(failure)}`);
+  const buildTotal = LEVEL_COUNT * 3;
+  console.log(`  BUILD CEILING: [${buildFailures.length ? 'FAIL' : 'PASS'}]`
+    + ` maximum builds stay >=${(BUILD_COMPLETION_FLOOR * 100).toFixed(0)}% of timer`
+    + ` — ${buildTotal - buildFailures.length}/${buildTotal} level/build combinations`
+    + ` (${LEVEL_COUNT} levels x 3 builds, scored by the reachability model)`);
+  if (buildSamples.length) {
+    const sorted = buildSamples.map((s) => s.ratio).sort((a, b) => a - b);
+    const pct = (q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+    console.log(`       spread: min ${(sorted[0] * 100).toFixed(0)}%`
+      + ` p5 ${(pct(0.05) * 100).toFixed(0)}%`
+      + ` p25 ${(pct(0.25) * 100).toFixed(0)}%`
+      + ` p50 ${(pct(0.5) * 100).toFixed(0)}%`
+      + ` max ${(sorted[sorted.length - 1] * 100).toFixed(0)}%`);
+  }
+  if (buildFailures.length) {
+    const byBuild = {};
+    for (const f of buildFailures) byBuild[f.name] = (byBuild[f.name] || 0) + 1;
+    console.log(`       by build: ${Object.entries(byBuild).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+    const worst = buildFailures.slice().sort((a, b) => (a.completionFraction ?? 0) - (b.completionFraction ?? 0));
+    for (const f of worst.slice(0, 5)) console.log(`       worst: ${JSON.stringify(f)}`);
+    console.log(`       ... ${buildFailures.length} of ${buildTotal} combinations below the floor.`
+      + ` This is the measured verdict, NOT a gate to re-tune — see findings §16.`);
+  }
 
   // Spot-level detail table (the soak sample from the tech doc).
   console.log('\nSPOT LEVELS (1/25/50/75/100):');

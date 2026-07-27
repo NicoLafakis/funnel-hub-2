@@ -4,9 +4,23 @@
 > bounded to 75–95 seconds; seeded districts use authored ordinary-mass
 > coefficients; rewards distinguish first clear, improved stars, and 20%
 > replay; starting-mass bonuses scale with item values. The deterministic
-> suite now reports all nine progression invariants at 100/100, byte-identical
+> suite reported all nine progression invariants at 100/100, byte-identical
 > duplicate summaries, and bounded maximum-build runs. The remainder preserves
 > the reproducible before-state.
+>
+> **Superseded in part, 2026-07-27** —
+> `0003-hole-feel-and-visual-fidelity/00-findings.md` §13–§16 found that the
+> maximum-build ceiling's "100/100" was a 5-of-100-levels sample that happened
+> to be clean; run over the full 100 levels and all three maximum builds it
+> is **31/300 failing (worst 18.1%)** on the original walked-bot instrument and
+> **120/300 failing (worst 4.8%)** under a competent-play (reachability-model)
+> instrument. The gate is left **RED on purpose** as documented known debt
+> owned by `src/meta/upgrades.js` (utility build worst: 62/100 combinations
+> below floor) — see that doc for why the floor was not re-derived downward.
+> Separately, §0004 (`0004-false-level-failure/00-findings.md`) found the win
+> check itself correct but under-communicated: 91 of 100 levels require a
+> capstone landmark as a second condition alongside mass, which the fail
+> screen did not name.
 
 **Date:** 2026-07-24
 **Verdict:** Confirmed. Levels are winnable on ~20% of the props and in

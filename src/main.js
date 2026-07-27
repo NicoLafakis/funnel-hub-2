@@ -50,7 +50,9 @@ import {
 import * as propkit from './content/propkit.js';
 import { createLandmark } from './content/landmarks.js';
 import { generateDistrict } from './content/districts.js';
-import { bakeGroundTexture } from './content/groundtex.js';
+import {
+  bakeGroundTexture, bakeGroundDetail, roadMarkingQuads, DETAIL_TILE_WORLD,
+} from './content/groundtex.js';
 import { loadCityTextures } from './content/textures.js';
 import { loadModelKit } from './content/modelkit.js';
 import { createMetroSignature } from './content/signatures.js';
@@ -62,6 +64,11 @@ import {
   createSwallowController, createMercyTracker, DEFAULT_SIZE_GATE,
 } from './systems/swallow.js';
 import { createRival, updateRival, RIVAL_WARMUP_SECONDS } from './systems/rivals.js';
+// The win rule lives in ONE place (see systems/win.js and
+// .wiki/0004-false-level-failure): the timer branch, the per-frame branch, the
+// HUD chip, the mass bar and the fail copy all read from these, so a win
+// condition can never again exist in the rules without existing in the UI.
+import { evaluateWin, failReasonText, capstoneEffectiveRadius } from './systems/win.js';
 import { createStormController } from './systems/storms.js';
 
 import { loadSave, saveSave, logSeed } from './meta/save.js';
@@ -249,6 +256,15 @@ export async function main() {
     runCoins: 0,
     shieldRemaining: 0,
     capstoneEaten: false,
+    // Written ONLY by the per-frame edibility pass, from the same comparison
+    // the swallow itself uses — never recomputed at the read sites, or the
+    // HUD chip and the actual swallow would disagree at the boundary.
+    capstoneEdible: false,
+    capstoneEdibleAnnounced: false,
+    // 0 unless the L100 portal-protocol twist is active (metros.js
+    // requiresComboCount), in which case the landmark stays sealed until the
+    // peak combo reaches it.
+    portalComboNeeded: 0,
     fastAchieved: false,
     peakCombo: 0,
     stormEatenCount: 0,
@@ -528,6 +544,11 @@ export async function main() {
       // CONSTANT world-space texel density (GROUND_TEXELS_PER_UNIT), so lane
       // paint and paving read identically on level 1 and level 100. The old
       // fixed 512/1024 bake stretched by up to 2x across the level ladder.
+      //
+      // Markings are drawn as GEOMETRY below instead of baked here — at this
+      // density texture paint is a 1.2-texel line smeared over ~18 device
+      // pixels. Leaving both on would double-draw a soft copy underneath.
+      roadMarkings: false,
     });
     if (baked.canvas) {
       const tex = new THREE.CanvasTexture(baked.canvas);
@@ -543,6 +564,115 @@ export async function main() {
     ground.rotation.x = -Math.PI / 2;
     // The street plane is what every cast shadow lands on (scene.js sun).
     ground.receiveShadow = true;
+
+    // DETAIL PASS — the fix for "textures are stretched".
+    //
+    // The layout map above is one texture over the whole world, so it tops out
+    // at 0.55 texels per world unit. Measured at the real gameplay camera on a
+    // mid-range phone, one of those texels covers a 14.7 x 14.7 DEVICE PIXEL
+    // block: the ground is magnified ~15x past its own resolution, and linear
+    // magnification of a 15x-too-coarse texture is exactly the smeared look
+    // that was reported. Raising the bake cannot fix it — a whole-world
+    // texture at 1 texel per device pixel would be 19,459px square, 1.41 GB.
+    //
+    // So high-frequency surface goes on a SECOND plane carrying a small
+    // seamless tile repeated at a fixed world size: 512px over 32 world units
+    // = 16 texels/unit, 29x the layout map and ~2 texels per device pixel,
+    // for 1.0MB that does not grow with level size. MultiplyBlending, so the
+    // tile modulates the lit ground beneath it rather than replacing it.
+    //
+    // Deliberately NOT done with onBeforeCompile: a shader injection cannot be
+    // compile-tested without a GPU, and this pass is being authored blind. A
+    // second plane uses only documented core API, and its failure mode is
+    // visible-and-recoverable rather than a blank screen.
+    const detailCanvas = bakeGroundDetail({ seed: layout.seed });
+    if (detailCanvas) {
+      const dtex = new THREE.CanvasTexture(detailCanvas);
+      // NON-COLOUR data: this is a multiplier, not an albedo. Tagging it sRGB
+      // would push it through a decode it was never encoded with.
+      dtex.colorSpace = THREE.NoColorSpace;
+      dtex.wrapS = THREE.RepeatWrapping;
+      dtex.wrapT = THREE.RepeatWrapping;
+      const reps = level.world / DETAIL_TILE_WORLD;
+      dtex.repeat.set(reps, reps);
+      dtex.anisotropy = Math.min(8, engine.renderer.capabilities.getMaxAnisotropy());
+      const detailMat = new THREE.MeshBasicMaterial({
+        map: dtex,
+        blending: THREE.MultiplyBlending,
+        transparent: true,
+        depthWrite: false,
+        fog: false,
+      });
+      const detail = new THREE.Mesh(new THREE.PlaneGeometry(level.world, level.world), detailMat);
+      detail.rotation.x = -Math.PI / 2;
+      detail.position.y = 0.05; // ground 0 < detail 0.05 < blob shadows 0.15
+      // Both this and the blob decals are transparent, so both land in the
+      // transparent pass; renderOrder is what puts the grain UNDER the decals
+      // (blob shadows are -1) instead of multiplying them.
+      detail.renderOrder = -2;
+      detail.receiveShadow = false;
+      detail.castShadow = false;
+      detail.name = 'ground-detail';
+      root.add(detail);
+    }
+
+    // ROAD MARKINGS AS GEOMETRY — the second half of the sharpness fix.
+    //
+    // Geometry has no texel size, so lane paint is pixel-sharp at any zoom
+    // instead of being a 1.2-texel line smeared across ~18 device pixels.
+    // Every quad merges into ONE BufferGeometry, so the entire marking set
+    // across every street costs a single draw call.
+    //
+    // Y-ORDER, and why it works out: paint sits at 0.08, ABOVE the detail
+    // plane at 0.05. Paint is opaque so it draws in the opaque pass and writes
+    // depth; the detail plane is transparent and depth-TESTS (depthWrite off,
+    // depthTest on), so its fragments fail behind the paint and the grain
+    // never muddies the paint. Where there is no paint the detail sits above
+    // bare ground and passes. Blob shadows stay above everything at 0.15.
+    const quads = roadMarkingQuads(layout);
+    if (quads.length) {
+      const positions = new Float32Array(quads.length * 4 * 3);
+      const colors = new Float32Array(quads.length * 4 * 3);
+      const indices = new Uint32Array(quads.length * 6);
+      const PAINT_Y = 0.08;
+      quads.forEach((q, qi) => {
+        const c = Math.cos(q.rotY);
+        const s = Math.sin(q.rotY);
+        const hw = q.w / 2;
+        const hd = q.d / 2;
+        // tone -1 is a manhole plate (dark), otherwise white paint at `tone`.
+        const v = q.tone < 0 ? 0.30 : q.tone;
+        const corners = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]];
+        corners.forEach(([lx, lz], ci) => {
+          const i = (qi * 4 + ci) * 3;
+          positions[i] = q.x + c * lx + s * lz;
+          positions[i + 1] = PAINT_Y;
+          positions[i + 2] = q.z - s * lx + c * lz;
+          colors[i] = v;
+          colors[i + 1] = v;
+          colors[i + 2] = q.tone < 0 ? v * 1.02 : v;
+        });
+        const o = qi * 6;
+        const b = qi * 4;
+        indices[o] = b; indices[o + 1] = b + 2; indices[o + 2] = b + 1;
+        indices[o + 3] = b; indices[o + 4] = b + 3; indices[o + 5] = b + 2;
+      });
+      const paintGeo = new THREE.BufferGeometry();
+      paintGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      paintGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      paintGeo.setIndex(new THREE.BufferAttribute(indices, 1));
+      paintGeo.computeVertexNormals();
+      // Lit, not unlit: road paint is a dielectric on the road surface and has
+      // to sit in the same light as the asphalt under it, or it glows at night.
+      const paintMat = new THREE.MeshStandardMaterial({
+        roughness: 0.9, metalness: 0.0, vertexColors: true,
+      });
+      const paint = new THREE.Mesh(paintGeo, paintMat);
+      paint.receiveShadow = true;
+      paint.castShadow = false;
+      paint.name = 'road-markings';
+      root.add(paint);
+    }
     root.add(ground);
 
     // Props: the district layout's seeded placements, turned into the runtime
@@ -605,6 +735,22 @@ export async function main() {
     // the spot) — its own mesh, NOT instanced; gated by capstoneGate(n) and,
     // from L61, by the landmark shield (eat N props to de-shield).
     const landmark = createLandmark(metro.landmarkType, THREE, metro.accent);
+    // THE GATE IS THE ECONOMY VALUE AT EVERY METRO, and the mesh is scaled to
+    // match it. The spawn used to take max(geometry, economy): mega-spire's
+    // 73.6u bounding radius won that max on L41-L50, so its size gate did not
+    // open until the player was at 101.6% of the target the HUD advertises —
+    // an unwinnable-at-target level (.wiki/0004 §4.3). Making the drawn thing
+    // the measured thing means the number on screen is always a sufficient
+    // goal, and every other metro is untouched (their geometry is already
+    // under the economy radius).
+    const capstoneSize = capstoneEffectiveRadius(
+      landmark.boundingRadius, capstoneGateRadius(level),
+    );
+    const gateRadius = capstoneSize.radius;
+    if (capstoneSize.meshScale !== 1) {
+      landmark.scale.multiplyScalar(capstoneSize.meshScale);
+      landmark.boundingRadius = gateRadius;
+    }
     landmark.position.set(layout.landmark.x, 0, layout.landmark.z);
     landmark.rotation.y = layout.landmark.rotY || 0;
     root.add(landmark);
@@ -613,10 +759,10 @@ export async function main() {
     state.propObjects.push({
       object3D: landmark,
       position: landmark.position,
-      // Effective gate radius = max(geometry, economy-derived). The raw
-      // bounding radius is smaller than a tier-6 building, which made the
-      // boss eat edible in the opening seconds (see capstoneGateRadius).
-      radius: Math.max(landmark.boundingRadius, capstoneGateRadius(level)),
+      // The economy-derived gate radius (see the mesh scaling above). The raw
+      // bounding radius is smaller than a tier-6 building on most metros,
+      // which would make the boss eat edible in the opening seconds.
+      radius: gateRadius,
       // A landmark is the level's boss eat — a hefty one-time bonus on top of
       // the largest regular tier's base mass.
       mass: capstoneTier.baseMass * 8,
@@ -1016,6 +1162,9 @@ export async function main() {
     state.timer = stats.timeSeconds;
     state.runCoins = 0;
     state.capstoneEaten = false;
+    state.capstoneEdible = false;
+    state.capstoneEdibleAnnounced = false;
+    state.portalComboNeeded = 0;
     state.fastAchieved = false;
     state.peakCombo = 0;
     state.stormEatenCount = 0;
@@ -1050,6 +1199,7 @@ export async function main() {
     if (twist && twist.id === 'portal-protocol') {
       // The Portal only opens for a peak combo: gate 0 until peakCombo hits
       // requiresComboCount (checked per frame in updatePlay).
+      state.portalComboNeeded = tp.requiresComboCount || 25;
       for (const p of state.propObjects) {
         if (p.isCapstone) p.capstoneGate = 0;
       }
@@ -1174,7 +1324,21 @@ export async function main() {
     hideOverlay('minimap');
   }
 
-  function levelFail() {
+  // The plain snapshot systems/win.js evaluates. Assembled here so the rule
+  // itself stays pure and Node-testable; every surface that talks about
+  // winning takes `evaluateWin(runSnapshot(), state.level)`.
+  function runSnapshot() {
+    return {
+      mass: avatar.mass,
+      capstoneEaten: state.capstoneEaten,
+      capstoneEdible: state.capstoneEdible,
+      shieldRemaining: state.shieldRemaining,
+      peakCombo: state.peakCombo,
+      portalComboNeeded: state.portalComboNeeded,
+    };
+  }
+
+  function levelFail(win) {
     state.mode = 'fail';
     Audio.fail();
     hideOnboarding();
@@ -1189,7 +1353,18 @@ export async function main() {
     const line = FAIL_LINES[Math.floor(Math.random() * FAIL_LINES.length)];
     const descEl = document.getElementById('failDesc');
     if (descEl) {
-      descEl.innerHTML = `Time ran out at <b>${Math.floor(avatar.mass).toLocaleString()}</b> / ${level.target.toLocaleString()} mass.`
+      // The loss NAMES ITS OWN CAUSE. This used to be one unconditional
+      // sentence blaming the mass, which on a landmark loss printed a number
+      // ABOVE the target as the reason for failing — bug 0004. The copy is
+      // now derived from the same evaluation the win check ran.
+      const evaluated = win || evaluateWin(runSnapshot(), level);
+      descEl.innerHTML = failReasonText(evaluated, {
+        mass: avatar.mass,
+        target: level.target,
+        shieldRemaining: state.shieldRemaining,
+        peakCombo: state.peakCombo,
+        portalComboNeeded: state.portalComboNeeded,
+      })
         + `<br><span style="color:#8fa8b8;font-style:italic">${line}</span>`;
     }
     // Mercy rules (game-design §6): first fail offers a free second wind;
@@ -1393,11 +1568,11 @@ export async function main() {
     if (state.timer <= 0) {
       state.timer = 0;
       updateHUD({ timer: 0 });
-      const capstoneRequired = level.capstoneGate > DEFAULT_SIZE_GATE || level.isCapstone;
-      if (avatar.mass >= level.target && (!capstoneRequired || state.capstoneEaten)) {
+      const win = evaluateWin(runSnapshot(), level);
+      if (win.won) {
         levelDone();
       } else {
-        levelFail();
+        levelFail(win);
       }
       return;
     }
@@ -1728,9 +1903,22 @@ export async function main() {
     const swallowR = swallowAvatar.radius();
     for (const obj of state.propObjects) {
       const idx = state.worldIndex.get(obj);
-      if (idx === undefined) continue; // the landmark is not instanced
       const gate = obj.isCapstone && typeof obj.capstoneGate === 'number' ? obj.capstoneGate : DEFAULT_SIZE_GATE;
       const edible = !obj.hazard && obj.radius <= swallowR * gate;
+      if (obj.isCapstone) {
+        // SINGLE SOURCE OF TRUTH for "can the landmark go down right now":
+        // the HUD chip reads this, and it is the same comparison the swallow
+        // makes one line above. Recomputing it anywhere else would let the
+        // chip promise an eat the swallow then refuses (bug 0004's shape).
+        state.capstoneEdible = edible;
+        if (edible && !state.capstoneEdibleAnnounced) {
+          state.capstoneEdibleAnnounced = true;
+          showBanner('🏙️ THE LANDMARK IS EDIBLE — TAKE IT DOWN', 1600);
+          Audio.grow();
+        }
+      }
+      if (idx === undefined) continue; // the landmark is not instanced
+
       state.world.setEdibility(idx, edible);
       if (edible && !obj._edible) {
         obj._edible = true;
@@ -1923,9 +2111,8 @@ export async function main() {
 
     // Win check (post swallow/rival, so an eat that crosses target this same
     // frame ends the level immediately).
-    const massReached = avatar.mass >= level.target;
-    const capstoneRequired = level.capstoneGate > DEFAULT_SIZE_GATE || level.isCapstone;
-    if (massReached && (!capstoneRequired || state.capstoneEaten)) {
+    const win = evaluateWin(runSnapshot(), level);
+    if (win.won) {
       levelDone();
       return;
     }
@@ -2014,6 +2201,18 @@ export async function main() {
       mass: avatar.mass,
       target: level.target,
       coins: state.runCoins,
+      // ONE producer for the capstone surfaces: the chip text, the chip tone
+      // and the mass bar's gated state all come from this same evaluation, so
+      // the bar can never read "done" on a level that cannot yet be won.
+      capstone: {
+        required: win.capstoneRequired,
+        met: win.capstoneMet,
+        eaten: state.capstoneEaten,
+        blocker: win.capstoneBlocker,
+        shieldRemaining: state.shieldRemaining,
+        comboNeeded: state.portalComboNeeded,
+        comboBest: state.peakCombo,
+      },
     });
   }
 

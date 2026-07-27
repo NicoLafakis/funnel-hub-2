@@ -1099,6 +1099,261 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // WIN RULE (.wiki/0004-false-level-failure) — the conjunction, the copy it
+  // produces, the HUD states it drives, and the balance property that the
+  // advertised mass target is actually a sufficient goal.
+  // -------------------------------------------------------------------------
+  console.log('WIN RULE (0004):');
+  {
+    const winMod = await import('../src/systems/win.js');
+    const formatMod = await import('../src/ui/format.js');
+    const { evaluateWin, capstoneChipState, massBarState, failReasonText } = winMod;
+    const { formatProgress } = formatMod;
+    const { generateLevel, LEVEL_COUNT } = levelsMod;
+    const { capstoneGateRadius, radiusFromMass } = formulas;
+    const THREE = await import('three');
+
+    const snap = (o = {}) => ({
+      mass: 0,
+      capstoneEaten: false,
+      capstoneEdible: false,
+      shieldRemaining: 0,
+      peakCombo: 0,
+      portalComboNeeded: 0,
+      ...o,
+    });
+    // A capstone-required level (capstoneGate above the default) and one
+    // without, expressed directly so the truth table does not depend on which
+    // level numbers happen to carry the requirement.
+    const gated = { target: 1000, capstoneGate: 0.92, isCapstone: false };
+    const plain = { target: 1000, capstoneGate: swallowMod.DEFAULT_SIZE_GATE, isCapstone: false };
+
+    // --- truth table: all four quadrants of (massMet, capstoneMet) ---------
+    check('win: mass met + capstone eaten => won',
+      evaluateWin(snap({ mass: 1000, capstoneEaten: true }), gated).won === true);
+    check('win: mass met + capstone standing => NOT won, blamed on the capstone',
+      (() => {
+        const w = evaluateWin(snap({ mass: 1200 }), gated);
+        return w.won === false && w.massMet === true && w.blockingReason === 'capstone';
+      })());
+    check('win: mass short + capstone eaten => NOT won, blamed on the mass',
+      (() => {
+        const w = evaluateWin(snap({ mass: 400, capstoneEaten: true }), gated);
+        return w.won === false && w.blockingReason === 'mass';
+      })());
+    check('win: both short => blockingReason "both"',
+      evaluateWin(snap({ mass: 400 }), gated).blockingReason === 'both');
+    check('win: mass alone wins where no capstone is required (L1-L9 shape)',
+      (() => {
+        const w = evaluateWin(snap({ mass: 1000 }), plain);
+        return w.won === true && w.capstoneRequired === false;
+      })());
+    check('win: every 10th level requires the capstone even at the default gate',
+      evaluateWin(snap({ mass: 1000 }), { ...plain, isCapstone: true }).won === false);
+
+    // --- blocker precedence: most specific reason first --------------------
+    check('win: shield outranks size as the stated blocker',
+      evaluateWin(snap({ mass: 1000, shieldRemaining: 4 }), gated).capstoneBlocker === 'shield');
+    check('win: portal combo outranks size once the shield is down',
+      evaluateWin(snap({ mass: 1000, portalComboNeeded: 25, peakCombo: 9 }), gated)
+        .capstoneBlocker === 'combo');
+    check('win: size is the blocker when nothing else holds',
+      evaluateWin(snap({ mass: 1000 }), gated).capstoneBlocker === 'size');
+    check('win: no blocker once the landmark is edible (it is takeable now)',
+      evaluateWin(snap({ mass: 1000, capstoneEdible: true }), gated).capstoneBlocker === null);
+
+    // --- THE 0004 ACCEPTANCE TEST -----------------------------------------
+    // The reported sentence was "Time ran out at 126,069 / 100,000 mass." on a
+    // loss whose real cause was the standing landmark. That must be impossible
+    // now, at any level, for any over-target mass.
+    //
+    // COVERAGE NOTE: this sweep runs every level with shieldRemaining 0 and
+    // portalComboNeeded 0, so the 100-level pass exercises the SIZE blocker
+    // only. The shield and combo blockers, and the 'both' quadrant, are
+    // asserted on the rendered copy in the single-case checks directly below —
+    // that is where to look for them, not in the sweep.
+    let blamedMass = 0;
+    for (let n = 1; n <= LEVEL_COUNT; n += 1) {
+      const level = generateLevel(n);
+      const w = evaluateWin(snap({ mass: level.target * 1.26 }), level);
+      if (w.won) continue; // L1-L9: mass alone really is the whole rule
+      const text = failReasonText(w, {
+        mass: level.target * 1.26,
+        target: level.target,
+        shieldRemaining: 0,
+        peakCombo: 0,
+        portalComboNeeded: 0,
+      });
+      if (/Time ran out at/.test(text)) blamedMass += 1;
+    }
+    check('fail copy: an over-target loss is NEVER explained as "Time ran out at X / Y mass" (0004)',
+      blamedMass === 0);
+    check('fail copy: a genuine mass shortfall still says time ran out',
+      /^Time ran out at/.test(failReasonText(
+        evaluateWin(snap({ mass: 400, capstoneEaten: true }), gated),
+        { mass: 400, target: 1000, shieldRemaining: 0, peakCombo: 0, portalComboNeeded: 0 },
+      )));
+    check('fail copy: a shielded landmark names the shield and its remaining eats',
+      /shield held: 4 more eats/.test(failReasonText(
+        evaluateWin(snap({ mass: 1000, shieldRemaining: 4 }), gated),
+        { mass: 1000, target: 1000, shieldRemaining: 4, peakCombo: 0, portalComboNeeded: 0 },
+      )));
+    // The fourth quadrant, on the RENDERED copy rather than only on
+    // evaluateWin: both short must name BOTH, and must not silently degrade
+    // into the mass-only sentence the way the pre-fix copy did.
+    check('fail copy: a both-short loss names the mass AND the standing landmark',
+      (() => {
+        const text = failReasonText(
+          evaluateWin(snap({ mass: 400 }), gated),
+          { mass: 400, target: 1000, shieldRemaining: 0, peakCombo: 0, portalComboNeeded: 0 },
+        );
+        return /Time ran out at/.test(text) && /landmark still standing/.test(text);
+      })());
+    check('fail copy: a sealed portal names the combo it needed and the best reached',
+      /peak combo of 25 \(best this run: 9\)/.test(failReasonText(
+        evaluateWin(snap({ mass: 1000, portalComboNeeded: 25, peakCombo: 9 }), gated),
+        { mass: 1000, target: 1000, shieldRemaining: 0, peakCombo: 9, portalComboNeeded: 25 },
+      )));
+
+    // --- HUD: chip states and the mass bar --------------------------------
+    const chipFor = (s, lvl = gated) => capstoneChipState(evaluateWin(snap(s), lvl), snap(s));
+    check('chip: hidden when no landmark is required',
+      chipFor({ mass: 10 }, plain).hidden === true);
+    check('chip: "grow bigger" while size-locked',
+      /grow bigger/.test(chipFor({ mass: 10 }).text));
+    check('chip: shield state counts down the remaining eats',
+      /shielded · 3 more eats/.test(chipFor({ shieldRemaining: 3 }).text));
+    check('chip: portal state shows combo progress',
+      /combo 9\/25/.test(chipFor({ portalComboNeeded: 25, peakCombo: 9 }).text));
+    check('chip: shouts EAT THE LANDMARK the moment it is edible',
+      (() => {
+        const c = chipFor({ capstoneEdible: true });
+        return c.tone === 'ready' && /EAT THE LANDMARK/.test(c.text);
+      })());
+    check('chip: goes muted once the landmark is down',
+      chipFor({ capstoneEaten: true }).tone === 'done');
+
+    // THE INVARIANT 0004 BROKE: a full, ungated bar means the level is won.
+    let barLies = 0;
+    for (const m of [0.5, 0.99, 1, 1.5, 4]) {
+      const w = evaluateWin(snap({ mass: 1000 * m }), gated);
+      const bar = massBarState(1000 * m, 1000, w);
+      if (!w.won && bar.percent >= 100 && !bar.gated) barLies += 1;
+      if (!w.won && !bar.gated) barLies += 1;
+    }
+    check('mass bar: never reads full-and-ungated on a level that is not won (0004)',
+      barLies === 0);
+    check('mass bar: fills to 100% ungated once the level is actually won',
+      (() => {
+        const w = evaluateWin(snap({ mass: 1000, capstoneEaten: true }), gated);
+        const bar = massBarState(1000, 1000, w);
+        return bar.percent === 100 && bar.gated === false;
+      })());
+
+    // --- formatter: a short mass must never render as the target ----------
+    let collisions = 0;
+    for (let n = 1; n <= LEVEL_COUNT; n += 1) {
+      const t = generateLevel(n).target;
+      const ref = formatProgress(t, t);
+      for (const f of [0.99, 0.995, 0.999, 0.9999, 0.99999]) {
+        const m = t * f;
+        if (m >= t) continue;
+        if (formatProgress(m, t) === ref) collisions += 1;
+      }
+    }
+    check('formatProgress: a mass short of target never renders as the target (§4.4)',
+      collisions === 0);
+    check('formatProgress: still truncates, never rounds up',
+      formatProgress(999900, 1000000) !== '1.00M');
+    check('formatProgress: unchanged from formatCompact below 99% of target',
+      formatProgress(500000, 1000000) === formatMod.formatCompact(500000));
+
+    // --- BALANCE: the advertised target must be a sufficient goal ---------
+    // This is the check that would have caught L41-L50 at authoring time. The
+    // invariant suite only checks the gate is reachable in TIME; this asserts
+    // it opens at or under the mass the HUD prints as the goal.
+    const landmarkRadiusByType = {};
+    for (const metro of metrosMod.METROS) {
+      landmarkRadiusByType[metro.landmarkType] = landmarks
+        .createLandmark(metro.landmarkType, THREE, metro.accent).boundingRadius;
+    }
+    const overTarget = [];
+    for (let n = 1; n <= LEVEL_COUNT; n += 1) {
+      const level = generateLevel(n);
+      const capstoneRequired = level.capstoneGate > swallowMod.DEFAULT_SIZE_GATE || level.isCapstone;
+      if (!capstoneRequired) continue;
+      // Calls the REAL rule (win.js capstoneEffectiveRadius) with the REAL
+      // landmark geometry, rather than restating the formula here.
+      //
+      // HONEST LIMIT: this verifies the RULE, not the spawn. main.js could
+      // revert to max(landmark.boundingRadius, ...) with the helper left
+      // correct and this check would stay green with the defect back in the
+      // live game. The wiring assertion below is what closes that gap.
+      const effRadius = winMod.capstoneEffectiveRadius(
+        landmarkRadiusByType[level.metro.landmarkType], capstoneGateRadius(level),
+      ).radius;
+      const needAvatarR = effRadius / level.capstoneGate;
+      // invert radiusFromMass by bisection — it is monotonic in mass.
+      let lo = 0;
+      let hi = level.target * 10;
+      for (let i = 0; i < 80; i += 1) {
+        const mid = (lo + hi) / 2;
+        if (radiusFromMass(mid) < needAvatarR) lo = mid; else hi = mid;
+      }
+      const needBase = hi;
+      const baseTarget = level.target / level.itemValueMultiplier;
+      if (needBase > baseTarget * 1.0001) overTarget.push(`L${n} ${(needBase / baseTarget).toFixed(3)}x`);
+    }
+    check('balance: an oversized landmark mesh is scaled down, never allowed to raise the gate',
+      (() => {
+        const s = winMod.capstoneEffectiveRadius(73.6, 64.8);
+        return s.radius === 64.8 && Math.abs(s.meshScale - 64.8 / 73.6) < 1e-9;
+      })());
+    check('balance: a landmark already under the economy radius is left at scale 1',
+      winMod.capstoneEffectiveRadius(24.2, 64.8).meshScale === 1);
+    check('balance: the capstone size gate opens at or below the advertised target, every level'
+      + (overTarget.length ? ` (over on: ${overTarget.slice(0, 6).join(', ')})` : ''),
+      overTarget.length === 0);
+
+    // --- WIRING: the rule the checks above measure is the rule that RUNS ---
+    //
+    // Every balance check in this section, and the evidence probe beside the
+    // findings doc, calls capstoneEffectiveRadius() directly. None of them can
+    // see what main.js actually spawns, so all of them would stay green if the
+    // spawn reverted to max(landmark.boundingRadius, capstoneGateRadius(level))
+    // while the helper stayed correct — the original 0004 §4.3 defect, back in
+    // the live game, with a fully green suite.
+    //
+    // Source-text matching is crude and it is deliberate. buildLevelWorld is a
+    // closure inside main(), which needs a WebGL context and a DOM, so the
+    // spawn cannot be exercised headlessly and an end-to-end assertion on the
+    // produced radius is not available here. This grep is the only Node-visible
+    // link between the rule these tests measure and the code that ships. If
+    // the spawn ever becomes independently callable, replace this with a real
+    // end-to-end check on the capstone prop's radius.
+    {
+      // Node reparses this file as ESM (see the warning suppression at the
+      // top), so `require` and `__dirname` are not available — dynamic import
+      // plus the running script's own path, which holds under either parse.
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const mainSrc = fs.readFileSync(
+        path.join(path.dirname(process.argv[1]), '..', 'src', 'main.js'), 'utf8',
+      );
+      check('wiring: main.js never lets landmark geometry raise the capstone gate',
+        !/Math\.max\(\s*landmark\.boundingRadius/.test(mainSrc));
+      check('wiring: the capstone gate radius comes from capstoneEffectiveRadius()',
+        /capstoneEffectiveRadius\(\s*\n?\s*landmark\.boundingRadius,\s*capstoneGateRadius\(level\)/
+          .test(mainSrc));
+      check('wiring: the spawned capstone prop takes its radius from that result',
+        /const gateRadius = capstoneSize\.radius;/.test(mainSrc)
+        && /radius: gateRadius,/.test(mainSrc));
+      check('wiring: an oversized landmark mesh is actually scaled by the returned factor',
+        /landmark\.scale\.multiplyScalar\(capstoneSize\.meshScale\)/.test(mainSrc));
+    }
+  }
+
   console.log('AUDIO:');
   {
     const { Audio } = audioMod;

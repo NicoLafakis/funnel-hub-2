@@ -145,6 +145,7 @@ const totals = {
   lamps: 0, lampsInRoad: 0,
   lampsKerbside: 0, lampsArmOverRoad: 0,
   clutter: 0, clutterInRoad: 0,
+  buildingPairs: 0, buildingsIntersecting: 0, worstIntersection: 0, worstIntersectionAt: '',
 };
 const archetypes = {};
 
@@ -152,6 +153,30 @@ for (let n = 1; n <= LEVELS; n += 1) {
   const layout = generateDistrict(generateLevel(n));
   archetypes[layout.archetype] = (archetypes[layout.archetype] || 0) + 1;
   const streets = layout.streets.map(streetRect);
+
+  // Buildings are placed from several site pools and then MOVED by the
+  // road-escape pass, and neither step consults the others' results. Nothing
+  // measured the consequence until now — see findings section 18.
+  const buildingRects = layout.props
+    .filter((q) => q.kind.startsWith('building'))
+    .map((q) => ({ r: propRect(q), kind: q.kind }));
+  for (let i = 0; i < buildingRects.length; i += 1) {
+    for (let j = i + 1; j < buildingRects.length; j += 1) {
+      const ra = buildingRects[i];
+      const rb = buildingRects[j];
+      const reach = Math.hypot(ra.r.hw, ra.r.hd) + Math.hypot(rb.r.hw, rb.r.hd);
+      if (Math.hypot(ra.r.x - rb.r.x, ra.r.z - rb.r.z) > reach) continue;
+      totals.buildingPairs += 1;
+      const depth = obbOverlapDepth(ra.r, rb.r);
+      if (depth > 0) {
+        totals.buildingsIntersecting += 1;
+        if (depth > totals.worstIntersection) {
+          totals.worstIntersection = depth;
+          totals.worstIntersectionAt = `L${n} ${ra.kind}/${rb.kind}`;
+        }
+      }
+    }
+  }
 
   for (const p of layout.props) {
     if (OFF_ROAD_KINDS.has(p.kind)) {
@@ -251,6 +276,17 @@ if (totals.buildingsInRoad) {
   const mean = totals.buildingOverhang / totals.buildingsInRoad;
   console.log(`\n  mean carriageway overhang of an offending building: ${mean.toFixed(1)}u`);
 }
+
+// Building-on-building intersection: INFORMATIONAL, deliberately not gated.
+// See findings §18. No pass threshold is given because any threshold today's
+// number satisfies would be one invented to be satisfied, rather than one
+// derived from what a city should look like. The number is printed so it stays
+// visible and so a future change can be read against it.
+console.log('\n  INFORMATIONAL (not gated, see findings §18):');
+console.log(`    buildings intersecting another building: ${totals.buildingsIntersecting}`
+  + ` of ${totals.buildingPairs} close pairs`
+  + `  (${fmt(totals.buildingsIntersecting, totals.buildings)} of all buildings)`);
+console.log(`    worst intersection depth: ${totals.worstIntersection.toFixed(1)}u  ${totals.worstIntersectionAt}`);
 
 console.log(`\n${failed ? 'FAIL' : 'PASS'} — see .wiki/0003-hole-feel-and-visual-fidelity/00-findings.md §2, §8`);
 process.exitCode = failed ? 1 : 0;

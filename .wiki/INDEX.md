@@ -55,6 +55,17 @@ builds on.
     place, including the standing note that none of it has been visually
     verified on the live URL.
 
+11. [`0004-false-level-failure/00-findings.md`](0004-false-level-failure/00-findings.md)
+    — 2026-07-27 root-cause analysis of "I got over the required amount of
+    mass, but still failed." Verdict: the win check is correct, but 91 of 100
+    levels require the district landmark as a second condition that is stated
+    once on the intro screen and never again, the mass bar clamps full for the
+    rest of the run, and the fail screen unconditionally blames the mass
+    target ("Time ran out at 126,069 / 100,000 mass"). Also finds that on
+    L41-L50 the mega-spire landmark's size gate does not open until ~101.6% of
+    the advertised target, so the displayed goal is not a sufficient goal
+    there. Fix spec and regression tests in §7. Probes in `evidence/`.
+
 ## Working agreements (edit as the project evolves)
 
 - Docs are source-of-truth for *intent*; code comments for *mechanism*.

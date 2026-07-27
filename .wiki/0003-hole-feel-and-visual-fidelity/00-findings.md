@@ -685,6 +685,13 @@ juice passes, gathered in one place per the working agreement in `INDEX.md`
 | Diagonal street grid (reference roads run at a fixed isometric diagonal) | §6.1 | deferred, self-contained follow-up |
 | Row-building block perimeters (blocks not built out shoulder-to-shoulder) | §6.1 | deferred, largest remaining visual gap |
 | `scripts/flow-test.cjs` hardcodes `http://localhost:3003/` | pre-existing, noticed during this reconciliation | open — this repo's own dev/E2E harness, not a player-facing default; still worth a live-URL/env-var fallback so the script isn't silently a no-op away from that port |
+| Building-overlap defect: escape pass moves props without an occupancy test, root cause of the residual 15.8% (down from 23.8%) of buildings intersecting another building | §18 | open, root cause not fixed — needs an occupancy test on the escape pass, a change touching every prop kind |
+| Mega-props treat tiers 4–6 as interchangeable and scale them UP, live from L26+ | §3 of economy-balance-audit.md, this doc §16 | open, needs its own 40-run grid before retuning |
+| Build ceiling worst case: utility build in the opening chapter, n7 at 4.8% | §16 | open, known debt, gate deliberately RED, owner `src/meta/upgrades.js` |
+| Invariant 6 (walked bot) now misses level 6 at 95.4% of target | §18 | open, marginal — invariant 5 (reachability model, the real completability gate) still passes L6 100/100 |
+| L61 near-miss at 97% on one stream/salt | §17 | open, hair's-breadth — see §17 for the retracted "tiers 1-4 gives 8/8" figure this superseded (an artefact of RNG stream choice, not tier 5) |
+| Non-building prop UVs (trees, bikes, lamps, pedestrians) never audited for stretching — only building facades were addressed by the material pass | mat-pass scope, never reported directly | open, needs its own pass — Nico's "textures suck, all of them" complaint may extend beyond what was fixed here |
+| `src/content/textures.js` procedural facades never had a written rationale from the agent that built them | wiki-sync note, 2026-07-27 | informational — inferred from code, not confirmed against a design brief |
 
 **None of this has been visually verified on the live URL.** Every measurement
 above comes from headless scripts (`motion-probe.mjs`, `placement-audit.mjs`,
@@ -692,3 +699,1032 @@ above comes from headless scripts (`motion-probe.mjs`, `placement-audit.mjs`,
 not a browser render. A pass against the deployed build, per the standing
 rule (never localhost), is the right next step before any of the "open,
 cosmetic" or "open, needs Nico" rows above are acted on.
+
+## 11. Suite readings are provisional while agents are editing (2026-07-27)
+
+A methodology correction, recorded because it produced a wrong diagnosis that
+was acted on before it was caught.
+
+`scripts/invariant-test.js` was read at **8 failures**, including invariant 5
+(per-level completability) at 97/100. Invariant 5 is the one gate that is
+never to be widened, so three uncompletable levels was treated as an
+emergency and a geometry agent was briefed to drop its assigned work and
+restore reachability. A clean re-run on the *same tree*, with no intervening
+edit, gave a different result:
+
+| reading | inv 5 | inv 6 | build ceiling | total |
+|---|---|---|---|---|
+| mid-write | 97/100 FAIL | PASS (mean 66.2%) | FAIL | 8 failures |
+| clean | **100/100 PASS** | **FAIL** (mean 56.5%) | FAIL | 3 failures |
+
+The two readings disagree on which invariants fail *and on the direction of
+the problem*. The mid-write reading says levels are unreachable; the clean
+reading says they finish too fast (56.5% against band 61-69%, and the utility
+build at 18.9%/20.2% against a 25% floor). Acting on the first would have
+tuned the economy the wrong way.
+
+**Root cause.** `src/data/levels.js` was being rewritten by an agent while the
+suite imported it. The suite has a determinism gate, but it compares two runs
+*inside one process* against one already-loaded module graph - it cannot
+observe a file changing underneath it, so a torn read presents as a confident,
+reproducible-looking failure rather than as an error. A corroborating
+observation from a second agent the same session: one 6-failure run
+(invariants 4 and 5 at 99/100) immediately followed by three consecutive
+identical 1-failure runs, with no change from itself in between.
+
+**Rule.** While more than one agent holds a write on `src/`, treat any single
+suite run as provisional. Re-run before believing a failure, and re-run
+specifically before briefing anyone to act on one. A red that does not
+reproduce across two consecutive runs is a torn read, not a regression.
+
+This is cheap - the suite is ~4s - and the failure it prevents is expensive:
+the wrong agent redirected onto the wrong problem, with the correction
+arriving only after work had started.
+
+## 12. Invariant 8 is tautological and asserts nothing (2026-07-27)
+
+Recorded so nobody counts it as a real gate. **Do not change it** - it is
+harmless and its `PASS` is honest about what it checks. It just does not check
+what its name implies.
+
+Invariant 8 is *"Maximum single award is <=15% of target"*. The soak bot
+computes the value it asserts on like this
+(`scripts/soak-bot.js:316`):
+
+```js
+const frameAward = capProgressionAward(
+  res.massGained * massGainMultiplier + exceptionalTopUp,
+  level.target,
+);
+mass += frameAward;
+maxSingleAward = Math.max(maxSingleAward, frameAward);
+```
+
+and `capProgressionAward` (`src/data/formulas.js:139`) is a clamp:
+
+```js
+return safeTarget > 0 ? Math.min(safeAmount, safeTarget * safeFraction) : safeAmount;
+```
+
+with `safeFraction` itself clamped to at most `MAX_SINGLE_AWARD_FRACTION`
+(0.15). So every recorded award has already been clipped to <=15% of target
+*before* it reaches `maxSingleAward`, and the invariant then asserts
+`maxSingleAwardFraction <= 0.15`. It cannot fail by construction, for any
+economy, any prop table, any level.
+
+**The tell is visible in the suite's own output.** Invariant 8 is the only one
+whose "tightest" margins read `n=1 (100%), n=2 (100%), n=3 (100%)` - every
+level pinned at exactly 100% of the limit. That is the signature of a clamp
+being read back, not of a quantity being measured.
+
+**What it does and does not tell you.** It confirms the cap is *wired in* on
+the bot's award path - that is real, if narrow, coverage: deleting the
+`capProgressionAward` call would make it fail. It tells you nothing about
+whether any prop, golden, or combo would *naturally* exceed 15% of target,
+which is the property the name promises and the property that would actually
+constrain content.
+
+**If a real gate is ever wanted**, assert on the *uncapped* amount
+(`res.massGained * massGainMultiplier + exceptionalTopUp`) alongside the
+capped one, so the suite can distinguish "nothing needed clamping" from
+"something was clamped hard every frame". That is a change to what is
+measured, not a change to a threshold, and it belongs to whoever owns the
+economy - not to a content pass.
+
+Consequence for content work: invariant 8's `100/100` must not be read as
+headroom. The gates that actually constrain the prop tables are **5**
+(per-level completability), **6** (aggregate pacing band), **7** (route mass
+budget) and the **build ceiling**. See the measured constraint envelope in the
+header comment of `src/data/levels.js`.
+
+## 13. Invariants 5 and 7 and the build ceiling are golden masters of one prop layout (2026-07-27)
+
+This is the blocker on all remaining re-layout work (built-out blocks, prop
+variety, alleys, elevated rail). It needs a decision from Nico before any of
+that can proceed. **Nothing was changed in response to it.**
+
+§6 of this doc already established that invariant 6 was a golden master rather
+than an invariant - its per-level form passed only because prop coordinates
+never moved - and it was fixed by aggregating it into a mean. **The same defect
+is still present, unfixed, in invariants 5 and 7 and in the build ceiling.**
+
+### The measurement
+
+Perturb *only* prop positions: pass a non-zero `salt` to
+`levelSeed(metroIndex, districtIndex, salt)` in `generateLevel`. This moves
+every prop in every district. It changes **no** gameplay quantity - prop
+counts, base masses, tier radii, targets, timers, spawn gates, rival tables and
+the whole economy are byte-identical. Eight salts, full suite each:
+
+| salt | inv 5 | inv 6 (aggregated) | inv 7 | build ceiling | total failures |
+|---|---|---|---|---|---|
+| 0 (authored) | **100/100** | PASS 63.8% | **100/100** | **PASS** | **0** |
+| 1 | 98/100 | PASS 64.6% | 98/100 | FAIL | 8 |
+| 2 | 94/100 | PASS 62.4% | 94/100 | FAIL | 24 |
+| 3 | 96/100 | PASS 62.9% | 96/100 | FAIL | 20 |
+| 4 | 96/100 | PASS 61.2% | 96/100 | FAIL | 18 |
+| 5 | 97/100 | PASS 64.2% | 97/100 | FAIL | 14 |
+| 7 | 96/100 | PASS 63.6% | 96/100 | FAIL | 16 |
+| 11 | 96/100 | PASS 62.0% | 96/100 | FAIL | 13 |
+
+**Eight out of eight position-only perturbations fail.** Only the exact
+authored layout passes. Invariant 6, the one that was aggregated, passes all
+eight comfortably inside its band (61.2-64.6%) - the fix worked, and it is the
+control that proves the perturbation is not an economy change.
+
+Invariant 7 tracks invariant 5 exactly because it is derivative: an
+uncompleted level reports `budgetConsumptionFraction: null`, which fails the
+band. It is not an independent signal.
+
+### Corroboration from the margin distribution
+
+The margins say the same thing. Slack = fraction of the timer left unused at
+completion:
+
+| tree | levels < 10% slack | tightest |
+|---|---|---|
+| pre-change baseline (330f569) | 3 | **n=61 at 0.3%** |
+| post-change (this pass) | 3 | **n=82 at 0.7%** |
+
+Both trees pass 100/100 with three levels finishing inside a rounding error of
+failure. The identity of the knife-edge levels changes completely between the
+two (61/88/91 becomes 82/77/61) while the *shape* of the distribution does
+not. That is the fingerprint of a chaotic route, not of a level being hard.
+The greedy bot walks to the nearest edible prop, so a few decision points
+reshuffle and the route diverges from there.
+
+### What this means for the pending work
+
+Built-out blocks (§2.4, §6.1) were implemented and rejected twice. §6.1
+attributes the terrace version's rejection to pacing (mean 0.646, variance
+0.40-0.94); that objection is void now that invariant 6 is an aggregate band of
+[0.61, 0.69], which 0.646 sits inside. The surviving objection was that two
+levels became uncompletable - i.e. invariant 5.
+
+**That objection cannot be satisfied by better geometry, because invariant 5
+cannot currently tell good geometry from bad.** A contiguous building frontage
+necessarily moves props, and the table above shows that moving props costs 2-6
+levels on invariant 5 whether the resulting layout is better or worse. The same
+applies to prop variety and taxonomy, to alleys, and to elevated rail: all of
+them re-pool placement.
+
+Stated precisely, so this is not over-read: **the salt test does not show that
+built-out blocks make the game worse.** It shows that invariant 5 is not
+capable of *validating* them either way. The blocker is the gate, not the
+geometry. It is entirely possible - and is the working hypothesis behind
+recommending built-out blocks - that contiguous frontage lengthens bot routes
+in a systematic, desirable way that random re-seeding does not; a salt
+scatters props, a terrace organises them. That hypothesis is untestable while
+the only per-level gate fails on any re-placement at all.
+
+So the sequencing in the current brief - "get invariant 5 to 100/100, *then*
+do built-out blocks" - is not achievable as stated. Any re-layout will drop
+invariant 5, and tuning counts to win it back only re-fits the golden master to
+the new layout, which is the thing §6 already identified as worthless.
+
+### The decision needed
+
+Same fix as invariant 6, and it was already prescribed in
+`scripts/invariant-test.js` at `COMPLETION_PACING_BAND`: *"If you want
+per-level teeth back, the fix is to make the bot's route insensitive to layout
+(e.g. score against an ordered mass budget rather than a walked path), NOT a
+narrower number here."* Three options, in preference order:
+
+1. **Make the bot's route layout-insensitive.** Score completability against an
+   ordered mass budget rather than a greedy walked path. Keeps per-level teeth,
+   which is what makes invariant 5 worth having. Most work.
+2. **Gate invariant 5 across salts.** Require 100/100 on the authored layout
+   *and* >=94/100 on N perturbed layouts. Cheap, and it converts the gate from
+   "this layout works" to "this economy works", but it explicitly tolerates a
+   few uncompletable levels under perturbation.
+3. **Leave it.** Accept that invariant 5 pins one layout, and accept that the
+   city's composition is therefore frozen at whatever it is today.
+
+Option 3 is the current de facto state and is why the city still reads as
+detached cubes on open ground rather than as built-out blocks.
+
+**The build ceiling needs the same treatment** - it failed all eight
+perturbations, and it was the gate that rejected most of the count
+redistributions swept in this pass. It is currently the tightest constraint on
+prop count and it is not measuring what it claims to either.
+
+### Reproducing
+
+Replace `seed: levelSeed(chapter - 1, levelInChapter - 1)` in
+`generateLevel` (`src/data/levels.js`) with a third `salt` argument, run
+`node scripts/invariant-test.js`, revert. ~3s per salt.
+
+## 14. Prop counts move TWO levers, not one — why §11's readings contradicted (2026-07-27)
+
+§11 recorded two irreconcilable readings of the same tree and attributed the
+difference to a torn read. A torn read was involved, but it is not the whole
+story: **the two readings were also measuring two different effects that a
+naive count cut moves at the same time, in opposite directions.**
+
+Measured by sweeping ~33 count/mass configurations through the full suite:
+
+| lever | what it is | what it drives |
+|---|---|---|
+| **1. total prop COUNT** | how many objects the route walks between | invariant 6 mean and the BUILD CEILING, **together** |
+| **2. LOW-TIER MASS** | mass edible at spawn size: tiers 0-1 plus `STREET_PROP_TIERS` | invariant 5 completability, and pushes the invariant 6 mean the *other* way |
+
+Cutting count shortens routes: levels finish faster, the invariant 6 mean falls
+toward its 0.61 floor, and the build ceiling breaks. Cutting low-tier mass
+starves early growth: the avatar takes longer to reach the size gate, the mean
+*rises*, and the levels with the least slack stop completing at all.
+
+A count cut that also cuts low-tier mass moves both at once and they partially
+cancel on the mean, which is why the mean looked innocuous while invariant 5
+was failing. Holding low-tier mass fixed (~1020) isolates lever 1 cleanly:
+
+| config | count | low-tier mass | inv 5 | inv 6 mean | build ceiling |
+|---|---|---|---|---|---|
+| c319 | 319 | 1020 | 100/100 | 60.7% FAIL | FAIL |
+| c335 | 335 | 1022 | 100/100 | 61.6% PASS | FAIL |
+| **c349 (shipped)** | 349 | 1018 | **100/100** | **63.8% PASS** | **PASS** |
+| c369 (prior) | 369 | 1020 | 100/100 | 65.8% PASS | PASS |
+
+With lever 2 held still, invariant 6 and the build ceiling **recover together**
+as count rises, the build ceiling lagging slightly (it needs ~345+, invariant 6
+only ~330). That confirms they share one cause, and that cause is route length.
+
+Contrast the configs that moved both levers - the mean is *high*, not low,
+because starvation dominated:
+
+| config | count | low-tier mass | inv 5 | inv 6 mean |
+|---|---|---|---|---|
+| predecessor WIP | 308 | 790 | 97/100 | 65.2% |
+| "approved" target | 241 | 468 | 98/100 | 66.6% |
+
+**Practical rule.** Treat low-tier mass as a control variable, not a free
+parameter. Change prop counts by trading count against `baseMass` *within* a
+tier so the tier's mass product is preserved; then count is the only thing that
+moved, and invariant 6 and the build ceiling can be read as one signal. If a
+gap will not close with route length alone and `baseMass` has to move across
+tiers, the two levers are tangled again and the second effect will resurface
+later at a different point on the ladder.
+
+**Caveat on absolute numbers.** These were taken while other agents held writes
+on `scripts/soak-bot.js`. The same c319 configuration read 61.8% before an
+engine edit and 60.7% after. The *ordering* and the *structure* above held
+across both, and the salt table in §13 reproduced byte-identically across the
+same edit, but treat any single absolute percentage here as +/-1 point.
+
+## 15. Invariants 5 and 7 rebuilt on a layout-insensitive model (2026-07-27)
+
+This is the fix for the §13 defect, and it is the same move §6 made for
+invariant 6: remove the coupling rather than widen the tolerance.
+Implementation: `scripts/reachability-model.js`. **Read this section before
+changing that file or reverting invariants 5/7 to the walked bot.**
+
+### What changed
+
+Invariants 5 and 7 are no longer scored by `scripts/soak-bot.js`. They are
+scored by a model that consumes the REAL generated prop list but reads only
+each prop's `(radius, mass, golden, elite)` — **never its x/z**.
+
+Positions are replaced by density. The props edible at the current size gate
+form a pool; the expected travel to the next one is
+`NEAREST_NEIGHBOUR_K / sqrt(count / worldArea)`, the standard Poisson
+nearest-neighbour distance. While travelling, the avatar sweeps a corridor of
+width `2 * eatReach` and incidentally swallows `density * distance * 2 *
+eatReach` further props — which is what reproduces the late-game "big hole
+hoovers up everything" acceleration, and is the same sweep model already used
+for the rival hoard cap. Each step takes the pool with the best mass-per-second
+RATE rather than the nearest object: that is the "ordered mass budget" the
+note at `COMPLETION_PACING_BAND` prescribed, and it means completability is
+measured against competent play instead of one arbitrary greedy walk.
+
+Everything else is the real shared economy: `radiusFromMass`, the growth-drag
+speed curve, `DEFAULT_SIZE_GATE`, `EAT_REACH_FACTOR`,
+`progressionAwardReport`, `capProgressionAward`, the capstone size gate and the
+landmark shield. Change any of those and the model moves immediately.
+
+**Invariant 5's intent is unchanged.** It is still per-level, still binary,
+still "every level completable without upgrades". It was NOT weakened into a
+mean. Only the definition of "completable" changed.
+
+### Result against the §13 salt test
+
+Same eight position-only perturbations, economy byte-identical. Both columns
+were re-measured BACK-TO-BACK on the settled engine (winfix final, logic
+186/186) by reverting invariants 5/7 to the walked bot, sweeping, then
+restoring — so this is a fixed reference, not a comparison across the engine
+drift §14 warned about. The "before" column came out byte-identical to the
+numbers §13 recorded on the earlier engine, which retires that caveat: the
+drift moved invariant 6's absolute percentages, never the salt result.
+
+| | inv 5 before (walked) | inv 5 after (model) |
+|---|---|---|
+| salt 0 (authored) | 100/100 | 100/100 |
+| salt 1 | 98/100 | **100/100** |
+| salt 2 | 94/100 | 99/100 |
+| salt 3 | 96/100 | **100/100** |
+| salt 4 | 96/100 | 99/100 |
+| salt 5 | 97/100 | **100/100** |
+| salt 7 | 96/100 | **100/100** |
+| salt 11 | 96/100 | **100/100** |
+
+**0 of 8 salts passed before; 6 of 8 pass now**, and invariant 7 tracks it
+exactly. The layout coupling is gone.
+
+### The two residual failures are NOT layout coupling
+
+Salts 2 and 4 still lose one level each (n=82 at 85% of target, n=94 at 94%).
+The model reads no positions, so this had to come from somewhere else, and it
+does: **which prop wins the golden lottery**. Prop count and `totalBaseMass`
+are identical across salts (n=82: 481 props, 4487 mass, every salt). What
+changes is the tier the goldens land on:
+
+| salt | level 82's goldens land on | model result |
+|---|---|---|
+| 0 (authored) | **bike** (r19) + building-small (r47) | completes |
+| 2 | building-medium (r63) x2 | 85% of target |
+| 4 | car (r26) + bus (r34) | completes |
+
+A golden is worth 8x its prop's mass. On a bike it is edible in the opening
+seconds and fuels the whole growth ramp; on a building-medium it is not edible
+until late, when it no longer compounds. So level 82 completes *because* its
+golden landed on a low tier.
+
+That is a real, actionable economy fragility, not metric noise - and it is
+exactly the kind of finding the walked bot could never isolate, because it was
+buried under route chaos.
+
+**The fix is measured and it is one character. NOT APPLIED — it is an economy
+change, not a test change, and it needs an owner's decision.** Goldens are
+currently drawn uniformly from tiers 1-5 (`districts.js`, the `midTierProps`
+filter). Tier 5 is building-medium at r63, which is not edible until late, so a
+golden landing there contributes nothing to the growth ramp. Narrowing the
+eligible range, measured over the same eight salts:
+
+| golden tier range | s0 | s1 | s2 | s3 | s4 | s5 | s7 | s11 | clean |
+|---|---|---|---|---|---|---|---|---|---|
+| **1-5 (current)** | 100 | 100 | 99 | 100 | 99 | 100 | 100 | 100 | 6/8 |
+| **1-4** | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | **8/8** |
+| 1-3 | 100 | 100 | 100 | 100 | 100* | 100 | 100 | 100 | 8/8 |
+| 1-2 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 8/8 |
+
+(* invariant 6 also failed at that salt.)
+
+Excluding tier 5 alone takes invariant 5 to **8/8 salts clean** — full salt
+invariance, the acceptance bar for this work — with no other invariant
+disturbed. Tiers 1-3 buys nothing extra and destabilises invariant 6.
+
+The tradeoff is a gameplay one, which is why it is not mine to take: a golden
+on a building-medium is a big, visible jackpot, and removing it changes how the
+mechanic reads even though it improves how the level plays. Whoever owns the
+economy should decide between (a) restricting goldens to tiers 1-4, (b) leaving
+placement uniform and accepting that two levels sit close to the edge, or (c)
+tier-weighting rather than hard-restricting. Option (a) is a one-line change to
+the `midTierProps` filter and is the only one measured here.
+
+### Regression sensitivity — the honest numbers
+
+Required by the brief: a layout-insensitive gate that is also
+regression-insensitive is worse than what it replaced. Measured by scaling the
+award fraction (every award scales by k, a clean proxy for an economy shift):
+
+| k | levels completed | model mean completion |
+|---|---|---|
+| 0.70 | 95/100 **FAIL** | 64.4% |
+| 0.80 | 99/100 **FAIL** | 60.3% |
+| 0.85 | 100/100 pass | 58.3% |
+| 0.90 | 100/100 pass | 56.2% |
+| 1.00 | 100/100 pass | 52.9% |
+| 1.10 | 100/100 pass | 50.4% |
+| 1.30 | 100/100 pass | 46.7% |
+
+**As a binary floor gate, invariant 5 catches a -20% economy shift and is blind
+at -15% and above.** It does not catch shifts in the *easy* direction at all,
+by design: "can this be completed" cannot fail because completion got easier.
+That asymmetry is correct and is why invariant 6 (aggregate pacing) and the
+build ceiling exist. State it plainly rather than claiming +/-10% teeth this
+gate does not have.
+
+**CORRECTION (same day, measured): do NOT port invariant 6 to this model.**
+
+An earlier revision of this section claimed the model's mean was a sharper
+pacing instrument than the walked bot's and recommended porting invariant 6 to
+it. That was wrong, and it was wrong for an embarrassing reason: it compared
+the MODEL's sensitivity against the WALKED BOT's noise. Measured properly, on
+the same footing, the walked bot wins by more than a factor of two.
+
+Signal — how far the mean moves for a real economy shift (award scale k):
+
+| k | walked bot | model |
+|---|---|---|
+| 0.90 | 0.7115 | 0.5621 |
+| 0.95 | 0.6595 | 0.5451 |
+| 1.00 | 0.6376 | 0.5286 |
+| 1.05 | 0.5992 | 0.5141 |
+| 1.10 | 0.5727 | 0.5037 |
+
+Noise — spread of the same mean across the eight position-only perturbations:
+
+| instrument | signal (+/-10%) | noise (8 salts) | **signal-to-noise** |
+|---|---|---|---|
+| walked bot | 0.0694 | 0.0342 | **2.03** |
+| model | 0.0292 | 0.0313 | **0.93** |
+
+The model's signal-to-noise is BELOW 1: a 10% economy shift moves its mean less
+than a re-layout does. As a pacing gate it would be worse than useless. The
+walked bot's 2.03 is what makes the existing [0.61, 0.69] band able to catch
++/-10% at all.
+
+**Why the model is worse here, and it is not a bug.** The model plays
+*competently* — each step it re-scores every pool and takes the best available
+mass-per-second. When the economy weakens it simply re-routes, absorbing the
+change. The greedy walked bot cannot adapt: it always walks to the nearest
+prop, so it takes the full impact of an economy shift on the chin. **Adaptive
+play is insensitive play.** That is exactly the property that makes the model
+the right instrument for a completability floor and for the build ceiling
+(where the question is "what can a good player do?") and the WRONG instrument
+for a pacing band (where the question is "did the economy move?").
+
+### The general rule: match the instrument's adaptivity to the question
+
+This is not a fact about this model or this bot. It is the rule for choosing an
+instrument for ANY future gate, and it should be applied before writing one:
+
+> **An adaptive player absorbs the change you are trying to detect. The more
+> competently an instrument plays, the LESS sensitive it is to the thing being
+> measured — because competence is precisely the ability to route around a
+> change. Sensitivity and realism trade against each other; you cannot have
+> both in one instrument.**
+
+So pick by the shape of the question, not by which instrument is "better":
+
+* **A capability question** — "what can a good player do?", "can this be
+  trivialised?", "is this completable at all?" — is a floor or a ceiling. It
+  needs an instrument that plays WELL, because the answer is defined by the
+  best available play. Adaptivity is the thing being measured. Use the model.
+* **A regression question** — "did the economy move?", "is pacing still in
+  band?" — needs an instrument that plays the SAME WAY every time and cannot
+  compensate. Naivety is a feature: a greedy fixed policy takes the full impact
+  of a change on the chin. Use the walked bot.
+
+The failure mode this rule prevents is the seductive one: upgrading a gate to a
+"better" instrument and silently destroying its sensitivity, ending with a gate
+that still passes and no longer detects anything. That is how invariant 6 was
+nearly broken — see the retraction above — and it is the same family of defect
+as §13's golden masters and §16's sampling defect. A gate can stop working
+without ever turning red.
+
+Corollary for a mixed question: do not average the two instruments. Split the
+question into a capability gate and a regression gate and run both.
+
+Invariant 6 therefore stays on the walked bot, keeps its [0.61, 0.69] band, and
+keeps §6's do-not-re-tighten warning. Its residual layout coupling is real but
+already mitigated by aggregation — it passed all 8 salts in every sweep run
+during this work.
+
+### The BUILD CEILING
+
+Ported in a follow-up pass the same day — see §16, which supersedes the
+"deliberately not ported" note that stood here.
+
+### Calibration, and the do-not-tune warning
+
+`NEAREST_NEIGHBOUR_K = 1.15` is the Poisson constant (0.5) scaled to absorb the
+model's documented optimism: it ignores rivals (invariant 3 bounds those),
+storms and mid-level spawns (invariant 9 bounds those) and combo multipliers
+(invariant 4 covers those). Leaving combo out deliberately keeps this a floor —
+a level that completes here completes without needing a streak.
+
+It was fitted ONCE, against the authored layout, so the model's completion
+fractions sit in the same range as the walked bot's (model mean 0.529 against
+the bot's 0.638) rather than being systematically fast or slow.
+
+**WARNING — do not tune `NEAREST_NEIGHBOUR_K` to make a failing level pass.**
+It is a property of the geometry of random point fields, not a difficulty dial.
+Turning it down makes every level easier and silently destroys the regression
+sensitivity measured above, which is the only thing that makes this gate worth
+having. If a level fails and the economy is right, the bug is in the economy or
+in the model's structure, not in that constant.
+
+### Debugging heuristic: "the model is too harsh" means you skipped a state
+
+Generalise this before reading the three bugs, because the next person building
+a model against this economy will hit the same class of error:
+
+> **A continuous simulation with a small timestep observes every state
+> transition for free. A discrete, event-stepped model does not — and every
+> transition it skips shows up as the model being unfairly PESSIMISTIC, never
+> optimistic.**
+
+All three bugs below presented identically: levels failing that obviously
+should not, tempting the obvious "fix" of loosening a constant. In all three
+the model had jumped over a state the walked bot's 0.2s `dt` caught for free —
+a gate opening, a shield breaking, a threshold being crossed — and then
+behaved correctly given the wrong state it had landed in.
+
+The diagnostic that works: when the model says a level is unreachable, print
+the terminal state (`finalMass / target`, `capstoneEaten`, `stuck`) rather than
+the verdict. Every one of these announced itself as an absurd terminal state —
+mass at 400-1200% of target with the level still unwon — which is not what
+genuine unreachability looks like. Genuine unreachability looks like mass
+*short* of target, which is what the two remaining golden-lottery failures
+show (85% and 94%).
+
+Corollary: **do not respond to this class of failure by tuning
+`NEAREST_NEIGHBOUR_K`.** It would "work" — a lower constant makes everything
+easier and buries the symptom — while silently destroying the regression
+sensitivity that is the gate's whole value.
+
+1. **The capstone must be taken the moment it is edible**, not scored on rate.
+   It is a single object, so its nearest-neighbour distance is the whole world
+   and its rate is always poor — but on a gated level no amount of other food
+   can finish the level. Scoring it on rate left 17 levels at 400-1200% of
+   target and never completing.
+2. **The landmark shield cracks once per OBJECT eaten, not once per step.** A
+   step that sweeps several props cracks it several times. Decrementing once
+   per step left every shielded level (L61+) timing out with the shield up.
+3. **Steps must not skip the capstone gate or the target.** One acquisition can
+   be worth >20% of target, enough to leap from below the capstone's size gate
+   to past the target in a single move, skipping the window where the capstone
+   becomes edible and leaving the model gorging to 2-4x target. Both thresholds
+   are now truncation points. Related: once mass is at target and only the
+   capstone remains, further mass is waste, so the model switches from
+   "fastest" to "cheapest" — which is how a player actually cracks a shield.
+
+### Cost
+
+The suite now runs three passes per level instead of two, but the district is
+generated once and shared (`simulateLevel` and `estimateCompletion` both accept
+`opts.layout`). Measured per 100 levels:
+
+| stage | cost |
+|---|---|
+| `generateDistrict` | 249 ms |
+| one walked bot pass | 875 ms |
+| one reachability model pass | **24 ms** |
+
+The model costs 2.7% of a bot pass, while sharing the district removes one of
+the two generations the suite used to do. Net change is about -225 ms, i.e.
+the suite is slightly CHEAPER than before despite gaining a pass. That matters,
+because §11's "re-run before believing a failure" rule is only practical while
+the suite is cheap.
+
+Do not compare wall-clock `RESULT:` timings between runs to check this. That
+line varied between 3.7s and 57s on the same tree during this session purely
+from other agents' load on the machine; the per-stage numbers above are the
+like-for-like measurement.
+
+### Reproducing
+
+* Sensitivity: call `estimateCompletion(n, { ordinaryMassFraction: base * k })`
+  over k in 0.7-1.3 and count completions.
+* Salt invariance: as §13 — add a third `salt` argument to the `levelSeed` call
+  in `generateLevel`, run the suite, revert.
+
+## 16. The BUILD CEILING now fails, and that is the correct answer (2026-07-27)
+
+**The gate is RED on purpose. Do not "fix" it by moving the floor.** It reports
+180/300 level/build combinations passing, worst 4.8%. Two defects were repaired
+to get that number, and the verdict survived both.
+
+### Defect 1 — it sampled 5 levels out of 100
+
+The ceiling only ever probed n in {1, 25, 50, 75, 100}. It passed because those
+five happened to be clean. Running the **same walked bot** over all 100 levels
+and all three maximum builds:
+
+| instrument, full 100-level sweep | combinations below the 0.25 floor | worst |
+|---|---|---|
+| walked bot (the original scorer) | **31 / 300** | 18.1% |
+| reachability model | **120 / 300** | 4.8% |
+
+So the gate was already failing before any of this work — it was passing by not
+looking. This is a second instance of the §6/§13 pattern: a gate that looks
+green because of what it does not measure.
+
+### Defect 2 — it used an instrument that plays badly
+
+"Can a maxed-out player trivialise this level?" is a question about *competent*
+play. The walked bot walks to the nearest prop, not the best one, so it
+systematically understates how fast a good player finishes. The reachability
+model is the right instrument here — the mirror image of §15's conclusion that
+it is the WRONG instrument for invariant 6's pacing band. The distinction:
+
+* **"What can a good player do?"** (completability floor, build ceiling) — use
+  the model. Adaptive play is the thing being measured.
+* **"Did the economy move?"** (pacing band) — use the walked bot. Adaptive play
+  absorbs economy shifts and destroys sensitivity.
+
+Porting also made the full sweep affordable: 300 model runs cost ~72ms against
+~2.6s for the walked bot.
+
+### The floor was NOT re-derived downward, and here is why that is honest
+
+The brief was to port the gate and re-derive the floor together, and to report
+rather than absorb the verdict if the builds turned out to be the problem. The
+two hypotheses were:
+
+* **(a) the 25% floor was miscalibrated** to the walked bot's slower route and
+  does not transfer to the model; or
+* **(b) the builds are genuinely overpowered.**
+
+**These are separable, and the evidence says (b).** If it were only (a), the
+walked bot at full sample would pass and only the model would fail. It does
+not: the walked bot fails 31/300 on its own terms, against its own floor,
+with the floor it was calibrated for. Widening the sample alone — changing no
+instrument and no threshold — already fails the gate. The model then shows the
+same defect four times larger because it stops flattering the builds.
+
+So the floor stays at 0.25. No measurement supports a lower one, and a floor
+chosen to make 120 failing combinations pass would have to sit below 5%, at
+which point the gate asserts nothing.
+
+### What is actually wrong
+
+Failures concentrate by build and by campaign position:
+
+| build | combinations below floor (of 100) |
+|---|---|
+| utility | **62** |
+| growth | 37 |
+| golden | 21 |
+
+Full distribution: min 5%, p5 15%, p25 21%, p50 28%, max 60%. The worst five
+are all the **utility** build in the opening chapter — n7 4.8%, n9 6.2%,
+n5 6.3%, n8 7.4%, n1 9.0%. The utility build
+(`wide-maw / magnet-core / heavy-breakfast / vacuum-throat / time-bandit`)
+stacks eat-radius, attract-radius and extra time, and against low-level worlds
+that combination finishes the level in under a tenth of its timer.
+
+This is a **balance** finding and it belongs to whoever owns `src/meta/
+upgrades.js`. Nothing in the builds was changed here.
+
+### Salt stability — the original reason for porting
+
+The old ceiling flipped PASS/FAIL entirely across position-only perturbations
+(it passed only the authored layout and failed 7 of 8 salts). The ported gate
+gives a stable verdict:
+
+| salt | 0 | 1 | 2 | 3 | 4 | 5 | 7 | 11 |
+|---|---|---|---|---|---|---|---|---|
+| passing / 300 | 180 | 182 | 174 | 172 | 177 | 177 | 173 | 179 |
+
+Spread is 10 of 300 (3.3%) and the verdict is FAIL at every salt. The gate now
+answers the same way regardless of layout, which is the property §13 was about.
+That means a re-layout (Task B) can no longer flip this gate by accident — but
+it also means the gate will stay red until the builds are addressed.
+
+### Sensitivity and blind spot
+
+Stated to the same standard as §15's, and it is a *ceiling*, so it is the
+mirror of invariant 5's floor: it catches the economy or the builds getting
+too STRONG, and is blind to them getting weaker (a level that takes longer
+cannot breach a minimum-time floor). Because it now scores 300 combinations
+rather than 5, its resolution is set by how many combinations sit near the
+threshold: p25 is 21% against a 25% floor, so roughly a quarter of the
+population is within 4 points of the line. A shift of ~15% in build strength
+moves enough combinations across it to change the count materially, while a
+shift of a few percent moves a handful and is not distinguishable from the
+3.3% salt spread above. **Treat changes in the pass count of less than ~10/300
+as noise.**
+
+### If you need the suite green before this is resolved
+
+Do not raise or remove the floor. Either fix the builds, or accept it as the
+known failure recorded immediately below. The whole point of §6, §12, §13 and
+this section is that a gate which passes for the wrong reason is worse than one
+that fails for the right one.
+
+---
+
+## KNOWN FAILURE — BUILD CEILING (opened 2026-07-27)
+
+**Status:** accepted, open, deliberately red. The suite exits 1 because of this
+and only this. Every other gate is green.
+
+**Owner:** the ECONOMY, not the art. The fix lives in `src/meta/upgrades.js`
+and belongs to whoever takes upgrade balance. It was not fixed on 2026-07-27
+because that file was outside the grants of everyone working that day.
+
+**Assertion:** a maxed-out build should still need >=25% of the level timer.
+
+**Measurement:** 120 of 300 level/build combinations breach the floor
+(100 levels x 3 builds, scored by the reachability model). Spread min 3%,
+p5 14%, p25 21%, p50 28%, max 62%. By build: utility 64, growth 34, golden 22.
+
+**Do not "fix" this by moving the floor.** A floor low enough to pass 120
+failing combinations would sit below 5%, at which point it asserts nothing.
+`BUILD_COMPLETION_FLOOR = 0.25` stays where it is. See the section above for
+why the honest verdict is that the builds are overpowered rather than that the
+floor is miscalibrated — that conclusion is instrument-independent and does not
+depend on the model.
+
+### The specific shape of the imbalance — read this before re-deriving it
+
+The worst five combinations are ALL the utility build, and ALL in the opening
+chapter:
+
+| level | build | completion |
+|---|---|---|
+| n7 | utility | 4.8% |
+| n9 | utility | 6.2% |
+| n5 | utility | 6.3% |
+| n8 | utility | 7.4% |
+| n1 | utility | 9.0% |
+
+That is not a coincidence and it names the defect. Utility stacks eat radius,
+attract radius and extra time — and it stacks them against the worlds that have
+the LEAST of all three. Early levels are small, sparse and short, so each point
+of eat radius and attract radius covers a far larger fraction of the whole
+world than it does at L50+, and extra time is spent on a level that was already
+going to finish early. The build scales with the player while the world does
+not scale with the build. Any fix should start there rather than trimming all
+three builds uniformly, and should be checked against the early chapter first,
+where the effect is strongest.
+
+**Stability, so a future change can be read against it.** The ceiling is
+salt-stable at 172-182 of 300 across all eight position salts, a spread of
+~10/300. Movement beyond ~10/300 is a real signal; movement within it is layout
+noise. That makes this a usable instrument even while it is red.
+
+## 17. The golden lottery: tier-weighted, and a second golden master underneath it (2026-07-27)
+
+After §15 rebuilt invariants 5 and 7 on the layout-insensitive reachability
+model, invariant 5 went from 0/8 to 6/8 position salts. The two residual
+failures traced precisely to the golden draw: on level 82, a golden on a bike
+at salt 0 completes the level, while the same golden on two building-mediums
+at salt 2 stalls at 85% of target.
+
+### The mechanism
+
+A golden is worth 8x its prop's base mass. Where it lands decides whether that
+value **compounds**. On a tier-1 bike it is edible in the opening seconds and
+funds the whole growth ramp. On a tier-5 building-medium (r63) it is not edible
+until late, by which point 8x a large number is just a large number arriving
+after it could change anything. The uniform draw over tiers 1-5 treated those
+two outcomes as interchangeable. They are not.
+
+### What was measured, and the trap found along the way
+
+The change implemented is option (c), a weighted draw (Efraimidis-Spirakis,
+`key = u^(1/w)`, largest keys win) rather than option (a), hard exclusion of
+tier 5. The weighting runs on its OWN seeded RNG stream so that the existing
+`rngProps` shuffle is consumed unchanged — the layout stays byte-identical, only
+WHICH props are marked golden moves.
+
+The first sweep, weight x 8 salts, looked like a clean result: tier-5 weight
+1.0 gave 8/8. **That was false.** A weight of 1.0 is weight-neutral — it is the
+uniform draw — and the uniform draw scored 6/8 before the change. The only
+thing that had changed was the RNG stream. Sweeping the stream constant at a
+fixed weight of 1.0:
+
+| golden RNG stream | salts passing |
+|---|---|
+| 0x601DEA5 | 8/8 |
+| 0x11111111 | 7/8 |
+| 0x2C1B3A57 | 8/8 |
+| 0x7F4A7C15 | 7/8 |
+| 0xDEADBEEF | 8/8 |
+
+Three of five streams give a clean sweep with no weighting at all. **The 8-salt
+sweep is by itself an incomplete acceptance test for anything that touches a
+random draw** — the stream choice is a second lottery on the same axis, and
+picking the stream that passes is exactly the golden-master defect of §13
+reappearing one level up. The real acceptance grid is 8 position salts x 5
+golden streams = 40 runs, and it is what every number below is measured on.
+
+### THE GENERAL RULE — sweep the STREAM, not just the layout
+
+Promote this out of the instance that found it, because it applies to every
+future change of this shape:
+
+> **Any acceptance test for a change that touches a RANDOM DRAW must sweep the
+> RNG STREAM as well as the layout. Stream choice is a second lottery on the
+> same axis, and picking the stream that passes is the golden-master defect of
+> §13 wearing a different hat.**
+
+The tell is precise and worth memorising: a change scored better than the
+baseline while its own tuning parameter was set to a value that makes the change
+a NO-OP. If a knob at its neutral setting improves the result, the improvement
+is not coming from the knob. Something incidental moved — here, a fresh seed
+stream that reshuffled which props won the lottery.
+
+This generalises beyond RNG streams to any incidental input a change happens to
+perturb: iteration order, insertion order, a hash seed, a tie-break rule. The
+question to ask of any green result is not "did it pass?" but "what else did I
+change, and would that alone have passed?" Answer it by setting the intended
+mechanism to neutral and re-running. If it still passes, the mechanism is not
+what is working.
+
+### The weight sweep, on the full 40-run grid
+
+| tier-5 weight | runs green | tier-5 golden rate | levels with one |
+|---|---|---|---|
+| 1.0 (uniform) | 38/40 | 7.0% | 10.7/100 |
+| 0.9 | 38/40 | 6.3% | 9.7/100 |
+| 0.75 | 38/40 | 5.3% | 8.2/100 |
+| **0.6 (LANDED)** | **39/40** | **4.4%** | **6.7/100** |
+| 0.5 | 39/40 | 3.5% | 5.3/100 |
+| 0.25 | 39/40 | 1.8% | 2.8/100 |
+| 0.1 | 39/40 | 0.6% | 0.9/100 |
+| 0 (option (a), exclusion) | 39/40 | 0.0% | 0.0/100 |
+
+**The cliff sits between 0.75 and 0.6, and there is nothing below it.** Every
+weight from 0.6 down to 0 scores identically. The response is flat, so the
+weight could not be, and was not, chosen for test margin — it was chosen on
+product grounds as the MOST GENEROUS value that holds. Lowering it buys zero
+headroom and only makes the game duller. Note this is the inverse of the usual
+warning in §6 and §16: the risk here was not tuning until it barely passes, it
+was quietly taking a stricter value than the evidence asked for.
+
+### Option (a) does not achieve 8/8 either — the residual is not the goldens
+
+The most important line in that table is the last one. A hard exclusion of tier
+5 scores 39/40, **the same as the landed weighting**. The earlier reading that
+"tiers 1-4 gives 8/8" was itself measured on a single stream and did not
+survive the wider grid.
+
+The one run that stays red at every weight (stream 0x7F4A7C15, salt 1) fails on
+**level 61, at 97% of target**, identically at w5=0.6 and w5=0. That is a
+genuine margin problem on one level, sensitive to which tier-1-to-4 props win
+the draw, and entirely independent of tier 5. Down-weighting tier 5 removed the
+one failure that WAS tier-5-attributable (stream 0x11111111, salt 7); it cannot
+remove this one and was never going to. L61 at 97% is logged as an open item —
+it is a hair's breadth, not a design fault, but it is real and it is not fixed.
+
+### Tier uniformity elsewhere — the answer to "is the golden draw the only one?"
+
+No, and one of the two is worse than the golden draw was.
+
+1. **Elites are not a separate draw** — and that is a PROPERTY TO PRESERVE, not
+   an accident. `if (mechanics.eliteGoldens)` marks the SAME picks the golden
+   loop just made, so elites inherit the tier weighting for free and need no
+   code of their own. Before the weighting they amplified the fragility rather
+   than duplicating it: from L71+ a badly-placed golden was also a badly-placed
+   elite. **If anyone ever splits the elite draw out into its own selection,
+   they reintroduce the exact fragility this section fixed** — an elite would
+   again be able to land uniformly across tiers 1-5. Should elites ever need to
+   diverge from goldens, give them their own WEIGHTS over the same weighted
+   draw; do not give them their own uniform shuffle.
+2. **Mega props are a second, unfixed instance.** The mega draw filters
+   `tierIndex >= 4` and treats tiers 4-6 as interchangeable, then applies
+   `mass *= 3` and `scaleMult = 1.6`. Scaling a prop UP makes it edible LATER,
+   so this concentrates mass at the end of the route — the same fragility shape
+   as the golden defect, pointed the same direction, live from L26+. It has not
+   been changed here because it was not in scope and because it needs its own
+   40-run measurement before anyone touches it. Do not assume it is fine
+   because the golden draw now is.
+
+### Do not re-simplify
+
+A future reader will see a weighted sample where a `shuffle` would do and be
+tempted to collapse it. The uniform shuffle is what this section exists to
+document as broken. Equally, do not "clean up" the weighting into a hard
+`tierIndex <= 4` filter: the table above shows exclusion buys nothing the
+weighting does not already have, and it costs the jackpot-on-a-skyscraper
+moment that is the point of the mechanic.
+
+## 18. Built-out blocks, and the building-overlap defect it uncovered (2026-07-27)
+
+Task B: make blocks read as city blocks — a contiguous street wall of buildings
+sharing party walls — instead of four detached towers with empty edges between
+them.
+
+### What changed
+
+**Frontage is now a RUN, not a midpoint.** Each block edge previously offered a
+single edge-midpoint site, so a block could hold at most 8 buildings and every
+one of them stood alone. Each edge now carries a run of slots at a fixed pitch.
+
+**Contiguity comes from the pop order, not from bookkeeping.** The frontage pool
+is shuffled at the RUN level and then flattened; `fillFromPools` pops off the
+end, so successive draws land on adjacent slots of the same edge and grow a wall
+outward from one end. Shuffling individual sites — which the old code did, and
+which was correct for isolated midpoints — would scatter the same buildings back
+into single teeth. This is the one line most likely to be "simplified" by a
+future reader, and doing so silently reverts the whole task.
+
+**Pitch is derived, not authored.** `buildingPitch()` sizes the slot spacing from
+the level's widest building RENDERED footprint plus a party-wall gap, and it
+allows for the mega multiplier because mega is applied AFTER placement — a mega
+building growing into its neighbour would be a defect introduced by a later pass.
+
+**Shares moved toward frontage.** Smalls 0.5/0.5 -> 0.25 corner / 0.75 frontage;
+mediums 0.7/0.3 -> 0.45/0.55. Larges still take corners: a landmark wants the
+open sightline. Result across 100 levels: 3695 buildings on frontage against
+2600 on corners, where before the frontage pool could physically hold at most a
+few hundred.
+
+### Three defects found while measuring, all pre-existing
+
+**1. Pools that are VIEWS over other pools double-allocated sites.**
+`largeCorners` holds the same site OBJECTS as `corners` (it is a filtered view,
+not a copy) and the two were drawn independently, so a building-large could land
+on the exact coordinates of a building-medium already placed. Measured at 2
+exactly-coincident buildings on level 90 alone. Fixed with a claim flag in
+`takeSite()`, which any future view-over-a-pool inherits for free.
+
+**2. The zone tag was a lie.** Every prop was tagged `plan[0].zone`, so all 6300
+buildings reported `zone: 'corner'` including the ones on frontage. Harmless for
+placement (position is what matters) but actively misleading for anything that
+reads zone — which is exactly what the Task C taxonomy and the per-building
+surface treatment seam will do. The tag is now the pool the site actually came
+from, with `spill` and `loose` for the two fallback paths rather than a zone
+name that would misreport where the prop is.
+
+**3. Coincident corner sites between adjacent blocks**, most often on the radial
+archetype where sector blocks meet at a shared vertex. Collapsed by
+`dedupeSites()` before anything draws. The claim flag cannot catch these: they
+are distinct objects that merely share a position.
+
+### The big one: 1 building in 6 intersects another building
+
+This was never measured, so it was never known. Measured now over 100 levels:
+
+| state | buildings intersecting another building |
+|---|---|
+| HEAD (before this task) | **23.8%** |
+| after the three fixes above | 15.8% |
+
+Built-out blocks IMPROVED this — the pitch is derived from the widest building,
+so a wall is spaced correctly by construction — but 15.8% is still roughly one
+building in six standing inside another one, and that is a visible art defect at
+any camera height.
+
+**Root cause, not fixed here.** Buildings are placed from several site pools and
+are then MOVED by the road-escape pass, which pushes a prop out of a carriageway
+toward the nearest kerb. Neither step consults the other's results, and the
+escape pass in particular can push two different buildings onto the same
+resolved point. Fixing it properly means giving the escape pass an occupancy
+test, which is a change to a pass that every prop kind depends on and is well
+outside built-out blocks. Logged rather than attempted.
+
+**Reported as INFORMATIONAL in the placement audit, deliberately NOT gated.**
+No pass threshold is given, because any threshold that today's 15.8% satisfies
+would be one invented to be satisfied rather than one derived from what a city
+should look like. Same principle as §16: the number stays visible so a future
+change can be read against it, and nobody gets to claim a green tick they have
+not earned. Whoever fixes the escape pass should set the threshold then, from
+the fixed behaviour.
+
+### Effects on the gates
+
+* Invariants 1-9 all PASS 100/100. Invariant 6's mean moved 64.2% -> 65.7%,
+  still inside [0.61, 0.69] — expected, since inv6 runs on the walked bot and
+  clustering buildings changes a nearest-prop route.
+* **The build ceiling moved 180 -> 181 of 300.** Against the ~10/300 salt noise
+  envelope recorded in §16, that is no movement at all: built-out blocks did not
+  disturb the economy, which is the reassurance that mattered before letting a
+  layout change ride on top of a red gate.
+* Placement audit still 8/8, determinism byte-identical, logic 186/186,
+  `build.js` passes.
+
+### One honest regression
+
+Invariant 6 now samples 99 levels rather than 100: the greedy walked bot no
+longer finishes **level 6**, reaching 34,330 of a 36,000 target — 95.4%. It is
+marginal, not structural, and the real completability gate (invariant 5, on the
+reachability model) still passes 100/100, so a competent player completes it
+comfortably. But a naive player following "always eat the nearest thing" now
+runs out of time on L6 where they previously did not, and clustering buildings
+into walls is why. Recorded rather than tuned away — the same hair's-breadth
+shape as the L61 near-miss in §17, and the two together suggest the early ladder
+has less slack than the headline 100/100 implies.
+
+### Adjacent features judged against B — what falls out cheaply and what does not
+
+Assessed, deliberately not built. B is green; none of these is worth risking it.
+
+**Facade variation along a terrace — CHEAP, and B is what makes it cheap.**
+A terrace is now an ORDERED run of adjacent slots rather than a set of unrelated
+sites, so a facade could vary monotonically along it (band phase, shopfront
+colour, roofline step) and produce a street of distinct premises instead of a
+repeated tile. That ordering is new information B created and it is the natural
+hook for the per-building surface treatment seam. NOT built — facades are
+mat2's, keyed by building kind in textures.js, and that file is frozen. Noted
+for whoever owns it. Note also the standing constraint it runs into: only
+`.color` survives the instancing geometry merge, so per-part material variation
+along a terrace is not currently possible without breaking the draw-call budget.
+The ordering hook is free; acting on it is not.
+
+**Alleys — LOOKS cheap, is not.** Mechanically trivial: skip a slot in a
+frontage run on a seeded roll and a gap appears between building rows. But a gap
+with no ground treatment is not an alley, it is a missing building — the surface
+underneath it is whatever the block already was, so it reads as an error rather
+than as a place. Making it read correctly needs a ground surface class and a
+block-interior route, which is groundtex.js and layout work, not frontage work.
+The frontage half is genuinely free; the half that makes it legible is not, and
+shipping only the free half makes the map look worse, not better.
+
+**Elevated rail with columns in the street — does NOT fall out of B.** It needs
+new authored geometry (deck, columns), a new prop kind with its own eat and
+collision semantics, a route that crosses blocks rather than following their
+edges, and a draw-call budget review. It shares nothing with frontage placement
+beyond both being structures. Wholly separate task.
+
+### What B leaves for Task C
+
+Nico's framing is "parks, sights, monuments, statues, different types of
+buildings that represent different use cases." B is the structural half: blocks
+now have terraces, and the `zone` tag is honest about which buildings are on
+frontage versus anchoring a corner. Task C's taxonomy can key off both — a
+corner anchor and a mid-terrace infill are different buildings in a real city,
+and that distinction is now available in the data where before every building
+claimed to be on a corner.

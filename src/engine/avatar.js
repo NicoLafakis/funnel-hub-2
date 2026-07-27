@@ -136,6 +136,46 @@ const SPOKE_THICKNESS = 1.8;     // spoke top at 2.15, recessed below the rim
 const COLLAR_BASE_Y = 0.20;
 const COLLAR_THICKNESS = 3.35;   // collar top at 3.55, 0.2 above the body
 
+// --- Depth priority at the mouth ---------------------------------------
+// The aperture is a black disc floating 0.30 world units over an opaque
+// ground plane, with the collar's bore wall overlapping its edge. Both of
+// those separations are measured in WORLD units, and that is exactly the
+// wrong currency: the chase camera stands off at dist = 12·radius, so as the
+// hole grows the camera retreats and the depth buffer's resolving power at
+// the mouth collapses quadratically. With the engine's near/far of 0.1/20000
+// the smallest resolvable depth step at the aperture is 0.058 world units at
+// r=26 but 21.5 at r=500 — so a 0.30-unit gap is ~5 quanta when the hole is
+// small and ~0.01 quanta once it is big. Past roughly r=70 the ground and the
+// disc quantise to the SAME depth value and which one survives is decided by
+// per-pixel rounding: the intermittent grey bleeding through the black.
+//
+// Nudging the heights cannot fix this — at r=500 the disc would have to float
+// ~21 units off the ground to win by one quantum, which is a hovering plate,
+// not a hole. The fix has to be denominated in depth quanta rather than world
+// units, which is precisely what polygonOffset is: the bias below is applied
+// in units of the minimum resolvable depth difference AT THE FRAGMENT'S OWN
+// DEPTH, so it is radius- and distance-independent by construction.
+//
+// The result is a strict, monotone depth priority at the mouth:
+//     ground plane  <  aperture disc  <  hub collar
+// The disc always wins over the ground (no bleed), and the collar always wins
+// over the disc (the deliberate edge overlap that hides the mouth seam can
+// never serrate through the rim). Values are small on purpose: they only need
+// to exceed one quantum, and an oversized bias would start beating geometry
+// that legitimately stands in front of the hole.
+const DISC_DEPTH_BIAS = -2;   // quanta, toward the camera, vs the ground
+const COLLAR_DEPTH_BIAS = -6; // strictly ahead of the disc
+
+// How far the black fill tucks UNDER the collar. The mouth edge — the
+// gameplay read — is the collar's inner wall at local 1.0 and is untouched;
+// this is only how far the fill continues beneath the solid rim so no
+// rasterisation hairline can ever open onto the ground. 1.005 was a knife
+// edge that produced a visible T-junction against the bore wall at large
+// radii (0.005 local = 2.5 world units of interpenetration at r=500 — the
+// "weird clipping"). Tucking to the middle of the collar's 1.0→1.06 band
+// puts the whole overlap inside the collar's solid volume instead.
+const DISC_TUCK_R = 1.03;
+
 // Idle spin. 0.6 rad/s against 8-fold spoke symmetry repeats every ~1.3s —
 // slow enough that the spokes never strobe at 60fps or 30fps.
 const SPIN_RATE = 0.6; // rad/s
@@ -277,12 +317,24 @@ export function createHoleVisual(THREE, {
 
   // 1. The hole itself. The ground plane is opaque at y=0, so "empty" is
   // painted: a flat near-black disc just above the ground, unlit so no light
-  // ever lifts it off black. It tucks a hair under the collar's bore wall
-  // (1.005 > 1.0) so there is no seam at the mouth.
-  const holeGeo = new THREE.CircleGeometry(APERTURE_R * 1.005, WHEEL_SEGMENTS);
-  const holeMat = new THREE.MeshBasicMaterial({ color: colorA, side: THREE.DoubleSide });
+  // ever lifts it off black. It runs out to DISC_TUCK_R, i.e. it continues
+  // UNDER the collar's solid band rather than stopping at the bore wall, so
+  // there is no hairline and no interpenetrating edge. It carries a depth
+  // bias in quanta so the ground can never win against it at any hole size
+  // (see the depth-priority note above), and an explicit renderOrder so it is
+  // also deterministically drawn after the ground rather than relying on the
+  // opaque pass's front-to-back sort.
+  const holeGeo = new THREE.CircleGeometry(APERTURE_R * DISC_TUCK_R, WHEEL_SEGMENTS);
+  const holeMat = new THREE.MeshBasicMaterial({
+    color: colorA,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: DISC_DEPTH_BIAS,
+    polygonOffsetUnits: DISC_DEPTH_BIAS,
+  });
   const holeDisc = new THREE.Mesh(holeGeo, holeMat);
   holeDisc.rotation.x = -Math.PI / 2;
+  holeDisc.renderOrder = 1;
   group.add(holeDisc); // not spun: a flat black disc has no spin to show
 
   // 2. Wheel body — the thick annulus. Built one unit tall; update() sets
@@ -316,10 +368,17 @@ export function createHoleVisual(THREE, {
   // the thickened rim cannot occlude it from a low camera. Opaque rather than
   // depth-write-disabled now that it is a solid with real self-occlusion.
   const collarGeo = buildRingSolidGeometry(THREE, APERTURE_R, COLLAR_OUTER_R, WHEEL_SEGMENTS);
+  // It sits at the TOP of the mouth's depth priority (see the note above), so
+  // the black fill tucked beneath it can never punch through the rim however
+  // far the camera has retreated.
   const collarMat = new THREE.MeshBasicMaterial({
     color: rim, transparent: true, opacity: ringOpacity, side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: COLLAR_DEPTH_BIAS,
+    polygonOffsetUnits: COLLAR_DEPTH_BIAS,
   });
   const collar = new THREE.Mesh(collarGeo, collarMat);
+  collar.renderOrder = 2;
   group.add(collar); // not spun: a plain ring, and it must not shimmer
 
   // Eat rim impulse state. `collarBase` is the resting hue and `collarFlash`

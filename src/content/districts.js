@@ -35,6 +35,20 @@ export const ZONES = ['plaza', 'avenue', 'park', 'residential'];
 const SPAWN_FEAST_COUNT = 12;
 const SPAWN_FEAST_RING = [50, 130];
 
+// Relative likelihood a golden lands on each prop tier (index = tierIndex).
+// Tiers 0 and 6 are out of the draw entirely (0 = too trivial to feel like a
+// prize, 6 = the capstone). Tier 5 is rare but POSSIBLE — see the draw below
+// and findings §17.
+//
+// 0.6 is deliberately the MOST GENEROUS value that holds, not the tightest.
+// Measured over 8 position salts x 5 golden RNG streams (40 runs): the only
+// tier-5-attributable failure disappears between 0.75 and 0.6, and every value
+// from 0.6 down to 0 (hard exclusion) scores identically. Since the response is
+// flat below the edge, the weight was chosen on product grounds — keep the
+// jackpot-on-a-skyscraper possible — rather than by tuning for margin. Lowering
+// it buys NO test headroom and only makes the game duller.
+const GOLDEN_TIER_WEIGHTS = [0, 1, 1, 1, 1, 0.6, 0];
+
 // Road clearance is measured against the prop's RENDERED FOOTPRINT, not a
 // constant and not its centre. The previous constants below were the defect:
 // a building whose centre cleared the kerb by 10u still overhung the
@@ -455,8 +469,27 @@ function roadSites(streets, rng) {
   return sites;
 }
 
-// Block corners (buildings face the street) + edge-midpoint frontage.
-function buildingSites(blocks, rng, world) {
+// Block corners (buildings face the street) + BUILT-OUT frontage runs.
+//
+// Frontage used to be four edge MIDPOINTS per block, so a block could hold at
+// most 8 buildings and every one of them stood alone with a wide gap either
+// side. A city does not look like that: buildings on a block share party walls
+// and form a continuous street WALL, and the gaps are the exception (a yard, a
+// side alley) rather than the rule.
+//
+// Each edge now carries a RUN of slots at a fixed pitch, so buildings drawn
+// onto consecutive slots stand shoulder to shoulder. Contiguity is produced by
+// the POP ORDER, not by extra bookkeeping: the pool is shuffled at the RUN
+// level and then flattened, and `fillFromPools` pops off the end, so
+// successive draws land on adjacent slots of the same edge and grow a wall
+// outward from one end. Shuffling individual sites — which is what the old
+// code did, correctly, for isolated midpoints — would scatter the same
+// buildings back into single teeth and undo the whole effect. Do not
+// "simplify" the flatten below back into a flat shuffle.
+//
+// `pitch` is the slot spacing and MUST come from the level's largest building
+// footprint (see buildingPitch), or a big building lands on its neighbour.
+function buildingSites(blocks, rng, world, pitch) {
   const corners = [];
   const largeCorners = [];
   const frontage = [];
@@ -492,15 +525,104 @@ function buildingSites(blocks, rng, world) {
       corners.push(site);
       if (Math.min(b.w, b.d) >= world * 0.14) largeCorners.push(site);
     }
-    const midLocal = [
-      [0, b.d / 2 - inset, 0, 1], [0, -b.d / 2 + inset, 0, -1],
-      [b.w / 2 - inset, 0, 1, 0], [-b.w / 2 + inset, 0, -1, 0],
+    // One run per edge. `along` is the edge's local axis, `off` its outward
+    // offset; the span excludes a pitch at each end so a frontage building
+    // never lands on top of the corner building already sited above.
+    const edges = [
+      { span: b.w, offLocal: b.d / 2 - inset, axis: 'x', nx: 0, nz: 1 },
+      { span: b.w, offLocal: -b.d / 2 + inset, axis: 'x', nx: 0, nz: -1 },
+      { span: b.d, offLocal: b.w / 2 - inset, axis: 'z', nx: 1, nz: 0 },
+      { span: b.d, offLocal: -b.w / 2 + inset, axis: 'z', nx: -1, nz: 0 },
     ];
-    for (const [lx, lz, nx, nz] of midLocal) {
-      frontage.push({ ...rectPoint(b, lx, lz), rotY: faceOut(nx, nz), block: b });
+    for (const e of edges) {
+      const usable = e.span - 2 * inset - 2 * pitch;
+      const n = Math.floor(usable / pitch);
+      if (n < 1) {
+        // Edge too short for a wall — keep the historic single midpoint so
+        // small blocks still take frontage buildings at all.
+        frontage.push([{
+          ...rectPoint(b, e.axis === 'x' ? 0 : e.offLocal, e.axis === 'x' ? e.offLocal : 0),
+          rotY: faceOut(e.nx, e.nz), block: b,
+        }]);
+        continue;
+      }
+      const run = [];
+      for (let i = 0; i < n; i += 1) {
+        const t = n === 1 ? 0 : (i / (n - 1) - 0.5);
+        const a = t * (n - 1) * pitch;
+        const lx = e.axis === 'x' ? a : e.offLocal;
+        const lz = e.axis === 'x' ? e.offLocal : a;
+        run.push({ ...rectPoint(b, lx, lz), rotY: faceOut(e.nx, e.nz), block: b });
+      }
+      frontage.push(run);
     }
   }
-  return { corners: shuffle(corners, rng), largeCorners: shuffle(largeCorners, rng), frontage: shuffle(frontage, rng) };
+  // Shuffle RUNS, then flatten — see the header. Popping walks each run.
+  const runs = shuffle(frontage, rng);
+  const flat = [];
+  for (const run of runs) for (const site of run) flat.push(site);
+  // Adjacent blocks can generate a corner at the SAME coordinates (most often
+  // on the radial archetype, where sector blocks meet at a shared vertex).
+  // Two buildings on one point is the most visible placement defect there is,
+  // so collapse coincident sites before anything draws from the pool. The
+  // claim flag in takeSite() cannot catch these — they are distinct objects
+  // that merely happen to share a position.
+  const deduped = dedupeSites([...corners, ...flat]);
+  const keep = new Set(deduped);
+  return {
+    corners: shuffle(corners.filter((s) => keep.has(s)), rng),
+    largeCorners: shuffle(largeCorners.filter((s) => keep.has(s)), rng),
+    frontage: flat.filter((s) => keep.has(s)),
+  };
+}
+
+// Drops sites closer than COINCIDENT_EPS to one already kept. Order-stable, so
+// the earlier site (a corner, given the concatenation order above) wins.
+const COINCIDENT_EPS = 4;
+function dedupeSites(sites) {
+  const kept = [];
+  const grid = new Map();
+  const cell = (v) => Math.floor(v / COINCIDENT_EPS);
+  for (const s of sites) {
+    const cx = cell(s.x);
+    const cz = cell(s.z);
+    let clash = false;
+    for (let dx = -1; dx <= 1 && !clash; dx += 1) {
+      for (let dz = -1; dz <= 1 && !clash; dz += 1) {
+        const bucket = grid.get(`${cx + dx},${cz + dz}`);
+        if (!bucket) continue;
+        for (const o of bucket) {
+          if (Math.hypot(o.x - s.x, o.z - s.z) < COINCIDENT_EPS) { clash = true; break; }
+        }
+      }
+    }
+    if (clash) continue;
+    kept.push(s);
+    const key = `${cx},${cz}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(s);
+  }
+  return kept;
+}
+
+// Slot pitch for built-out frontage: the widest building this level can
+// produce, plus a party-wall gap. Sized off the RENDERED footprint (what the
+// prop occupies on the ground), not `radius` (what it eats at), and it allows
+// for the MEGA multiplier because mega is applied AFTER placement — a mega
+// building that grew into its neighbour would be a placement defect created
+// by a later pass. See findings §18.
+const PARTY_WALL_GAP = 6;
+const MEGA_SCALE_MULT = 1.6;
+function buildingPitch(budget) {
+  let widest = 0;
+  for (const tier of budget) {
+    if (!tier.kind.startsWith('building')) continue;
+    const radius = tier.baseRadius * MEGA_SCALE_MULT;
+    const fp = kindFootprint(tier.kind);
+    const scale = kindRenderScale(tier.kind, radius);
+    widest = Math.max(widest, Math.max(fp.w, fp.d) * scale);
+  }
+  return widest + PARTY_WALL_GAP;
 }
 
 // --- The generator ---------------------------------------------------------------
@@ -508,6 +630,24 @@ function buildingSites(blocks, rng, world) {
 // Draws `count` placements from weighted site pools. Pools are pre-shuffled
 // and popped; spills fall through to any remaining pool, then (never in
 // practice, given site densities) to a seeded point on the world square.
+//
+// Sites are CLAIMED as they are taken, and an already-claimed site is skipped.
+// This matters because pools are not always disjoint: `largeCorners` holds the
+// same site OBJECTS as `corners` (it is a filtered view of them, not a copy),
+// and the two are drawn independently, so before the claim flag a
+// building-large could land on the exact coordinates of a building-medium
+// already placed. Measured at 2 exactly-coincident buildings on level 90 —
+// see findings §18. Any future pool that is a view over another one inherits
+// the fix for free; one that is a genuine copy is unaffected.
+function takeSite(pool) {
+  while (pool.length) {
+    const site = pool.pop();
+    if (site.claimed) continue;
+    site.claimed = true;
+    return site;
+  }
+  return null;
+}
 function fillFromPools(count, pools, rng, fallbackWorld) {
   const quotas = pools.map((p) => Math.round(count * p.share));
   // Fix rounding drift on the largest pool.
@@ -517,14 +657,27 @@ function fillFromPools(count, pools, rng, fallbackWorld) {
   const leftovers = [];
   pools.forEach((p, i) => {
     let q = quotas[i];
-    while (q > 0 && p.sites.length) { out.push(p.sites.pop()); q -= 1; }
+    while (q > 0 && p.sites.length) {
+      const site = takeSite(p.sites);
+      if (!site) break;
+      out.push({ site, zone: p.zone }); q -= 1;
+    }
     leftovers.push(...p.sites);
-    while (q > 0 && leftovers.length) { out.push(leftovers.pop()); q -= 1; }
+    while (q > 0 && leftovers.length) {
+      const site = takeSite(leftovers);
+      if (!site) break;
+      // A spill lands in a pool other than the one budgeted for it, so tag it
+      // 'spill' rather than lying about which zone it came from.
+      out.push({ site, zone: 'spill' }); q -= 1;
+    }
     while (q > 0) {
       // Defensive fallback: site pools are sized generously above budgets, so
       // this path should never run — but never drop budgeted props (D2).
       const half = fallbackWorld / 2 - 60;
-      out.push({ x: (rng() * 2 - 1) * half, z: (rng() * 2 - 1) * half, rotY: rng() * Math.PI * 2 });
+      out.push({
+        site: { x: (rng() * 2 - 1) * half, z: (rng() * 2 - 1) * half, rotY: rng() * Math.PI * 2 },
+        zone: 'loose',
+      });
       q -= 1;
     }
   });
@@ -561,7 +714,7 @@ export function generateDistrict(level, opts = {}) {
   const parks = shuffle(parkSites(blocks, rngProps), rngProps);
   const plazas = shuffle(plazaSites(blocks, rngProps, landmarkPlaza), rngProps);
   const roads = shuffle(roadSites(streets, rngProps), rngProps);
-  const { corners, largeCorners, frontage } = buildingSites(blocks, rngProps, world);
+  const { corners, largeCorners, frontage } = buildingSites(blocks, rngProps, world, buildingPitch(budget));
 
   const props = [];
   const perTier = {};
@@ -591,19 +744,28 @@ export function generateDistrict(level, opts = {}) {
     bike: [{ sites: parks, share: 0.35, zone: 'park' }, { sites: sidewalks, share: 0.55, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }],
     car: [{ sites: roads, share: 0.75, zone: 'road' }, { sites: sidewalks, share: 0.25, zone: 'sidewalk' }],
     bus: [{ sites: roads, share: 1.0, zone: 'road' }],
-    'building-small': [{ sites: corners, share: 0.5, zone: 'corner' }, { sites: frontage, share: 0.5, zone: 'frontage' }],
-    'building-medium': [{ sites: corners, share: 0.7, zone: 'corner' }, { sites: frontage, share: 0.3, zone: 'frontage' }],
+    // Shares moved toward FRONTAGE with the built-out blocks change (§18).
+    // Corner-heavy shares were correct when frontage meant one lonely midpoint,
+    // but they are what kept blocks reading as four detached towers with empty
+    // edges between them. Smalls now overwhelmingly build out the street wall;
+    // mediums split; larges still anchor corners, because a landmark wants the
+    // open sightline a corner gives it.
+    'building-small': [{ sites: corners, share: 0.25, zone: 'corner' }, { sites: frontage, share: 0.75, zone: 'frontage' }],
+    'building-medium': [{ sites: corners, share: 0.45, zone: 'corner' }, { sites: frontage, share: 0.55, zone: 'frontage' }],
     'building-large': [{ sites: largeCorners.length ? largeCorners : corners, share: 1.0, zone: 'corner' }],
   };
 
   for (const tier of budget) {
     const plan = PLACEMENT[tier.kind];
     const count = tier.baseCount - (tier.tierIndex === 0 ? feastCount : 0);
-    const sites = fillFromPools(count, plan.map((p) => ({ sites: p.sites, share: p.share })), rngProps, world);
-    // Zone label per site isn't tracked through the pool pop; assign the
-    // plan's first zone as a coarse tag (placement position is what matters).
+    const picks = fillFromPools(count, plan, rngProps, world);
+    // The zone tag is the pool the site actually came from, tracked through the
+    // pop. It used to be hardcoded to `plan[0].zone`, which tagged every
+    // building 'corner' including the ones on frontage — harmless for placement
+    // (position is what matters) but actively misleading for anything that
+    // reads zone to decide surface treatment or taxonomy. See findings §18.
     const onRoad = tier.kind === 'car' || tier.kind === 'bus';
-    for (const site of sites) {
+    for (const { site, zone } of picks) {
       props.push({
         kind: tier.kind,
         tierIndex: tier.tierIndex,
@@ -615,7 +777,7 @@ export function generateDistrict(level, opts = {}) {
         golden: false,
         elite: false,
         variant: null,
-        zone: plan[0].zone,
+        zone,
         onRoad: onRoad && typeof site.streetIndex === 'number',
         moving: null,
         mega: false,
@@ -716,11 +878,37 @@ export function generateDistrict(level, opts = {}) {
 
   // Goldens (L1+; double at L46+; elite marks from L71+): seeded picks from
   // the mid tiers, mass stays base — the 8x (+10 coins) applies at eat-time.
+  //
+  // The draw is TIER-WEIGHTED, not uniform. See findings §17. A golden is worth
+  // 8x its prop's mass, so where it lands decides whether that value compounds:
+  // on a bike it is edible in the opening seconds and fuels the whole growth
+  // ramp; on a building-medium (tier 5, r63) it is not edible until late, when
+  // it no longer compounds. Under a uniform draw, levels 82 and 94 completed or
+  // failed purely on which tier won the lottery — measured, not theorised.
+  //
+  // Tier 5 is DOWN-WEIGHTED rather than excluded on purpose: a golden on a big
+  // building is a spectacular prize and part of what makes the mechanic feel
+  // alive, so it stays possible, just rarer. Do not "simplify" this back to a
+  // uniform shuffle or to a hard tier<=4 exclusion without re-reading §17.
   const goldenCount = Math.max(1, mechanics.goldenCount || 1);
   const midTierProps = shuffle(props.filter((p) => p.tierIndex >= 1 && p.tierIndex <= 5 && !p.spawnFeast), rngProps);
-  for (let i = 0; i < Math.min(goldenCount, midTierProps.length); i += 1) {
-    midTierProps[i].golden = true;
-    if (mechanics.eliteGoldens) midTierProps[i].elite = true;
+  // Weighted sample without replacement (Efraimidis-Spirakis): key = u^(1/w),
+  // take the largest keys. It runs on its OWN seeded stream so that the
+  // rngProps draw above is unchanged and nothing downstream of here shifts —
+  // the layout stays byte-identical to a uniform draw, only WHICH props are
+  // marked golden changes.
+  const rngGolden = mulberry32((seed ^ 0x601DEA5) >>> 0);
+  const goldenPicks = midTierProps
+    .map((p) => ({
+      p,
+      key: Math.pow(rngGolden(), 1 / (GOLDEN_TIER_WEIGHTS[p.tierIndex] || 1e-9)),
+    }))
+    .sort((a, b) => b.key - a.key);
+  for (let i = 0; i < Math.min(goldenCount, goldenPicks.length); i += 1) {
+    goldenPicks[i].p.golden = true;
+    // Elites are NOT a separate draw — they mark the same picks, so they
+    // inherit this weighting rather than needing their own (§17).
+    if (mechanics.eliteGoldens) goldenPicks[i].p.elite = true;
   }
 
   // --- Street props (trees / pedestrians / lamps) ---------------------------
@@ -758,8 +946,8 @@ export function generateDistrict(level, opts = {}) {
       streetPropCounts[tier.kind] = 0;
       continue;
     }
-    const sites = fillFromPools(count, plan.map((p) => ({ sites: p.sites, share: p.share })), rngStreet, world);
-    for (const site of sites) {
+    const picks = fillFromPools(count, plan, rngStreet, world);
+    for (const { site, zone } of picks) {
       const descriptor = resolveVisualArchetype(
         variants[Math.floor(rngStreet() * variants.length)], tier.kind,
       );
@@ -785,7 +973,7 @@ export function generateDistrict(level, opts = {}) {
         golden: false,
         elite: false,
         variant: null,
-        zone: plan[0].zone,
+        zone,
         onRoad: false,
         moving: null,
         mega: false,
@@ -795,7 +983,7 @@ export function generateDistrict(level, opts = {}) {
         collectionKey: descriptor.collectionKey,
       });
     }
-    streetPropCounts[tier.kind] = sites.length;
+    streetPropCounts[tier.kind] = picks.length;
   }
 
   const totalBaseMass = props.reduce((sum, p) => sum + p.mass, 0);

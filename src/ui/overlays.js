@@ -14,7 +14,12 @@
 // exported functions -- so a bare dynamic import of this file never throws
 // outside a browser (per the engine's Node-testability contract).
 
-import { formatCompact, formatGain } from './format.js';
+import { formatCompact, formatGain, formatProgress } from './format.js';
+// The capstone chip's five states and the mass bar's gated fill are decided by
+// the win rule itself, not by this renderer (see systems/win.js and
+// .wiki/0004-false-level-failure). This module stays dumb: it maps returned
+// data onto DOM and owns no rule.
+import { capstoneChipState, massBarState } from '../systems/win.js';
 
 // ---------------------------------------------------------------------------
 // showOverlay / hideOverlay
@@ -217,6 +222,25 @@ export function renderShop(container, upgradeDefs, saveData, onBuy, onContinue) 
 //                           remaining HUD pill) to surface it; #sizehint
 //                           keeps its default swallow-hint text whenever
 //                           `coins` is not provided.
+//   capstone  : { required, met, eaten, blocker, shieldRemaining,
+//                 comboNeeded, comboBest } | null -- the landmark win
+//                           condition, produced from evaluateWin() in main.js.
+//                           Drives the #capstonechip pill AND the mass bar's
+//                           gated state. Omit the field entirely (as partial
+//                           per-frame updates do) to leave both untouched.
+//
+// The HUD payload names these fields for the HUD's own contract, so this
+// adapter re-shapes them into the win-rule vocabulary systems/win.js speaks.
+// It is a rename, not a rule: nothing here decides anything.
+function capstoneWin(c) {
+  if (!c) return { capstoneRequired: false, capstoneMet: true, capstoneBlocker: null };
+  return {
+    capstoneRequired: !!c.required,
+    capstoneMet: !!c.met,
+    capstoneBlocker: c.blocker || null,
+  };
+}
+
 export function updateHUD(state = {}) {
   const levelTagEl = document.getElementById('levelTag');
   const timerEl = document.getElementById('timer');
@@ -244,14 +268,40 @@ export function updateHUD(state = {}) {
     // choice made consistently, which is the whole reason the formatter is
     // shared rather than local to the float. formatCompact TRUNCATES, so this
     // readout can never show a target reached one frame before it is.
-    const mass = formatCompact(hasMass ? state.mass : 0);
+    // The MASS side goes through formatProgress rather than formatCompact: at
+    // 3 significant figures a mass just short of target can truncate onto the
+    // target's own string ("5.62M / 5.62M" at 99.91% — .wiki/0004 §4.4), which
+    // is a readout asserting a goal is met when it is not. formatProgress adds
+    // a figure inside the top 1% and never rounds up. The TARGET side is a
+    // fixed number with nothing to collide against, so it stays compact.
+    const mass = formatProgress(hasMass ? state.mass : 0, hasTarget ? state.target : 0);
     const target = formatCompact(hasTarget ? state.target : 0);
     scoreEl.innerHTML = `Mass <b>${mass}</b> / ${target}`;
   }
   if (scorefillEl && hasTarget && state.target > 0) {
-    const mass = hasMass ? state.mass : 0;
-    const pct = Math.max(0, Math.min(100, (mass / state.target) * 100));
-    scorefillEl.style.width = `${pct}%`;
+    // INVARIANT: a full, ungated bar means the level is won. Before this the
+    // bar clamped at 100% and sat there for minutes on runs that still needed
+    // the landmark, which is what made 0004 read as a broken win check.
+    const bar = massBarState(hasMass ? state.mass : 0, state.target, capstoneWin(state.capstone));
+    scorefillEl.style.width = `${bar.percent}%`;
+    scorefillEl.classList.toggle('gated', bar.gated);
+  }
+
+  const capstoneChipEl = document.getElementById('capstonechip');
+  if (capstoneChipEl && state.capstone !== undefined) {
+    const c = state.capstone;
+    const chip = c
+      ? capstoneChipState(capstoneWin(c), {
+        capstoneEaten: c.eaten,
+        shieldRemaining: c.shieldRemaining,
+        peakCombo: c.comboBest,
+        portalComboNeeded: c.comboNeeded,
+      })
+      : { hidden: true, tone: 'locked', text: '' };
+    capstoneChipEl.hidden = chip.hidden;
+    if (!chip.hidden) capstoneChipEl.textContent = chip.text;
+    capstoneChipEl.classList.toggle('ready', chip.tone === 'ready');
+    capstoneChipEl.classList.toggle('done', chip.tone === 'done');
   }
 
   if (sizehintEl && state.coins != null) {
