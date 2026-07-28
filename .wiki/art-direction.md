@@ -217,6 +217,19 @@ instead of uniform scatter:**
   unaffected, and falls back to the procedural bake when the files are
   missing. Regen: `npm run models` (or
   `"/c/Program Files/Blender Foundation/Blender 5.1/blender.exe" -b --factory-startup --python scripts/blender/build_props.py && node scripts/glb-to-js.js`).
+  **Caveat (2026-07-28, `094d25e`): Blender is NOT installed on this machine**
+  (no `C:/Program Files/Blender Foundation/`, nothing under
+  `%LOCALAPPDATA%\Programs`, no MCP) — `npm run models` cannot run here, so
+  the regen command above is unverified on this box and any propkit-vs-model
+  fix that could be done at either layer has to land in `propkit.js` instead
+  of in the `.glb` source until someone runs it on a machine that has
+  Blender. **`build_props.py:371-497` roof kit, confirmed present and NOT the
+  problem (`094d25e`):** it has always authored parapet rings, slate roof
+  decks, water tanks, AC units, stair housings, masts and beacons on all
+  three building tiers. None of it was visible in play — see §3's rooftop-cue
+  correction below for why. Do not read the "flat dark roofs" screenshots
+  across this workstream as missing Blender work; the roof kit was there and
+  occluded by a placement bug one layer up.
 
 **Acceptance:** a screenshot of any level is identifiable as "a city
 district" (not "objects on a plane") by someone who has never seen the
@@ -343,7 +356,23 @@ for the flat cartoon mobile-game look of the reference, not photorealism.
   multiplier on `material.color × instanceColor` — the edibility tint is
   baked into `instanceColor` before that multiply, so the ratio between
   edible-lifted and too-big-dimmed instances survives ANY lighting rig, not
-  just this one. Record the principle: edibility signals through value,
+  just this one. **Re-verified across the rooftop-cue + bridge fix
+  (2026-07-28, `094d25e`), and an open discrepancy recorded rather than
+  silently resolved:** the same 78,661-masked-pixel measurement gives
+  1.3258 after this pass vs. 1.3271 before, median identical to four
+  decimals — the ratio is unaffected by either fix, as expected (neither
+  touches `instanceColor`). But this measurement's absolute value (1.327/
+  1.339 across the two passes) does not match the 1.284 recorded three
+  paragraphs up. **Both are recorded, with their methods, so whoever quotes
+  one knows the other exists:** 1.284 = `1.71^(1/2.2)`, a pure-2.2-gamma
+  back-of-envelope from the linear ratio; the 1.327ish figures come from
+  measuring actual rendered pixels, and their implied effective exponent is
+  `1/1.84`, consistent with three.js's actual piecewise sRGB OETF rather than
+  a pure 2.2 power curve at these luma levels. The two passes used a
+  different camera framing and a different prop selection, so neither number
+  is asserted wrong over the other — they are not necessarily measuring the
+  same thing — but they disagree and only one should get quoted forward
+  without the caveat. Record the principle: edibility signals through value,
   never hue, so it never collides with the per-metro pastel palette above
   it. **Architectural constraint, worth knowing
   before adding per-part prop materials:** only `.color` survives the
@@ -360,6 +389,40 @@ for the flat cartoon mobile-game look of the reference, not photorealism.
   from the direct predecessor. Identity is carried by a baked cap, bar, mast,
   canopy, box, or spire profile cue plus environmental naming/placement—not
   color alone. Standard districts stay at 24 or fewer opaque prop groups.
+  **CORRECTION (2026-07-28, `094d25e`): that cue has been landing in the
+  wrong place, on all three building tiers, since it was written.**
+  `applyVisualRecipe` (`propkit.js`) positioned each cue off
+  `DIMENSIONS[kind].h` — the height of the procedural BASE BOX the tiered
+  buildings are built from, not the height of the finished prop (the tiered
+  kinds carry a setback + antenna above that box). Measured on the shipped
+  bake: `building-small` is 11.00 tall / ±3.57 wide and its cue landed at
+  y 11.44–12.32, a slab floating 0.44 above the roof and 25% proud of it,
+  rotated ~30° off-axis; `building-medium` is 35.83 tall / ±5.61 wide and its
+  cue sat at y 24.96–26.88 — 72% up the SHAFT, jutting to ±6.77; `building-
+  large` is 62.49 tall and its 30-unit mast was buried in the curtain wall
+  from y 27.7 up, emerging past the parapet. In `PALETTE_TRIM_TINT` over a
+  pastel instance colour these render as the dark slabs hanging off every
+  mid-rise in every screenshot across this entire workstream, and they sit
+  OVER the authored roofs (see §1's Blender-prop-pack note), hiding them —
+  so this bullet's "baked cap/bar/mast/canopy/box/spire cue" claim has been
+  describing a cue nobody could actually read since it was written. **Fixed:**
+  cues are now sized off a real roof-deck table (`BUILDING_ROOF`, keyed per
+  tier off the AUTHORED deck height/half-extent, ~0.5u from the procedural
+  setback top on every tier) and placed in the `(+x, −z)` roof quadrant, which
+  is empty on all three authored models (their plant sits at `(+x,+z)`,
+  `(-x,-z)`, `(-x,+z)`), so a cue can never bury a water tank; wide cues
+  (`bar`/`canopy`) centre on the deck and raise clear of it instead of
+  overhanging. Every recipe kept its original primitive (box→box, cone(6)→
+  cone(6), cylinder(6)→cylinder(6)), so the fix is **exactly triangle-neutral**
+  — `district-object-report`'s `maximumActiveTriangles` held at 3062 (build
+  ceiling) / 2378 (L1) before and after — and every non-building `descriptor.
+  gameplayKind` is byte-identical, this only touches the three building tiers.
+  **Vehicle recipe cues (`hatchback` etc.) have the same family of bug**
+  (cue positioned off the base box, not the prop), left alone deliberately
+  this pass — the blast radius is much smaller (a cue riding slightly wrong
+  on a car reads as an odd roof rack at most, not a hovering slab hiding the
+  whole roof), and 300 vehicle archetypes across 10 metros is a lot of
+  surface to touch for that read. Flag for a future pass, not urgent.
 - **Fog with intent:** V1 fog is a flat fade. V2 fog color = metro sky,
   density low enough that the *landmark is always silhouette-visible*
   (it's the goal — never hide the goal).
@@ -381,6 +444,87 @@ metro, reused across its 10 districts):
 | Red Square Heights | snow dust + breath-fog on the lens |
 | Harbor Opera Bay | water plane at the map edge with reflections faked by skybox |
 | Capital Prime | the Portal Tower visible from *every* district (god-ray) |
+
+**CORRECTION (2026-07-28, `094d25e`): "bridge silhouette on the horizon" was
+never unbuilt — it was built and wired the whole time, just invisible.**
+`signatures.js` placed it at `z = -world/2 - world*0.15` = −1570u on level 1.
+`camera.js` pins `BASE_YAW = 0` (load-bearing, not a default — the constant
+that stopped steering fighting the player), so the view direction is always
++Z and the camera always stands on the −Z side of the avatar; the player's
+only yaw authority, `orbitYaw`, clamps to ±120° and decays to zero after 2s.
+The bridge sat 1570u directly BEHIND the camera at spawn and stayed there,
+frustum-culled every gameplay frame — confirmed in the live scene graph
+before it was touched, not inferred from the diff. That is why the metro
+read as having no signature at all despite the geometry existing.
+
+**Fixed:** moved to `z = world * (0.5 + horizonFraction*0.5)` = +2294u on L1,
+finally using the `horizonFraction: 0.9` datum that was already in `metros.js`
+and dead. That lands just outside the horizon haze ring's outer rim (2222u,
+§1), so the bridge's feet sit above the horizon against sky rather than
+being painted over, and 1090u beyond the play bound so it can never touch
+gameplay, placement or collision. Rebuilt from 5 separate meshes into ONE
+merged geometry / one unlit material / one draw call: deck, a thinner rail
+line above it, two portal-frame towers (two legs + three cross-struts each),
+a parabolic main cable (the shape a uniformly-loaded suspension cable
+actually takes, not a straight line) with 18 hangers, backstays to
+anchorages, six approach piers under the side spans only — 62 boxes, 744
+tris. Tower height (`deckY * 2.85`) is bounded by the camera, not by taste:
+at 3.2× the tips clip the frame edge from the +Z play bound at the 35° pitch
+minimum, where the whole structure first comes on screen. Cable gauge is
+1.5× scale-accurate because a true-scale cable lands at ~1.4 device px and
+shimmers; 1.5× puts it at ~4px. `dispose()` now actually disposes (was a
+no-op returning `{ update: noop, dispose: noop }` regardless of what had been
+allocated).
+
+**Finding that caps how much ANY future horizon investment is worth, read
+this before budgeting the other nine metros' signatures:** projecting world
+points to screen pixels on the live build, at `PITCH_DEFAULT = 55°` the
+horizon line lands 433px ABOVE the top of a 900px frame — no horizon
+geometry is on screen at the default view. It only comes into frame as the
+player drags pitch down toward the 35° `PITCH_MIN` (horizon at y≈10px), and
+`camera.js` recentres pitch to 55° after 2s of no orbit input. **The entire
+horizon stack — this bridge, the haze ring, the sky dome, the whole
+atmosphere pass (§1) — is a reward for dragging the camera down, not a
+constant.** That does not lower the bridge's value (it is the payoff when
+you do look, at ~1 draw call), but the ceiling on horizon investment overall
+is much lower than "highest-value item on this table" would suggest.
+
+**Open, not fixed, deliberately:** night is UNVERIFIED for the bridge —
+deriving its colour from `metro.sky` instead of the authored `#2c3a48` was
+considered (it would auto-tune for night) and rejected because it discards
+authored data; the authored colour's night appearance has not been checked.
+Making the bridge bigger was also considered and rejected on geometry: at
+minimum pitch the visible band between the horizon (y≈10px) and the ground
+at the bridge's range (y≈98px) is only 88px, and the bridge already fills 68
+of them.
+
+**`godRayTower` (Capital Prime's "visible from every district" claim above)
+has the IDENTICAL sign bug, confirmed and deliberately NOT fixed this pass:**
+`z = -world/2 - world*0.12` in `signatures.js`, same file, same pattern as
+the bridge's pre-fix value. It is behind the camera for all ten of Capital
+Prime's districts (L91–100), so this table's Capital Prime row is currently
+visible from **none** of them, not every one. Same one-line fix as the
+bridge — deliberately not applied here: a landmark that carries a whole
+metro's identity deserves its own framing review (tower height, ray cone
+sizing, fog-exempt material — all currently tuned for a silhouette nobody
+has seen) rather than inheriting the bridge's numbers unseen.
+
+**Signatures.js audited for the same `-world/2` sign pattern across all ten
+metro types (2026-07-28, `094d25e`) — the bug is NOT systemic beyond these
+two.** Of the ten `createMetroSignature` cases, only `bridge-silhouette` and
+`god-ray-tower` place geometry at a fixed off-map silhouette coordinate at
+all; both used the same `-world/2 - world*k` construction and both had the
+sign wrong for this camera. The other eight do not share the pattern:
+`mansard-roofs`, `emissive-signs` and `travertine-tint` are per-building
+overlays with no map-edge placement; `fog-banks`, `sand-drift` and
+`snow-dust` are avatar-relative or map-centered particle/plane fields with
+no single "horizon" coordinate; `confetti` is player-triggered, not placed.
+`water-plane` (Harbor Opera Bay) DOES place at a map edge (`world/2 + d/2 -
+30`, tucked under the map edge) but is driven by an `edge` param rather than
+a hardcoded sign, and `metros.js` configures `edge: 'south'`, which the
+ternary resolves to `z = +off` — in front of the camera, correctly visible.
+Only a future `edge: 'north'` config would reproduce this bug on the water
+plane; it is not latent in the code path today.
 
 ## 5. Motion & juice budget
 

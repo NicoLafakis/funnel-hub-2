@@ -166,6 +166,29 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
   above (the r=483 ring was the skirt seen from above, not the sky dome;
   vertex-colour self-termination into the sky is not implementable on a
   `MeshStandardMaterial`), are in `art-direction.md` §1.
+- **Rooftop-cue reposition + bridge horizon fix (2026-07-28, `094d25e`) —
+  budget.** Two shipped defect fixes (`propkit.js`, `signatures.js`); full
+  visual derivation in `art-direction.md` §3 and §4, this is the numbers.
+  Draw calls: 45 → 45 at the DEFAULT pitch (the bridge is frustum-culled
+  there — see §4's pitch-reward finding, this is not a measurement error);
+  53 → 54 at the 35° pitch MINIMUM, where the bridge is on screen and its
+  one merged mesh is the only added draw call. Triangles: +744 only when the
+  bridge is in frustum (its full authored count — deck, rail line, two
+  portal-frame towers, parabolic main cable + 18 hangers, backstays, six
+  approach piers, 62 boxes); +0 for the rooftop-cue fix, which is exactly
+  triangle-neutral by construction (`district-object-report`'s
+  `maximumActiveTriangles` 3062 → 3062 at build ceiling, 2378 → 2378 at L1 —
+  every recipe kept its original primitive). Programs 14 → 15 (the bridge's
+  own `MeshBasicMaterial` compiles a new program the first time it's built).
+  Textures 8 → 8 (unchanged — the bridge is unlit/untextured, the rooftop
+  cues reuse `PALETTE_TRIM_TINT`). GPU −0.065ms median, inside run-to-run
+  spread — read this as "no measurable regression," not as a real
+  improvement; two unrelated defect fixes should not organically buy back
+  GPU time. `npm test` byte-identical to the accepted baseline except
+  wall-clock, diffed against a clean worktree at `ae03909`; `npm run build`
+  clean. Edibility-ratio re-verification and the 1.284-vs-1.327 discrepancy
+  this pass surfaced are recorded in `art-direction.md` §3, not duplicated
+  here.
 
 ## 2. World representation — the spatial hash is the world
 
