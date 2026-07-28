@@ -19,6 +19,14 @@ photorealism" is this call, stated once.
 
 ## 1. Districts, not scatter
 
+**Authored-city pilot (2026-07-28):** Level 1 now proves the next step beyond
+generic district archetypes. `chicago-loop` fixes the major street/block/open-
+space relationships from a researched real place, then lets the seeded zoned
+allocator populate that plan. Render-only river, elevated-rail, and perimeter
+skyline context continue the city beyond the playable square without entering
+collision or progression. See
+[`0007-chicago-loop-authored-city/00-findings.md`](0007-chicago-loop-authored-city/00-findings.md).
+
 The single biggest visual upgrade. **Levels get procedural district layouts
 instead of uniform scatter:**
 

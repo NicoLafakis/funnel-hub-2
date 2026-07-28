@@ -66,6 +66,7 @@ async function main() {
   const effectsMod = await import('../src/engine/effects.js');
   const physicalBoundsMod = await import('../src/content/physical-bounds.js');
   const startupMod = await import('../src/meta/startup.js');
+  const cityContextMod = await import('../src/content/city-context.js');
   const THREE = await import('three');
 
   const {
@@ -454,6 +455,29 @@ async function main() {
       bake.canvas === null && bake.descriptor.cells.length === bake.descriptor.res * bake.descriptor.res);
     check('ground descriptor contains asphalt streets and tinted blocks',
       bake.descriptor.cells.includes('asphalt') && bake.descriptor.cells.includes('grass'));
+
+    check('level 1 is the authored Chicago Loop pilot',
+      generateLevel(1).cityName === 'Chicago'
+        && generateLevel(1).districtName === 'The Loop · Chicago'
+        && d1.archetype === 'chicago-loop');
+    check('the Loop uses an orthogonal eight-street grid with an eastern park edge',
+      d1.streets.length === 8
+        && d1.streets.every((street) => street.rotY === 0 || street.rotY === Math.PI / 2)
+        && d1.blocks.filter((block) => block.chicago && block.chicago.column === 4)
+          .every((block) => block.zone === 'park'));
+    check('the Loop carries river, elevated rail, and surrounding skyline context',
+      d1.context && d1.context.id === 'chicago-loop'
+        && d1.context.water.length === 2
+        && d1.context.rail.length === 4
+        && d1.context.buildings.length === 39);
+    check('authored Chicago context remains render-only and absent from level 2',
+      generateDistrict(generateLevel(2)).context === null);
+    const contextGroup = cityContextMod.createCityContext(THREE, d1.context);
+    check('Chicago context builds as a finite, low-draw scene group',
+      contextGroup.isGroup
+        && contextGroup.children.length > 0
+        && contextGroup.children.filter((child) => child.isInstancedMesh).length === 6
+        && contextGroup.children.length === 8);
   }
 
   // ---------------------------------------------------------------------

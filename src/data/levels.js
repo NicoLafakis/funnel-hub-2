@@ -251,7 +251,9 @@ export function generateLevel(n) {
     metro,
     metroIndex: chapter - 1, // 0-based, for seeds.levelSeed / districts.js
     districtIndex: levelInChapter - 1, // 0-based, same
-    districtName: metro.districts[levelInChapter - 1],
+    districtName: n === 1 ? 'The Loop · Chicago' : metro.districts[levelInChapter - 1],
+    cityName: n === 1 ? 'Chicago' : metro.name,
+    authoredCity: n === 1 ? 'chicago-loop' : null,
     target: target(n),
     time: timeSeconds(n),
     world: worldSize(n),

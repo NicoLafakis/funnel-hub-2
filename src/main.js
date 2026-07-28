@@ -57,6 +57,7 @@ import {
 import { loadCityTextures } from './content/textures.js';
 import { loadModelKit } from './content/modelkit.js';
 import { createMetroSignature } from './content/signatures.js';
+import { createCityContext } from './content/city-context.js';
 
 import { Audio } from './systems/audio.js';
 import { createComboTracker } from './systems/combo.js';
@@ -598,6 +599,7 @@ export async function main() {
     state.layout = layout;
 
     const metro = level.metro;
+    const landmarkType = level.authoredCity === 'chicago-loop' ? 'mega-spire' : metro.landmarkType;
     // Night variants (L66+, content-and-meta §1): darker sky/fog, dimmed
     // lights; building window-glow is applied to the instanced world below.
     const night = !!(level.mechanics && level.mechanics.night);
@@ -653,6 +655,11 @@ export async function main() {
     root.name = `level-${level.n}`;
     engine.scene.add(root);
     state.levelRoot = root;
+
+    // Authored-city pilot background: low-detail, non-interactive context
+    // outside the playable square plus the Loop elevated rail cue inside it.
+    // The root owns teardown; gameplay hashes and mass budgets never see it.
+    if (layout.context) root.add(createCityContext(THREE, layout.context));
 
     // Ground: the seeded district layout baked into a real texture (streets,
     // curbs, zone tints — art §1). V1's flat color + debug GridHelper is dead.
@@ -1287,7 +1294,7 @@ export async function main() {
     // Capstone landmark on the district's largest plaza (districts.js picks
     // the spot) — its own mesh, NOT instanced; gated by capstoneGate(n) and,
     // from L61, by the landmark shield (eat N props to de-shield).
-    const landmark = createLandmark(metro.landmarkType, THREE, metro.accent);
+    const landmark = createLandmark(landmarkType, THREE, metro.accent);
     // THE GATE IS THE ECONOMY VALUE AT EVERY METRO, and the mesh is scaled to
     // match it. The spawn used to take max(geometry, economy): mega-spire's
     // 73.6u bounding radius won that max on L41-L50, so its size gate did not
@@ -1319,7 +1326,7 @@ export async function main() {
       // A landmark is the level's boss eat — a hefty one-time bonus on top of
       // the largest regular tier's base mass.
       mass: capstoneTier.baseMass * 8,
-      kind: metro.landmarkType,
+      kind: landmarkType,
       golden: false,
       isCapstone: true,
       // A shielded landmark is never edible: gate fraction 0 fails every
@@ -1433,7 +1440,8 @@ export async function main() {
     // Metro signature (art §4): one cheap visual per metro, data-driven from
     // metro.signature. Red Square Heights' lens-frost half is a CSS overlay
     // (DOM stays in main, not in content/).
-    state.signature = createMetroSignature(metro, {
+    const signatureMetro = level.authoredCity === 'chicago-loop' ? { ...metro, signature: null } : metro;
+    state.signature = createMetroSignature(signatureMetro, {
       THREE,
       scene: engine.scene,
       root,

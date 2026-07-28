@@ -229,6 +229,95 @@ function buildGrid(world, rng) {
   return { streets, blocks };
 }
 
+// Level 1 authored-city pilot: a compressed, gameplay-scaled reading of
+// Chicago's Loop. The playable square keeps the repo's centered coordinate
+// contract, while the composition preserves the real district's strongest
+// high-angle cues: orthogonal blocks, a denser inner business grid, a green
+// eastern edge, the elevated rail rectangle, and river/context beyond the
+// north and west boundaries. Nothing here is latitude/longitude data; it is
+// a deterministic city grammar expressed in world units.
+function buildChicagoLoop(world) {
+  const sw = streetWidth(world);
+  const half = world / 2;
+  const lines = [-0.34, -0.13, 0.08, 0.29].map((n) => n * world);
+  const edges = [-half, ...lines, half];
+  const streets = [];
+  for (const x of lines) streets.push({ x, z: 0, w: world, d: sw, rotY: Math.PI / 2 });
+  for (const z of lines) streets.push({ x: 0, z, w: world, d: sw, rotY: 0 });
+
+  const blocks = [];
+  for (let ix = 0; ix < edges.length - 1; ix += 1) {
+    for (let iz = 0; iz < edges.length - 1; iz += 1) {
+      const left = edges[ix] + sw / 2;
+      const right = edges[ix + 1] - sw / 2;
+      const bottom = edges[iz] + sw / 2;
+      const top = edges[iz + 1] - sw / 2;
+      // Michigan Avenue/Grant Park read: the eastmost column is an ordered
+      // green civic edge rather than a random vacant block. The center block
+      // remains the opening feast park for immediate-playability.
+      let zone = ix === edges.length - 2 ? 'park' : 'residential';
+      if (ix === 2 && iz === 2) zone = 'park';
+      if ((ix === 1 && iz === 3) || (ix === 3 && iz === 1)) zone = 'plaza';
+      blocks.push({
+        x: (left + right) / 2,
+        z: (bottom + top) / 2,
+        w: right - left,
+        d: top - bottom,
+        rotY: 0,
+        zone,
+        chicago: { column: ix, row: iz },
+      });
+    }
+  }
+  const landmarkPlaza = blocks.find((b) => b.chicago.column === 1 && b.chicago.row === 3);
+
+  const contextBuildings = [];
+  const bands = [
+    { side: 'north', count: 15, offset: half + world * 0.095 },
+    { side: 'west', count: 12, offset: -half - world * 0.09 },
+    { side: 'south', count: 12, offset: -half - world * 0.10 },
+  ];
+  for (const band of bands) {
+    for (let i = 0; i < band.count; i += 1) {
+      const t = (i + 0.5) / band.count - 0.5;
+      const pulse = ((i * 37 + band.count * 11) % 9) / 8;
+      const w = world * (0.045 + (i % 3) * 0.008);
+      const d = world * (0.05 + ((i + 1) % 3) * 0.009);
+      const rec = {
+        x: band.side === 'west' ? band.offset : t * world * 1.28,
+        z: band.side === 'north' ? band.offset : band.side === 'south' ? band.offset : t * world * 1.25,
+        w,
+        d,
+        h: world * (0.10 + pulse * 0.16),
+        tone: (i + band.count) % 4,
+      };
+      contextBuildings.push(rec);
+    }
+  }
+
+  return {
+    streets,
+    blocks,
+    landmarkPlaza,
+    context: {
+      id: 'chicago-loop',
+      water: [
+        { x: 0, z: half + world * 0.035, w: world * 1.55, d: world * 0.09 },
+        { x: -half - world * 0.035, z: 0, w: world * 1.32, d: world * 0.075, rotY: Math.PI / 2 },
+      ],
+      // The elevated tracks use the same four-street rectangle that gives the
+      // district its name. Render-only: no collision or progression mass.
+      rail: [
+        { x: (lines[0] + lines[2]) / 2, z: lines[1], w: (lines[2] - lines[0]), rotY: 0 },
+        { x: (lines[0] + lines[2]) / 2, z: lines[2], w: (lines[2] - lines[0]), rotY: 0 },
+        { x: lines[0], z: (lines[1] + lines[2]) / 2, w: lines[2] - lines[1], rotY: Math.PI / 2 },
+        { x: lines[2], z: (lines[1] + lines[2]) / 2, w: lines[2] - lines[1], rotY: Math.PI / 2 },
+      ],
+      buildings: contextBuildings,
+    },
+  };
+}
+
 // Radial: a rotated square ring system with spokes through the center.
 // Ring streets are squares of growing half-side (4 strips each); blocks are
 // rotated rects filling the sectors between rings and spokes. The center
@@ -815,9 +904,12 @@ export function generateDistrict(level, opts = {}) {
   const rngProps = mulberry32((seed ^ 0x9E3779B9) >>> 0);
   const rngVisual = mulberry32((seed ^ 0xA511E9B3) >>> 0);
 
-  const archetype = ARCHETYPES[Math.floor(rngLayout() * ARCHETYPES.length)];
-  const { streets, blocks } = (archetype === 'grid' ? buildGrid : archetype === 'radial' ? buildRadial : buildOrganic)(world, rngLayout);
-  const landmarkPlaza = assignZones(blocks, rngLayout, !!level.isCapstone);
+  const chicagoPilot = level.authoredCity === 'chicago-loop';
+  const archetype = chicagoPilot ? 'chicago-loop' : ARCHETYPES[Math.floor(rngLayout() * ARCHETYPES.length)];
+  const authored = chicagoPilot ? buildChicagoLoop(world) : null;
+  const { streets, blocks } = authored
+    || (archetype === 'grid' ? buildGrid : archetype === 'radial' ? buildRadial : buildOrganic)(world, rngLayout);
+  const landmarkPlaza = authored ? authored.landmarkPlaza : assignZones(blocks, rngLayout, !!level.isCapstone);
   const landmark = {
     x: landmarkPlaza.x,
     z: landmarkPlaza.z,
@@ -1446,7 +1538,7 @@ export function generateDistrict(level, opts = {}) {
   // conflicting prop walks a deterministic candidate sequence until its final
   // oriented footprint is legal. No RNG is consumed and no budget is dropped.
   const finalOccupancy = createOccupancy();
-  const landmarkPhysical = landmarkBoundsFor(level.metro.landmarkType);
+  const landmarkPhysical = landmarkBoundsFor(chicagoPilot ? 'mega-spire' : level.metro.landmarkType);
   if (landmarkPhysical) {
     const landmarkScale = Math.min(1, capstoneGateRadius(level) / landmarkPhysical.boundingRadius);
     finalOccupancy.add({
@@ -1528,6 +1620,7 @@ export function generateDistrict(level, opts = {}) {
     blocks,
     landmarkPlaza,
     landmark,
+    context: authored ? authored.context : null,
     props,
     stats: {
       propCount: props.length,

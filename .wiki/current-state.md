@@ -10,12 +10,15 @@
 - The current hero is the extruded flywheel. Earlier sphere, vortex, and flat-wheel descriptions are historical.
 - The city uses seeded district generation, instanced visual groups, procedural fallbacks, a v2 localStorage save, and the 100-level campaign.
 - Current touch behavior follows ADR 0003: the first active touch moves from either side, the second touch orbits, and roles remain stable until release.
+- Level 1 is an authored Chicago Loop pilot: a fixed orthogonal block plan,
+  eastern park edge, elevated rail cue, river edges, and instanced perimeter
+  skyline replace the generic layout and dead horizon for that level only.
 
 ## Verified automated baseline
 
 `npm test` on 2026-07-28 produced:
 
-- 214 logic checks passed;
+- 219 logic checks passed;
 - deterministic duplicate summaries for all 100 levels;
 - all nine documented gameplay invariants pass at 100/100;
 - the final-transform placement audit reports zero all-kind intersections above 0.25 world units;
