@@ -16,12 +16,15 @@
   skyline replace the generic layout and dead horizon for that level only.
 - Its render-only background now continues the city with 454 buildings, 1,138
   trees, 62 road strips, distance-softened materials, and an eastern lakefront.
+- Area 1 now owns a 234-type reference-led city catalog: all 48 assets from
+  the two `chicago-loop-*` sheets are exclusive to Level 1, while 186 shared
+  urban objects are distributed across Levels 2-10.
 
 ## Verified automated baseline
 
 `npm test` on 2026-07-28 produced:
 
-- 220 logic checks passed;
+- 223 logic checks passed;
 - deterministic duplicate summaries for all 100 levels;
 - all nine documented gameplay invariants pass at 100/100;
 - the final-transform placement audit reports zero all-kind intersections above 0.25 world units;
@@ -32,7 +35,7 @@ The nine gameplay invariants and hard placement gate are green, and `npm test` e
 ## Active product debt
 
 1. **Mobile validation:** a live-only multi-touch matrix and read-only touch bot now exist but remain unexecuted until this worktree is deployed with authorization; real-device iOS/Android evidence remains open.
-2. **Physical validation:** all 309 registered prop geometries and 10 landmarks use generated final-geometry bounds in the legal-slot pass and all-kind gate.
+2. **Physical validation:** all 543 registered prop geometries and 10 landmarks use generated final-geometry bounds in the legal-slot pass and all-kind gate.
 3. **Balance debt:** maximum builds remain substantially below the intended duration floor.
 4. **Mobile performance:** real-device phone/tablet frame time remains unmeasured; headless `requestAnimationFrame` figures are not valid performance evidence.
 5. **Mobile UI:** Nico approved all seven named surfaces on 2026-07-28. The shorter title, pause/sound controls, safe areas, mobile typography, persisted quality selector, and direct Level Complete actions are implemented; live viewport and assistive-technology evidence remains open.

@@ -1088,6 +1088,22 @@ export function generateDistrict(level, opts = {}) {
     p.visualId = descriptor.id;
     p.collectionKey = descriptor.collectionKey;
   }
+  // A city-authored first district may declare several reference-led IDs per
+  // tier. Spread them deterministically across that tier instead of collapsing
+  // the entire level to the legacy baseline. Later districts still use the
+  // novelty reservation below, preserving the campaign contract.
+  if (districtN === 1) {
+    for (const kind of Object.keys(catalog.mixes)) {
+      const ids = catalog.mixes[kind].slice(1);
+      if (!ids.length) continue;
+      const candidates = shuffle(props.filter((p) => p.kind === kind), rngVisual);
+      for (let i = 0; i < candidates.length; i += 1) {
+        const descriptor = resolveVisualArchetype(ids[i % ids.length], kind);
+        candidates[i].visualId = descriptor.id;
+        candidates[i].collectionKey = descriptor.collectionKey;
+      }
+    }
+  }
   const noveltyTarget = districtN > 1 ? Math.ceil(props.length * 0.25) : props.length;
   if (districtN > 1) {
     const introductionsByKind = new Map();
@@ -1101,15 +1117,35 @@ export function generateDistrict(level, opts = {}) {
     if (candidates.length < noveltyTarget) {
       throw new Error(`${metroId}:${districtN} cannot meet visual novelty target (${candidates.length}/${noveltyTarget})`);
     }
+    // Guarantee every authored introduction that has a legal tier appears at
+    // least once, then fill the rest of the 25% novelty quota. A pure global
+    // shuffle could starve sparse building tiers and leave catalogued city
+    // landmarks technically implemented but absent from their level.
+    const selected = [];
+    const used = new Set();
+    for (const [kind, ids] of introductionsByKind) {
+      const kindCandidates = candidates.filter((p) => p.kind === kind);
+      for (let i = 0; i < Math.min(ids.length, kindCandidates.length); i += 1) {
+        const p = kindCandidates[i];
+        p._authoredVisualId = ids[i];
+        selected.push(p);
+        used.add(p);
+      }
+    }
+    for (const p of candidates) {
+      if (selected.length >= noveltyTarget) break;
+      if (!used.has(p)) selected.push(p);
+    }
     const perKindCursor = new Map();
     for (let i = 0; i < noveltyTarget; i += 1) {
-      const p = candidates[i];
+      const p = selected[i];
       const ids = introductionsByKind.get(p.kind);
       const cursor = perKindCursor.get(p.kind) || 0;
-      const descriptor = resolveVisualArchetype(ids[cursor % ids.length], p.kind);
+      const descriptor = resolveVisualArchetype(p._authoredVisualId || ids[cursor % ids.length], p.kind);
       perKindCursor.set(p.kind, cursor + 1);
       p.visualId = descriptor.id;
       p.collectionKey = descriptor.collectionKey;
+      delete p._authoredVisualId;
     }
   }
   const currentVisualIds = new Set(props.map((p) => p.visualId));

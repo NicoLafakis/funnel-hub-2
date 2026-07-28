@@ -36,19 +36,13 @@ predecessor. Procedural silhouette cues are real merged geometry, not palette
 or accessory flags that disappear under instancing. The Skyline-opedia uses
 the same stable IDs, so every collectible entry corresponds to visible content.
 
-**Prop repetition at L1 spawn — investigated and NOT fixable at the propkit
-layer, content-catalog decision for Nico (2026-07-28, `094d25e`).** L1's
-catalog is 7 archetypes, exactly one per tier
-(`DISTRICT_CATALOGS['harbor-metropolis'][1]`), by design — novelty only ramps
-to 25%/district from L2 onward per the reveal schedule above. One `visualId`
-= one merged geometry = one `InstancedMesh`, so per-instance geometric
-variety within a single archetype is architecturally unavailable at the
-rendering layer; the only lever that changes what a player sees at spawn is
-the archetype count in the catalog itself, and widening it moves the golden
-invariant suite (§13/§17 of `0003-hole-feel-and-visual-fidelity/00-findings.md`
-sweep the RNG stream and layout against the current catalog sizes). Recorded
-as a content decision, not an art bug — do not re-diagnose this as a propkit
-defect on a future pass.
+**City-first catalog update (2026-07-28):** the former seven-archetype Level 1
+baseline is superseded for Area 1. Both `chicago-loop-*` reference sheets are
+exclusive to Level 1, where all 48 types appear. The remaining 186 shared city
+objects are distributed across Levels 2-10. Gameplay tiers remain stable;
+city and neighborhood selection now determine what those tiers look like.
+Other areas retain their 30-archetype schedules until their researched city
+catalogs are authored. See `0008-city-object-library/00-overview.md`.
 
 ## 3. Meta 2.0 — choices, not tracks
 

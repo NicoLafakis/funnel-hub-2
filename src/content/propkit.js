@@ -857,6 +857,107 @@ function applyVisualRecipe(group, THREE, descriptor, accent, opts = {}) {
   group.add(cue);
 }
 
+// Reference-sheet city objects share a compact set of low-poly construction
+// profiles. Every descriptor gets deterministic proportion/detail variation
+// from its sheet index, while its gameplay kind continues to own economy.
+// Geometry stays inside the established kind envelope so placement and eating
+// remain truthful until the generated physical-bounds pass measures it.
+function buildCityObject(THREE, descriptor, accent, opts = {}) {
+  const object = descriptor.cityObject;
+  const index = object.referenceIndex || 1;
+  const phase = ((index * 37) % 11) / 10;
+  const dim = DIMENSIONS[descriptor.gameplayKind] || DIMENSIONS.trash;
+  const main = standardMat(THREE, accent, { roughness: descriptor.roughness, metalness: descriptor.metalness });
+  const trim = standardMat(THREE, opts.paletteBase ? resolveColor(THREE, PALETTE_TRIM_TINT) : shade(THREE, accent, -0.2), { roughness: 0.58, metalness: 0.18 });
+  const glass = standardMat(THREE, opts.paletteBase ? resolveColor(THREE, PALETTE_GLASS_TINT) : shade(THREE, accent, 0.24), { roughness: 0.3, metalness: 0.16 });
+  const group = new THREE.Group();
+  const addBox = (w, h, d, x, y, z, mat = main, ry = 0) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.set(x, y, z); mesh.rotation.y = ry; group.add(mesh); return mesh;
+  };
+  const addColumn = (r, h, x, y, z, mat = trim, sides = 8) => {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.82, r, h, sides), mat);
+    mesh.position.set(x, y, z); group.add(mesh); return mesh;
+  };
+
+  // Preserve the established placement envelope for each economy tier. The
+  // reference models may be narrower inside that parcel (a tower setback, a
+  // slim sign, a person), but changing the occupied envelope would reshuffle
+  // the calibrated route after visual selection. This 1cm-equivalent ground
+  // pad is also a useful curb/plinth/floor pan under the stylized asset.
+  const envelopes = {
+    trash: [1.41, 1.41], bike: [0.99, 1.78], car: [2.36, 4.2], bus: [3.24, 9.09],
+    'building-small': [7.14, 7.16], 'building-medium': [11.22, 11.22], 'building-large': [15.3, 15.3],
+  };
+  const envelope = envelopes[descriptor.gameplayKind];
+  if (envelope) addBox(envelope[0], 0.01, envelope[1], 0, 0.005, 0, trim);
+
+  switch (object.profile) {
+    case 'person':
+      group.add(buildPerson(THREE, accent));
+      break;
+    case 'vehicle':
+      group.add(buildCar(THREE, accent, { paletteBase: !!opts.paletteBase }));
+      break;
+    case 'largeVehicle':
+      group.add(buildBus(THREE, accent, { paletteBase: !!opts.paletteBase }));
+      break;
+    case 'tower':
+    case 'midrise':
+    case 'shop': {
+      const inset = object.profile === 'tower' ? 0.62 : object.profile === 'shop' ? 0.92 : 0.78;
+      addBox(dim.w * inset, dim.h * (0.82 + phase * 0.12), dim.d * inset, 0, dim.h * 0.44, 0);
+      addBox(dim.w * inset * 1.05, dim.h * 0.08, dim.d * inset * 1.05, 0, dim.h * 0.9, 0, trim);
+      const bands = object.profile === 'shop' ? 2 : 3 + (index % 3);
+      for (let i = 0; i < bands; i += 1) {
+        const y = dim.h * (0.18 + i * 0.16);
+        addBox(dim.w * inset * 1.01, dim.h * 0.025, dim.d * inset * 1.015, 0, y, 0, glass);
+      }
+      if (object.profile === 'tower') addColumn(dim.w * 0.035, dim.h * 0.35, 0, dim.h * 1.08, 0, trim, 6);
+      break;
+    }
+    case 'rail': {
+      addBox(dim.w * 0.92, dim.h * 0.12, dim.d * 0.82, 0, dim.h * 0.72, 0, trim);
+      addBox(dim.w * 0.9, dim.h * 0.05, dim.d * 0.12, 0, dim.h * 0.83, dim.d * 0.26, main);
+      addBox(dim.w * 0.9, dim.h * 0.05, dim.d * 0.12, 0, dim.h * 0.83, -dim.d * 0.26, main);
+      for (const x of [-dim.w * 0.36, dim.w * 0.36]) for (const z of [-dim.d * 0.3, dim.d * 0.3]) addColumn(dim.w * 0.035, dim.h * 0.7, x, dim.h * 0.35, z);
+      break;
+    }
+    case 'module': {
+      addBox(dim.w * 0.94, dim.h * 0.1, dim.d * 0.94, 0, dim.h * 0.05, 0);
+      const orientation = index % 2 ? 0 : Math.PI / 2;
+      addBox(dim.w * 0.72, dim.h * (0.06 + phase * 0.04), dim.d * 0.12, 0, dim.h * 0.13, 0, trim, orientation);
+      if (index % 3 === 0) addColumn(dim.w * 0.035, dim.h * 0.55, dim.w * 0.28, dim.h * 0.33, dim.d * 0.24);
+      break;
+    }
+    case 'landmark': {
+      addBox(dim.w * 0.72, dim.h * 0.12, dim.d * 0.72, 0, dim.h * 0.06, 0, trim);
+      if (index % 3 === 0) {
+        const sculpture = new THREE.Mesh(new THREE.TorusGeometry(dim.w * 0.22, dim.w * 0.07, 7, 12), main);
+        sculpture.position.y = dim.h * 0.55; sculpture.rotation.x = Math.PI / 2; group.add(sculpture);
+      } else {
+        addColumn(dim.w * (0.1 + phase * 0.04), dim.h * 0.72, 0, dim.h * 0.48, 0, main, 6 + index % 4);
+      }
+      break;
+    }
+    case 'pole':
+      addBox(dim.w * 0.48, dim.h * 0.08, dim.d * 0.48, 0, dim.h * 0.04, 0, trim);
+      addColumn(dim.w * 0.09, dim.h * 0.82, 0, dim.h * 0.45, 0);
+      addBox(dim.w * (0.32 + phase * 0.18), dim.h * 0.22, dim.d * 0.3, dim.w * 0.12, dim.h * 0.86, 0, main);
+      break;
+    case 'furniture':
+      addBox(dim.w * 0.88, dim.h * 0.28, dim.d * 0.7, 0, dim.h * 0.2, 0);
+      addBox(dim.w * 0.78, dim.h * 0.08, dim.d * 0.74, 0, dim.h * 0.42, 0, trim);
+      break;
+    case 'clutter':
+    default:
+      addBox(dim.w * (0.62 + phase * 0.2), dim.h * 0.64, dim.d * (0.62 + (1 - phase) * 0.2), 0, dim.h * 0.32, 0);
+      addBox(dim.w * 0.68, dim.h * 0.1, dim.d * 0.68, 0, dim.h * 0.69, 0, trim, (index % 4) * Math.PI / 8);
+      break;
+  }
+  return group;
+}
+
 export function createVisualPropMesh(visualId, kind, THREE, accentColorHex, opts = {}) {
   const descriptor = resolveVisualArchetype(visualId, kind);
   const accent = resolveColor(THREE, accentColorHex);
@@ -867,8 +968,10 @@ export function createVisualPropMesh(visualId, kind, THREE, accentColorHex, opts
   const variant = descriptor.tint !== undefined || descriptor.flavor !== undefined
     ? { tint: descriptor.tint, flavor: descriptor.flavor }
     : undefined;
-  const group = createPropMesh(descriptor.gameplayKind, THREE, accentColorHex, variant, opts);
-  applyVisualRecipe(group, THREE, descriptor, accent, opts);
+  const group = descriptor.cityObject
+    ? buildCityObject(THREE, descriptor, accent, opts)
+    : createPropMesh(descriptor.gameplayKind, THREE, accentColorHex, variant, opts);
+  if (!descriptor.cityObject) applyVisualRecipe(group, THREE, descriptor, accent, opts);
   group.userData.visualId = descriptor.id;
   group.userData.gameplayKind = descriptor.gameplayKind;
   return group;
@@ -969,7 +1072,7 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
   // Blender prop pack: prefer the authored model when this descriptor maps to
   // one AND the kit loaded (main.js setModelKit); otherwise the procedural
   // bake — silent fallback, identical gameplay.
-  const modelName = blenderModelKit
+  const modelName = blenderModelKit && !descriptor.cityObject
     ? (PROP_MODELS.byVisualId[descriptor.id] || PROP_MODELS.byKind[descriptor.gameplayKind] || null)
     : null;
   const modelGeo = modelName ? blenderModelKit[modelName] || null : null;

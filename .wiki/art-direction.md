@@ -250,6 +250,16 @@ instead of uniform scatter:**
 district" (not "objects on a plane") by someone who has never seen the
 game. Motion readability without the debug grid.
 
+### City-first object language (2026-07-28)
+
+The ten sheets in `assets/textures/city objects/` now define 234 stable,
+metric object identities. Both `chicago-loop-*` sheets belong exclusively to
+Area 1, Level 1; shared sheets supply later neighborhood levels. Runtime art
+uses twelve reusable low-poly construction profiles with deterministic
+per-object proportions. Each object records metre dimensions against the
+canonical 11-world-units-per-metre scale, while gameplay radius remains an
+independent readability/economy value. See `0008-city-object-library/`.
+
 ## 2. The hero — a flywheel, not a ball
 
 **V1:** purple sphere + wireframe shell. "It was a ball" (D3, direct

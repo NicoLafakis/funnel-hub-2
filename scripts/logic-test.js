@@ -68,6 +68,7 @@ async function main() {
   const physicalBoundsMod = await import('../src/content/physical-bounds.js');
   const startupMod = await import('../src/meta/startup.js');
   const cityContextMod = await import('../src/content/city-context.js');
+  const cityObjectsMod = await import('../src/content/city-object-catalog.js');
   const THREE = await import('three');
 
   const {
@@ -876,8 +877,14 @@ async function main() {
   {
     const catalogErrors = archetypesMod.validateArchetypeCatalogs();
     check('visual registry and all 100 district catalogs validate', catalogErrors.length === 0);
-    check('registry contains exactly 30 immutable archetypes per metro (300 total) plus the shared street-prop archetypes',
-      Object.keys(archetypesMod.VISUAL_ARCHETYPES).length === 300 + archetypesMod.STREET_PROP_ARCHETYPE_IDS.length);
+    check('registry contains the 300 legacy metro archetypes, shared street props, and all 234 reference-led city objects',
+      Object.keys(archetypesMod.VISUAL_ARCHETYPES).length
+        === 300 + archetypesMod.STREET_PROP_ARCHETYPE_IDS.length + cityObjectsMod.CITY_OBJECTS.length
+        && cityObjectsMod.CITY_OBJECTS.length === 234);
+    check('every city object declares stable metric dimensions and the canonical gameplay tier seam',
+      cityObjectsMod.CITY_OBJECTS.every((entry) => entry.id.startsWith('cityobj_')
+        && entry.widthM > 0 && entry.heightM > 0 && entry.depthM > 0
+        && archetypesMod.VISUAL_ARCHETYPES[entry.id].gameplayKind === entry.gameplayKind));
     check('Skyline-opedia exposes exactly the 30 visible archetypes per metro',
       METROS.every((metro) => Array.isArray(propkit.metroVariants[metro.id])
         && propkit.metroVariants[metro.id].length === 30));
@@ -885,7 +892,9 @@ async function main() {
     let noveltyPass = true;
     let deterministicPass = true;
     let validPlacementPass = true;
-    let maxGroups = 0;
+    let maxChicagoGroups = 0;
+    let maxLegacyGroups = 0;
+    const areaOneCityObjects = new Set();
     for (let n = 1; n <= 100; n += 1) {
       const level = generateLevel(n);
       const a = districtsMod.generateDistrict(level);
@@ -910,13 +919,21 @@ async function main() {
         scale: 1,
         scaleY: 1,
       })));
-      maxGroups = Math.max(maxGroups, world.groupCount);
+      if (n <= 10) {
+        maxChicagoGroups = Math.max(maxChicagoGroups, world.groupCount);
+        for (const p of a.props) if (p.visualId.startsWith('cityobj_')) areaOneCityObjects.add(p.visualId);
+      } else {
+        maxLegacyGroups = Math.max(maxLegacyGroups, world.groupCount);
+      }
       world.dispose();
     }
     check('all 100 levels resolve valid gameplay-kind/visual-ID pairs', validPlacementPass);
     check('districts 2-10 in every metro meet >=25% direct-predecessor novelty', noveltyPass);
     check('all 100 visual-ID selections are byte-identical on duplicate generation', deterministicPass);
-    check(`initial opaque instanced groups stay <=24 (observed ${maxGroups})`, maxGroups <= 24);
+    check('all 234 reference-led object types appear deterministically across Area 1',
+      areaOneCityObjects.size === cityObjectsMod.CITY_OBJECTS.length);
+    check(`city-authored levels stay <=60 opaque groups (observed ${maxChicagoGroups})`, maxChicagoGroups <= 60);
+    check(`legacy levels retain the <=24 opaque-group budget (observed ${maxLegacyGroups})`, maxLegacyGroups <= 24);
     check('all 100 layouts keep building tiers out of the initial chase-camera corridor',
       generateAllLevels().every((level) => districtsMod.generateDistrict(level).props.every((p) => {
         if (p.tierIndex < 4 || p.z <= -200 || p.z >= 35) return true;
@@ -976,7 +993,7 @@ async function main() {
       const fingerprint = propkit.visualGeometryFingerprint(descriptor.id, descriptor.gameplayKind, THREE);
       if (!Number.isFinite(fingerprint.checksum) || fingerprint.triangles > 1500) geometryBudgetsPass = false;
     }
-    check('all merged geometries (300 catalog + street props) are finite and remain <=1500 triangles', geometryBudgetsPass);
+    check('all merged geometries (543 catalog entries) are finite and remain <=1500 triangles', geometryBudgetsPass);
 
     const collectionKeysMod = await import('../src/meta/collection.js');
     check('legacy display names normalize to permanent visual collection IDs',

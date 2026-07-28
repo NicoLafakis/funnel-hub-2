@@ -13,8 +13,10 @@ V1 draws every prop as an individual mesh in the scene graph. Fine on
 desktop; it will not hold 60fps on mobile at the tripled prop counts
 (which D2 forced). V2:
 
-- **InstancedMesh per (kind, tint) pair.** The 7 prop tiers × golden
-  variant = ≤15 draw calls for all props, down from ~400. Transforms update
+- **InstancedMesh per visual identity and material variant.** Legacy districts
+  remain at <=24 opaque prop groups. Reference-led Chicago Level 1 measures
+  59 groups (guarded at 60) because all 48 Loop-specific types coexist;
+  Chicago Levels 2-10 measure at most 38. Transforms update
   per-frame via instance matrices (tumble, vacuum pull, squash).
 - **Pooling and reuse on hot paths:** props, particles, floaters, and rival
   crumbs reuse bounded storage. Treat zero frame-loop allocation as a target

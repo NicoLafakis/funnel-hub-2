@@ -50,6 +50,7 @@ of still-open tasks.
 - [`0001-level-progression-remediation/00-overview.md`](0001-level-progression-remediation/00-overview.md) — target-normalized progression, objective stars, rewards, and save-compatible settlement.
 - [`0002-district-object-remediation/00-overview.md`](0002-district-object-remediation/00-overview.md) — permanent visual IDs, 300 metro archetypes, collection normalization, and novelty validation.
 - [`0007-chicago-loop-authored-city/00-findings.md`](0007-chicago-loop-authored-city/00-findings.md) — actual-vs-target visual comparison and the Level 1 authored Chicago Loop pilot, including faux horizon context.
+- [`0008-city-object-library/00-overview.md`](0008-city-object-library/00-overview.md) — 234 reference-led, metric city objects and the city-first Area 1 catalog.
 
 ## Historical investigations
 

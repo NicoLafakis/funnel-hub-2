@@ -1,3 +1,5 @@
+import { CITY_OBJECTS } from './city-object-catalog.js';
+
 // Pure district visual catalog. Gameplay remains keyed by the seven LEVEL_TEMPLATE
 // kinds; these immutable visual IDs only select geometry and collection identity.
 // No THREE, DOM, browser globals, or unseeded randomness belong in this module.
@@ -276,8 +278,64 @@ for (const entry of STREET_PROP_CATALOG) {
   });
 }
 
+// Reference-led city assets are stable visual identities layered onto the
+// existing economy tiers. Their physical metre dimensions are intentionally
+// separate from the gameplay radius; propkit owns that render/economy seam.
+const sharedCityEntries = CITY_OBJECTS.filter((entry) => entry.scope === 'shared');
+for (const entry of CITY_OBJECTS) {
+  const cityDistrict = entry.cityId === 'chicago'
+    ? 1
+    : 10 - (sharedCityEntries.indexOf(entry) % 9);
+  allArchetypes[entry.id] = Object.freeze({
+    id: entry.id,
+    gameplayKind: entry.gameplayKind,
+    family: entry.name.replace(/[^a-z0-9]+/g, '_'),
+    recipe: 'city-object',
+    recipeIndex: entry.referenceIndex,
+    materialRole: `${entry.scope}_${entry.sheet}`,
+    collectionKey: entry.id,
+    silhouette: entry.name,
+    environmentalFunction: `${entry.name} ${entry.sheet} asset`,
+    silhouetteShapes: [entry.profile, 'metric city object', entry.scope],
+    baseMaterial: entry.profile === 'person' ? 'cloth and skin' : 'painted urban materials',
+    roughness: entry.profile === 'vehicle' || entry.profile === 'largeVehicle' ? 0.48 : 0.72,
+    metalness: ['vehicle', 'largeVehicle', 'rail', 'pole'].includes(entry.profile) ? 0.24 : 0.06,
+    groundContrast: 'physical silhouette and city placement',
+    footprint: Math.max(entry.widthM, entry.depthM),
+    height: entry.heightM,
+    triangleBudget: ['tower', 'landmark', 'midrise'].includes(entry.profile) ? 1500 : 700,
+    nonColorDistinction: `${entry.name} metric profile`,
+    cityObject: entry,
+    introducedAt: cityDistrict,
+    returnDistricts: Object.freeze([cityDistrict]),
+  });
+}
+
 export const VISUAL_ARCHETYPES = Object.freeze(allArchetypes);
 export const DISTRICT_CATALOGS = Object.freeze(allCatalogs);
+
+// Area 1 is the Chicago pilot. Both `chicago-loop-*` reference sheets belong
+// exclusively to Level 1, so their 48 objects appear there together. The 186
+// shared urban objects are divided across Levels 2-10 (21 max per level).
+// Other areas retain their existing catalogs until researched city rosters
+// are authored.
+const chicagoSpecific = CITY_OBJECTS.filter((entry) => entry.cityId === 'chicago');
+const sharedUrban = CITY_OBJECTS.filter((entry) => entry.scope === 'shared');
+const CHICAGO_AREA_CATALOGS = Object.freeze(Object.fromEntries(Array.from({ length: 10 }, (_, offset) => {
+  const district = offset + 1;
+  const slice = district === 1
+    ? chicagoSpecific
+    // Round-robin the shared sheets so every neighborhood gets a balanced
+    // mix of buildings, vehicles, civic modules, people, and street detail;
+    // sequential slicing would make the final level almost entirely shops.
+    : sharedUrban.filter((entry, index) => index % 9 === 10 - district);
+  const base = allCatalogs['harbor-metropolis'][district];
+  const mixes = Object.freeze(Object.fromEntries(GAMEPLAY_KINDS.map((kind) => [
+    kind,
+    Object.freeze([...base.mixes[kind].slice(0, 1), ...slice.filter((entry) => entry.gameplayKind === kind).map((entry) => entry.id)]),
+  ])));
+  return [district, Object.freeze({ mixes, introduces: Object.freeze(district === 1 ? [] : slice.map((entry) => entry.id)) })];
+})));
 
 export function fallbackVisualId(kind) {
   return GAMEPLAY_KINDS.includes(kind) ? `fallback_${kind.replace(/-/g, '_')}` : 'fallback_unknown';
@@ -306,6 +364,9 @@ export function resolveVisualArchetype(visualId, kind) {
 }
 
 export function districtCatalog(metroId, district) {
+  if (metroId === 'harbor-metropolis' && CHICAGO_AREA_CATALOGS[Number(district)]) {
+    return CHICAGO_AREA_CATALOGS[Number(district)];
+  }
   const metro = DISTRICT_CATALOGS[metroId];
   return metro && metro[district] ? metro[district] : null;
 }

@@ -21,7 +21,8 @@ for (const level of generateAllLevels()) {
     return sum + visualGeometryFingerprint(id, descriptor.gameplayKind, THREE).triangles;
   }, 0);
   const novelty = layout.stats.novelty.ratio;
-  if ((level.levelInChapter > 1 && novelty < 0.25) || groups > 24) failed = true;
+  const groupBudget = level.n <= 10 ? 60 : 24;
+  if ((level.levelInChapter > 1 && novelty < 0.25) || groups > groupBudget) failed = true;
   rows.push({
     level: level.n,
     metro: level.metro.id,
