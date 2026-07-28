@@ -490,13 +490,14 @@ async function main() {
       d1.context && d1.context.id === 'chicago-loop'
         && d1.context.water.length === 3
         && d1.context.rail.length === 4
-        && d1.context.buildings.length === 392
+        && d1.context.buildings.length === 454
         && d1.context.roads.length === 62
-        && d1.context.trees.length === 984
-        && d1.context.buildings.every((building) => (
-          Math.abs(building.x) > d1.world / 2 + d1.world * 0.105 * 2.1
-          || Math.abs(building.z) > d1.world / 2 + d1.world * 0.105 * 2.1
-        )));
+        && d1.context.trees.length === 1138
+        && d1.context.buildings.every((building) => {
+          const tall = building.h > d1.world * 0.0321;
+          return !tall || Math.abs(building.x) > d1.world / 2 + d1.world * 0.105 * 2.1
+            || Math.abs(building.z) > d1.world / 2 + d1.world * 0.105 * 2.1;
+        }));
     check('authored Chicago context remains render-only and absent from level 2',
       generateDistrict(generateLevel(2)).context === null);
     const contextGroup = cityContextMod.createCityContext(THREE, d1.context);

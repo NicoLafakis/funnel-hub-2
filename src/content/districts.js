@@ -306,7 +306,8 @@ function buildChicagoLoop(world) {
     for (let gz = -extent; gz < extent; gz += 1) {
       const x = (gx + 0.5) * step;
       const z = (gz + 0.5) * step;
-      const outsidePlayable = Math.abs(x) > contextInnerEdge || Math.abs(z) > contextInnerEdge;
+      const outsidePlayable = Math.abs(x) > half + step * 0.25 || Math.abs(z) > half + step * 0.25;
+      const distantSkyline = Math.abs(x) > contextInnerEdge || Math.abs(z) > contextInnerEdge;
       const eastLake = x > half + step * 0.2;
       if (!outsidePlayable || eastLake) continue;
 
@@ -328,8 +329,8 @@ function buildChicagoLoop(world) {
       const near = distance < 0.95;
       const pulse = (code % 97) / 96;
       const footprint = step * (0.58 + (code % 4) * 0.045);
-      const heightBase = near ? world * 0.035 : world * 0.022;
-      const heightRange = near ? world * 0.08 : world * 0.045;
+      const heightBase = !distantSkyline ? world * 0.012 : near ? world * 0.035 : world * 0.022;
+      const heightRange = !distantSkyline ? world * 0.02 : near ? world * 0.08 : world * 0.045;
       const h = heightBase + pulse * heightRange;
       contextBuildings.push({
         x,
@@ -338,7 +339,7 @@ function buildChicagoLoop(world) {
         d: footprint * (0.82 + (code % 5) * 0.055),
         h,
         tone: code % 4,
-        distanceBand: near ? 0 : 1,
+        distanceBand: distantSkyline && near ? 0 : 1,
       });
       for (let t = 0; t < 2; t += 1) {
         contextTrees.push({
