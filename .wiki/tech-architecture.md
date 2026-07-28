@@ -84,6 +84,38 @@ THREE passed in, never imported by systems; pure functions where possible.
 - **Visual regression:** screenshot 5 fixed frames (title, map, spawn L1,
   mid-L1, spawn L50) against golden images with a small pixel tolerance.
   B8 (unstyled accordion) is exactly the bug this catches.
+- **Closed-loop play bot (`npm run test:play`, `scripts/play-bot.cjs`,
+  added 2026-07-27):** joins two halves that existed separately —
+  `scripts/soak-bot.js` (pure-Node brain: greedy routing against the real
+  swallow/combo/rival systems, used by the soak tier above) and
+  `scripts/flow-test.cjs` (real Playwright hands: keypresses into the
+  input machine). Each tick it reads world state off `window.__fw`, picks
+  a target with soak-bot's greedy rule, and expresses that decision
+  **only** as `page.keyboard`/`page.mouse` events — it never writes game
+  state. That constraint is the whole point of the harness: a bot that
+  pokes mass to win proves nothing about whether a level is playable
+  through real input, which is exactly what the sim-only soak tier above
+  cannot tell you. Every run prints soak-bot's verdict for the same seed;
+  a browser loss on a level the sim calls winnable is the divergence
+  signal this harness exists to catch.
+  - **Calibration probe:** before playing, presses `w` and checks
+    observed displacement against the predicted camera-relative heading,
+    hard-failing on mismatch. WASD is camera-relative and 8-directional,
+    so a steering bug looks exactly like a working bot that wanders —
+    this is the check that tells the two apart.
+  - **Profiles:** `--profile=clean` (default, precise input) and
+    `--profile=sloppy` (seeded input latency, heading overshoot, wrong
+    turns) — sloppy exists to find "player got stuck" bugs a perfect bot
+    never reaches. The noise stream is seeded, but browser frame timing
+    is not, so sloppy failures reproduce statistically, not exactly; the
+    soak-bot divergence assertion is deliberately gated to the clean
+    profile only.
+  - Other flags: `--level`, `--seed`, `--timeout`, `--headed`, `--shots`.
+  - Verified 2026-07-27: L1, L12, L30 all WIN under clean, within ~3s of
+    the sim's predicted time, zero console errors.
+  - `scripts/deep-flow-test.cjs` is a **SCREEN test**, not player-fidelity
+    evidence — it pokes state directly (e.g. `avatar.mass = 1200`) to
+    reach a screen fast. Don't confuse its passes with play-bot's.
 - **CI (GitHub Actions):** `npm test` + build + E2E headless on PR;
   deploy step on main. V1 has no CI; every bug above shipped through
   "ran it manually once."

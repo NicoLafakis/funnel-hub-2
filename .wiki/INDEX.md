@@ -15,6 +15,8 @@ builds on.
    signatures.
 4. [`tech-architecture.md`](tech-architecture.md) — instancing/pooling/
    spatial hash, seeded worldgen, module map, E2E + CI, responsive/mobile.
+   §5 covers the closed-loop play bot (`npm run test:play`) that joins
+   soak-bot's brain to real Playwright input and never writes game state.
 5. [`content-and-meta.md`](content-and-meta.md) — 100-level unlock cadence,
    district identities, shop-as-builds, daily challenge, onboarding.
 6. [`roadmap.md`](roadmap.md) — 4 phases with exit criteria and risks.
