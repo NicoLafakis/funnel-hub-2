@@ -60,23 +60,101 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
   and +128 triangles for the horizon skirt (art-direction.md §1 has the
   description and its open items), no new textures — well inside the budget
   above.
-- **Shadow pass has no effective culling (open, pre-existing).** Every prop
-  group casts shadows as one world-spanning `InstancedMesh`, so Three cannot
-  cull any instance out of the shadow pass and the full prop roster is
-  rasterized twice per frame (shadow map plus main pass); the main pass has a
-  real per-instance frustum cull, the shadow pass has none
-  (`0005-ground-rendering-defect/00-findings.md` §4.4). Measured on the live
-  deploy: 31.2fps sustained at 1440×900 on an Intel iGPU at 434k tris/frame.
-  Not caused by the 2026-07-27 fix above; recorded here because it is the
-  largest remaining GPU cost this wiki has a number for.
-- **Shadow-frustum crawl — IN PROGRESS, not fixed by `00ff4a1`.**
-  `followShadow()` (`scene.js`) rebuilds the sun's orthographic shadow volume
-  from the avatar's live radius every frame with no texel snapping and no
-  size hysteresis, so the shadow map's world-to-texel mapping both translates
-  and rescales per frame (`0005-ground-rendering-defect/00-findings.md` §4.1,
-  its RC-1). The commit message for `00ff4a1` names this the largest known
-  remaining contributor to motion instability and deliberately does not touch
-  it. A follow-up pass covering this plus atmosphere work is in flight.
+- **Shadow pass has no effective culling — CORRECTION to this record
+  (2026-07-28, `4377c82`).** Every prop group casts shadows as one
+  world-spanning `InstancedMesh`, so Three cannot cull any instance out of
+  the shadow pass and the full prop roster is rasterized twice per frame
+  (shadow map plus main pass). The line that used to be here — "the main
+  pass has a real per-instance frustum cull, the shadow pass has none" — is
+  WRONG and this is a correction, not a restatement: `instancing.js:360-371`
+  is an UPDATE-SKIP, not a rasterization cull. The module's own header
+  comment says it plainly — instances outside the camera frustum "skip their
+  matrix update (their last matrix stays in the buffer)". The `InstancedMesh`
+  draw call still issues the full instance count every frame; the GPU
+  rasterizes every prop in BOTH passes regardless. Skipping the matrix write
+  only saves a CPU-side buffer write for instances that were already
+  offscreen last frame, not a GPU draw. This was profiled specifically because
+  the wrong premise made "mirror the main pass's cull into the shadow pass"
+  look like free performance: it is not, because there was nothing to mirror.
+  Real per-instance shadow culling would need spatial buckets, which breaks
+  the merged-instancing draw-call budget this section opens with — measured
+  and REJECTED (below). Caster pass cost, measured: 0.411 ms of a 2.72 ms
+  frame; only 17% of props are in-box at spawn, 100% at the radius cap.
+- **Real-device fps — RETRACTED, was a measurement artifact (2026-07-28,
+  `4377c82`).** The previously recorded "31.2fps sustained at 1440×900 on an
+  Intel iGPU at 434k tris/frame" is not a property of the game. Headless
+  Chromium caps `requestAnimationFrame` at ~30fps even with rendering
+  disabled entirely, so that number was measuring the harness, not the
+  scene. Uncapped (`--disable-gpu-vsync --disable-frame-rate-limit`): 368fps
+  with full rendering, 1794fps with rendering stubbed out — true render cost
+  2.72 ms/frame, GPU 1.85 ms, CPU 93.15% idle over a 6s sustained-motion
+  window. **Standing rule: any fps figure taken through headless Playwright
+  on this repo is unusable, including the existing golden-test harness
+  (§5).** Use uncapped flags plus `EXT_disjoint_timer_query_webgl2` GPU
+  timing for any future perf claim instead of rAF-derived fps. Real-device
+  fps (phone/tablet) remains UNMEASURED — see §6.
+- **Shadow-frustum crawl — FIXED (2026-07-28, `4377c82`), gone by
+  construction.** `followShadow()` (`scene.js`) was perturbing three things
+  every frame: the box centre tracked raw avatar floats with no snapping;
+  the box size tracked radius continuously so the `if (cam.left !== -half)`
+  guard compared an always-changing float and never guarded; and
+  `shadow.far` was `77r` while `shadow.bias` was normalized against it, so
+  the WORLD-space bias rescaled every frame too
+  (`0005-ground-rendering-defect/00-findings.md` §4.1, its RC-1). Now:
+  - **Power-of-two box ladder** (`half = 2 ** Math.ceil(Math.log2(want))`,
+    floor `SHADOW_HALF_MIN = 128`) so the guard actually guards — the
+    projection now rebuilds a handful of times per level instead of ~60x/sec.
+    Measured: `rebuiltOn1pctRadius` went `true → false`.
+  - **Exact light-space texel snap**, not the world-XZ approximation the
+    findings doc's §7.1 offered as "good enough" — light-space costs three
+    extra dot products for a constant light direction (`SUN_DIR`), so there
+    was no reason to take the approximation. `half` and `mapSize` (2048) are
+    both powers of two, so `texel = 2*half/2048` is exact in binary floating
+    point and `Math.round(v/texel)*texel` cannot drift.
+  - **Geometry-derived near/far/bias/normalBias**, replacing constants. Near
+    is set from the box + a `SHADOW_CASTER_HEIGHT` (900u, covers the L75
+    worst-case building at 671u) pad; far brackets the same box on the depth
+    axis; bias is derived from texel size, not left constant.
+  - **Acceptance number:** a fixed world point now lands in 1 distinct
+    shadow-texel phase across 32 sub-texel avatar displacements, at
+    r=26/200/483 — before, it landed in 32 of 32 at every radius.
+  - **Measured effect:** world bias down 7.3× at spawn and 8.5× at the
+    radius cap; lateral shadow shift 1.574 → 0.215 (spawn) and
+    29.255 → 3.438 (cap). Texel size itself went UP (0.3555 → 0.5 at spawn,
+    6.6035 → 8.0 at the cap) — accepted, because the power-of-two ladder can
+    make the box up to 2× larger than needed, and the texel is ~1 device
+    pixel at every radius by construction while `shadow.radius` (art-
+    direction.md §5) is now 3, so 2 device pixels of coarsening is still
+    inside the PCF kernel's reach.
+  - **The findings doc's own bias fix advice (§7.1) is WRONG and is NOT
+    followed — record both halves.** §7.1 said tightening `cam.far` would
+    make `shadow.bias` "mean roughly the same thing at every radius." A
+    constant WORLD-space bias is not the goal: the self-shadowing error a
+    depth bias has to cover is the depth change across ONE SHADOW TEXEL on
+    the receiving surface, which scales WITH radius (texel size scales with
+    radius). What was actually wrong was the CONSTANT OF PROPORTIONALITY —
+    the shipped bias worked out to `0.0924r` world units against a
+    requirement of `~0.0090r`, over-biased **10.3× at every radius**. That is
+    exactly why the failure mode was always peter-panning (shadows detaching
+    from casters) and never acne — §5.10 of the findings doc ("over-biased by
+    an order of magnitude") is RIGHT; §7.1's proposed fix is WRONG. The
+    shipped fix instead makes bias proportional to texel size directly (see
+    the derivation above), which is the form the error actually takes.
+  - **Cost:** +2 draw calls (43 → 45; the prior ground-fix entry above took
+    it 42 → 43), +1,320 triangles, +0 textures, +0.098ms GPU (+5.3%) on the
+    measured tier. Program count at L1 spawn measures **12** (an earlier
+    record said 17 there; 17-19 appear later in a session once pooled
+    effects and rival flywheels compile — 12 is the correct spawn figure).
+    Draw calls and triangle counts reproduce exactly.
+- **Shadow-box coverage gap at default pitch (new, open, 2026-07-28).** The
+  findings doc's §4.1a killed the "shadow box too small" hypothesis using
+  `FOV_DEFAULT = 40`; `main.js:254` actually passes `fov: 70`. Redone at 70:
+  camera height `12r·sin(55°) = 9.83r`, top ray 20° below horizontal, ground
+  intersection at `27.0r` from the camera — **20.1r beyond the avatar,
+  against the shadow box's 14r half-extent.** The hypothesis is ALIVE, not
+  dead: shadows visibly pop in ~14r ahead of the player at the default
+  pitch. Covering it needs `half ≈ 36r` at 16:9 including lateral corners, a
+  2.6× shadow-texel cost. Deliberately not spent this pass — Nico's call.
 
 ## 2. World representation — the spatial hash is the world
 
@@ -135,7 +213,13 @@ THREE passed in, never imported by systems; pure functions where possible.
      sweep, not this sample.
 - **Visual regression:** screenshot 5 fixed frames (title, map, spawn L1,
   mid-L1, spawn L50) against golden images with a small pixel tolerance.
-  B8 (unstyled accordion) is exactly the bug this catches.
+  B8 (unstyled accordion) is exactly the bug this catches. **Standing
+  caveat (2026-07-28, `4377c82`, §1):** this harness is headless Playwright,
+  and headless Chromium caps `requestAnimationFrame` at ~30fps even with
+  rendering disabled — any fps or frame-time figure this suite (or any
+  future one built on it) reports is unusable as a performance claim. It is
+  still valid for pixel-diff regression, which is what it is actually for;
+  the caveat is specifically about repurposing it for timing.
 - **Closed-loop play bot (`npm run test:play`, `scripts/play-bot.cjs`,
   added 2026-07-27):** joins two halves that existed separately —
   `scripts/soak-bot.js` (pure-Node brain: greedy routing against the real
@@ -201,6 +285,17 @@ THREE passed in, never imported by systems; pure functions where possible.
   appear under reduced motion and then never leave. Its reduced-motion
   variant drops the rise and keeps the number and the fade, because the
   "+N" is the readable value of a bite, not decoration.
+- **Mobile GPU cost — UNMEASURED (open, 2026-07-28).** Every performance
+  number in §1 (2.72 ms/frame, the 0.098ms shadow-snap cost, the 0.411ms
+  caster pass) is from the desktop-tier device the live deploy was profiled
+  on. The shadow feature alone is 0.545 ms of that 2.72 ms frame; on a
+  mid-tier phone GPU that scales to something that plausibly matters, and
+  nothing in this wiki has a real number for a phone yet. A device-tier
+  switch is a ready, deliberately-not-built lever: dropping the shadow map
+  to 1024px and setting `castShadow = false` on small-prop groups (trash,
+  bikes, pedestrians, lamps — a few pixels of shadow at the gameplay camera
+  anyway) measured −15% combined GPU on the desktop tier as a proxy. Spend
+  this only once a real device measurement exists to spend it against.
 
 ## 7. What stays deliberately unchanged
 

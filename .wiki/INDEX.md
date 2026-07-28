@@ -112,7 +112,24 @@ builds on.
     per-frame unsnapped shadow-volume rebuild (§4.1, RC-1), is deliberately NOT
     fixed** and is now the largest known remaining contributor to motion
     instability — a follow-up pass covering it plus atmosphere work is in flight
-    (tech-architecture.md §1).
+    (tech-architecture.md §1). **Update (2026-07-28, `4377c82`): RC-1 is now
+    FIXED** — a power-of-two shadow-box ladder plus an exact light-space texel
+    snap and geometry-derived near/far/bias/normalBias take a fixed world point
+    from landing in 32 of 32 shadow-texel phases across 32 sub-texel avatar
+    displacements down to 1 of 1, at r=26/200/483. The same commit adds a
+    FogExp2 atmosphere (sky dome + horizon haze ring sharing one colour with
+    fog and the clear colour) that removes the horizon hard-edge §1's skirt
+    only relocated, rebalances the light rig, and retracts an earlier "31.2fps
+    sustained" figure as a headless-Chromium measurement artifact. It also
+    CORRECTS three of this findings doc's own conclusions rather than just
+    extending them: §7.1's bias-fix advice was wrong, §4.1a/§5.9's "shadow box
+    is big enough forward" conclusion used the wrong FOV and reverses when
+    corrected (new open item: a 14r-vs-20.1r coverage gap at default pitch),
+    and §4.4's claim that the main render pass has a real per-instance frustum
+    cull is wrong (it is an update-skip, not a rasterization cull). Full index
+    of changes in `0005-ground-rendering-defect/00-findings.md` §10, numbers in
+    `tech-architecture.md` §1 and `art-direction.md` §1/§3/§5. Real-device
+    (phone) GPU cost remains unmeasured.
 
 ## Working agreements (edit as the project evolves)
 

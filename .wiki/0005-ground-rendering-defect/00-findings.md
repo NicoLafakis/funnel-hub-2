@@ -4,8 +4,12 @@ Date: 2026-07-27
 Reporter: Nico (live review of the deployed build, https://funnel-hub-umber.vercel.app/)
 Investigator: root-cause-analyst (code-level; a parallel agent is capturing live-browser evidence)
 Severity: high (affects the single largest surface in every frame, on every level, at every radius)
-Status: diagnosed, NOT fixed. Fix specification in §7. Nothing in this investigation
-touched source, config, or state.
+Status: RC-1 (the primary defect, §4.1) FIXED 2026-07-28 in commit `4377c82`.
+The structural defect (depth precision, §4.2) was fixed earlier in `00ff4a1`
+(see the §4.1a / §4.3 / §7.1 notes below and §10 for the full update — several
+of this document's own conclusions are corrected there, not just closed).
+Fix specification in §7 (partially superseded, see inline notes). Nothing in
+the original investigation touched source, config, or state.
 
 ---
 
@@ -146,6 +150,13 @@ cannot work.
 
 ### 4.1 The shadow volume is rebuilt every frame and never snapped (PRIMARY)
 
+**FIXED 2026-07-28, commit `4377c82`. See §10 for the full update.** Summary:
+a fixed world point now lands in 1 distinct shadow-texel phase across 32
+sub-texel avatar displacements, at r=26/200/483 — before it was 32 of 32 at
+every radius, which is the table below made permanent rather than reduced.
+The fix does NOT follow the bias advice this section's own §7.1 gives; see
+the correction there.
+
 `half = Math.max(120, r * 14)`. The floor never binds: minimum avatar radius is 26
 (`src/data/formulas.js:210`, `radiusFromMass(0) = 26`), so `14r >= 364 > 120` from the
 first frame. Everything below is therefore governed by `r` alone.
@@ -194,8 +205,19 @@ code; only a capture can rank them.
 
 ### 4.1a The shadow volume can be smaller than the visible ground on wide aspect ratios
 
+**CORRECTION (2026-07-28, `4377c82`): the forward-axis conclusion below used
+the wrong FOV and is WRONG. See §10 for the redone numbers.** This section
+computes with `FOV_DEFAULT = 40`, but `main.js:254` actually passes
+`fov: 70`. Redone at 70 the "kills the shadow-box-too-small hypothesis for
+the forward direction" conclusion below does NOT hold — the hypothesis is
+ALIVE and is now tracked as an open item in `tech-architecture.md` §1
+("Shadow-box coverage gap at default pitch"). The lateral/ultrawide analysis
+below is unaffected by this correction (it never depended on the forward-axis
+FOV figure) and stands as originally written.
+
 Geometry from `src/engine/camera.js`: pitch 55 deg default (`PITCH_DEFAULT`, line 56),
 fov 40 (`FOV_DEFAULT`, line 59), standoff `12r` (`DIST_RADIUS_MULT`, line 64).
+**(Superseded — see the correction above: the live `fov` is 70, not 40.)**
 
 - camera height = `12r * sin(55) = 9.83r`
 - the frustum's TOP ray sits at `55 - 20 = 35` deg below horizontal, so it meets the
@@ -278,6 +300,13 @@ shipping today.
 
 ### 4.3 Unconditional per-frame instance-buffer re-upload
 
+**FIXED 2026-07-28, commit `4377c82` ("Task B").** A `shadowMatrixDirty` flag
+now mirrors `group.matrixDirty` on the prop meshes: set inside
+`writeInstanceMatrix()` and in `set()`/`setVisible()` for the paths that write
+the buffer without going through it, and consumed (then cleared) in
+`update()`. The blob-shadow matrix buffer is no longer re-uploaded on frames
+where no prop moved.
+
 `src/engine/instancing.js:373-383`:
 
 ```js
@@ -297,12 +326,28 @@ to perceived stutter needs a live frame-time capture.
 
 ### 4.4 The shadow pass has no effective culling
 
+**CORRECTION (2026-07-28, `4377c82`): the claim that the main pass has "a
+real per-instance frustum cull" below is WRONG.** `instancing.js:360-371` is
+an UPDATE-SKIP, not a rasterization cull — the module's own header comment
+says instances outside the camera frustum "skip their matrix update (their
+last matrix stays in the buffer)". The `InstancedMesh` draw call still issues
+the full instance count every frame in BOTH passes; only the CPU-side matrix
+write is skipped for instances already known offscreen. A profiled attempt to
+"mirror the main pass's cull into the shadow pass" was rejected on this
+corrected premise — there was nothing to mirror. See
+`tech-architecture.md` §1 for the measured caster-pass cost (0.411ms of a
+2.72ms frame) and the rejection rationale (spatial buckets would break the
+merged-instancing draw-call budget).
+
 Every prop group is `castShadow = true` (`src/engine/instancing.js:268`), and each group is
 one `InstancedMesh` whose bounding sphere spans the whole world because the instances are
 spread across it. Three therefore cannot cull any of them out of the shadow pass, so the
-full prop roster is rasterized twice per frame (shadow map plus main pass). The main pass
+full prop roster is rasterized twice per frame (shadow map plus main pass). ~~The main pass
 does have a real per-instance frustum cull (`src/engine/instancing.js:360-371`); the shadow
-pass has nothing equivalent. Confirmed by code; frame-cost impact needs a live capture.
+pass has nothing equivalent.~~ **Superseded by the correction above: neither pass
+rasterization-culls; the main pass only skips a redundant matrix upload.**
+Frame-cost impact now has a live measurement, see the correction above and
+`tech-architecture.md` §1.
 
 ---
 
@@ -383,11 +428,21 @@ renderer is constructed with `{ canvas, antialias: true }` only (`src/engine/sce
 Worth noting the opposite: r185 DOES support `reversedDepthBuffer`, which is the better fix
 (`node_modules/three/build/three.module.js:2405`, gated on `EXT_clip_control`). See §7.2.
 
-### 5.9 KILLED: the shadow box is too small for the view (forward direction)
+### 5.9 REVIVED (was KILLED): the shadow box is too small for the view (forward direction)
 
-Computed in §4.1a: the box half-extent `14r` comfortably exceeds the `7.16r` of visible
+**CORRECTION (2026-07-28, `4377c82`): un-kill this hypothesis.** The `7.16r`
+figure below was computed at `FOV_DEFAULT = 40`; the live `fov` is 70
+(`main.js:254`, see §4.1a's correction). Redone at 70, the visible ground
+extends to `20.1r` beyond the avatar against the `14r` box half-extent — the
+box is too small by a wide margin, not "with margin" as originally
+concluded. Tracked as an open item in `tech-architecture.md` §1
+("Shadow-box coverage gap at default pitch"): shadows visibly pop in ~14r
+ahead of the player; fixing it needs `half ≈ 36r`, a 2.6× shadow-texel cost,
+deliberately not spent yet.
+
+~~Computed in §4.1a: the box half-extent `14r` comfortably exceeds the `7.16r` of visible
 ground beyond the avatar. Killed for the forward axis; survives only as a marginal
-lateral/ultrawide case, which is recorded there rather than here.
+lateral/ultrawide case, which is recorded there rather than here.~~
 
 ### 5.10 KILLED: shadow acne from insufficient bias
 
@@ -432,6 +487,24 @@ Ordered by expected effect per unit of risk. Nothing below is implemented. Each 
 independent; they can ship separately.
 
 ### 7.1 Snap and quantize the shadow volume (fixes the primary defect)
+
+**IMPLEMENTED 2026-07-28, commit `4377c82` — but NOT as specified below, and
+the deviation matters.** The snap-and-quantize approach shipped (power-of-two
+box ladder, texel snap — done in exact LIGHT space, not the world-XZ
+approximation this section offers as "cheap correct-enough"). The bias
+advice in the paragraph beginning "Also consider decoupling the growth"
+below is **WRONG and was NOT followed.** It claims tightening `cam.far`
+makes `shadow.bias` "mean roughly the same thing at every radius" — i.e. that
+a constant world-space bias is the goal. It is not: the self-shadowing error
+a depth bias has to cover is the depth change across ONE SHADOW TEXEL, which
+scales WITH radius (texel size scales with radius), so the correct bias is
+proportional to texel size, not constant. The actual defect (confirmed by
+§5.10 above, which remains correct) was the CONSTANT OF PROPORTIONALITY: the
+shipped bias worked out to `0.0924r` against a requirement of `~0.0090r`,
+over-biased 10.3× at every radius — which is why the failure mode was always
+peter-panning, never acne. The shipped fix derives bias directly from texel
+size instead; see `tech-architecture.md` §1 for the full derivation and
+`src/engine/scene.js`'s `followShadow()` comment for the mechanism.
 
 File: `src/engine/scene.js`, function `followShadow` (lines 61-77).
 
@@ -610,6 +683,10 @@ and `state` and is enough to drive the avatar to a large radius and read
 
 ## 9. What is still open
 
+**Superseded 2026-07-28 (`4377c82`) — see §10.** RC-1 is fixed and §4.3 is
+fixed; the items below are the ORIGINAL open list, kept for history. The
+current open list is in §10 and in `tech-architecture.md` §1/§6.
+
 - **The reporter's viewport aspect ratio**, which decides whether §4.1a (hard moving
   lit/unlit boundary in the far corners) is in play or not.
 - **A live capture ranking the three shadow failure modes** (swim, rescale snap,
@@ -617,3 +694,45 @@ and `state` and is enough to drive the avatar to a large radius and read
   weight is not determinable from source.
 - **Frame-time evidence** for §4.3 and §4.4. Both are confirmed as unnecessary per-frame
   work; whether either is large enough to cause a perceptible hitch needs a profile.
+
+---
+
+## 10. Update (2026-07-28, `4377c82`): RC-1 fixed, corrections to this record
+
+Full change description lives in the commit message and in
+`tech-architecture.md` §1 and `art-direction.md` §5; this section is the
+index of what changed in THIS document's own conclusions.
+
+**Fixed:**
+- §4.1 (RC-1, primary defect) — shadow volume snap/quantize, see §7.1's
+  update note and `tech-architecture.md` §1 for the full derivation and
+  measured numbers.
+- §4.3 (unconditional blob-shadow matrix re-upload) — dirty-guarded now.
+
+**Corrected (this document's own prior conclusions were wrong, not just
+incomplete):**
+- §4.1a and §5.9 used `FOV_DEFAULT = 40`; the live FOV is 70. Redone at 70,
+  the forward-axis "shadow box is big enough" conclusion REVERSES: the box
+  is short by 20.1r, not comfortably oversized. This hypothesis is back open
+  — see `tech-architecture.md` §1.
+- §7.1's bias-fix advice (tighten `cam.far` for a constant world-space bias)
+  is wrong on the merits, not just unimplemented. The shipped fix derives
+  bias from texel size (proportional to radius) instead, per the correct
+  physical model. §5.10's diagnosis was already right; only §7.1's proposed
+  remedy was wrong.
+- §4.4's claim that the main pass has "a real per-instance frustum cull" is
+  wrong. `instancing.js:360-371` is an update-skip; the GPU still rasterizes
+  every instance in both passes. This also means the shadow-pass-culling fix
+  idea in §7.5 had no main-pass mechanism to mirror — it was profiled and
+  rejected on the corrected premise (see `tech-architecture.md` §1).
+
+**New open items surfaced by this pass (tracked in `tech-architecture.md`,
+not duplicated in full here):**
+- The revived §4.1a/§5.9 shadow-box coverage gap (`tech-architecture.md` §1).
+- Real-device (phone/tablet) GPU cost is unmeasured; the "31.2fps" figure
+  this wiki previously carried was a headless-Chromium artifact and has been
+  retracted, not replaced with a real number yet (`tech-architecture.md` §1
+  and §6).
+- `FogExp2`'s from-the-first-metre attenuation and the ground-detail
+  reweight's louder grazing-angle amplitude are both deliberate trades,
+  recorded in `art-direction.md` §1.

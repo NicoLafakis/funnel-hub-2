@@ -90,24 +90,67 @@ instead of uniform scatter:**
   the tile no longer cuts mid-pattern at the plane edge, and the detail map's
   `colorSpace` moved `NoColorSpace` → `SRGBColorSpace` — the multiply lands
   in an sRGB framebuffer, so the untagged map was arriving at 0.90 against
-  the authored 0.78 floor, half the intended contrast. **Open item, not
-  solved:** the 64u tile also halved close-range surface detail as a side
-  effect of fixing the aliasing — measured vHF 1.95 after vs. 3.31 before —
-  so the asphalt now reads flatter and more plasticky up close. A fidelity
-  regression hiding inside a real fix, verified on the live deploy, not yet
-  addressed.
+  the authored 0.78 floor, half the intended contrast. (`groundtex.js`'s own
+  comment claims the tile's mean "lands near x0.95"; measured x0.9304 —
+  `GROUND_ALBEDO_SCALE` is calibrated against the measured figure, not the
+  comment, so trust 0.9304 if the two are ever re-derived.)
+  **Close-range detail regression CLOSED (2026-07-28, `4377c82`):** same
+  three lattices, same frequencies (lattice 32/64/128, i.e. 16.1/8.06/4.03
+  device px/cycle), octave weights `0.50/0.32/0.18 → 0.26/0.30/0.44` — energy
+  moved off the coarse rung (reads as tonal drift) onto the finest SAFE rung
+  (reads as surface), recovering 79% of the pre-moiré-fix close-range surface
+  while staying strictly below the config that visibly crawled: no cycle went
+  back under 4.03 device px/cycle, so this is amplitude at a safe frequency,
+  not new frequency. Tile mean held to x0.9300 (0.04% drift), so
+  `GROUND_ALBEDO_SCALE` did not need re-calibration. A 1024px tile plus a
+  lattice-256 octave (2.02 device px/cycle, properly band-limited at that
+  resolution) was built and REJECTED after live injection moved close-range
+  vHF 1.181 → 1.176 — i.e. nothing — because the ground is minified ~2:1 at
+  the gameplay camera and the sampler averages that octave away on mip 1
+  before it ever reaches the screen. 4× the texture memory for zero. **New
+  open item, accepted not fixed:** the reweight makes the anisotropic
+  sampler's grazing-angle failure mode louder in amplitude (though unmoved in
+  frequency) — the 4.03 px/cycle rung's surface amplitude went from 18% to
+  44% of the tile, and under-motion HF rose 6% (1.816 → 1.923), likely just
+  over the crawl verifier's stated bar. Flagged rather than quietly passed;
+  needs a live capture under sustained motion to confirm it doesn't read as
+  crawl again.
   The world also no longer ends in void: a **horizon skirt** (`RingGeometry`,
   one flat ring from `0.48*world` out to `half + fogFar`, y = -2 so it sits
   under the opaque ground plane and can't z-fight it) continues the ground
   past the map edge and lets the existing fog dissolve it. Its colour is
   sampled from the ground bake's own outer band (32×32 downsample, outermost
   ring averaged) rather than hand-picked, so it tracks any future lighting
-  change for free. **Open item, not solved:** the hard world edge was
-  RELOCATED, not eliminated. Verified on the live deploy after the fix: the
-  ground→skirt join improved 271.6 → 49.0 (the commit message's claimed "34"
-  does not independently reproduce — 49.0 is the number that does, and is
-  the one to carry forward), but a new skirt→sky edge now measures 202.9 and
-  fills 40–50% of frame near the map edge.
+  change for free. First pass measured: ground→skirt join improved
+  271.6 → 49.0 (the commit message's claimed "34" does not independently
+  reproduce — 49.0 is the number that does, and is the one to carry forward),
+  but the hard edge was RELOCATED, not eliminated — a new skirt→sky edge
+  measured 202.9 and filled 40–50% of frame near the map edge.
+  **World-edge relocation CLOSED (2026-07-28, `4377c82`):** the fix is colour
+  identity, not more geometry. Fog is now `THREE.FogExp2` at density
+  `0.55/level.world` (see the atmosphere note below), and a sky dome plus a
+  horizon haze ring both resolve to the same `skyHorizon` colour that the fog
+  and `scene.background` use — so ground→skirt→haze→sky is one continuous
+  tone match rather than three independently-authored colours meeting at hard
+  boundaries. The skirt itself also shrank: its outer radius dropped from
+  `world/2 + fogFar` to `world/2 + 1.25·HAZE_RUN` (`HAZE_RUN_WORLD = 0.35`),
+  because past `half + HAZE_RUN` every pixel was being lit-shaded and then
+  fully covered by the haze ring anyway — cutting skirt+haze frame fill from
+  25.27% to 15.88%. Measured on the live deploy at minimum pitch: the flat
+  grey slab that used to sit at a constant [123,125,140] and cover 36% of
+  frame height is now gone entirely, and the sky-to-world channel step
+  dropped 222 → 15 (−93%). Pulling fog in to fix this instead (the obvious
+  alternative) was rejected on geometry, not taste: at the play bound the
+  avatar is ~26 world units from the map edge, so the skirt starts at the
+  player's own feet — no fog curve reaches a surface at zero distance.
+  **New open item, deliberate trade:** `FogExp2` has no onset and attenuates
+  from the first metre, where the old linear fog did nothing inside 2053u on
+  level 1. The district reads measurably crisper at range as a result, but
+  there is now a small amount of haze everywhere, including close to the
+  player. Accepted because a linear fog can (and did) let the horizon read as
+  a hard wall; `FogExp2` structurally cannot reach 1.0 at any finite distance,
+  which is also what keeps art-direction.md §3/§4's "landmark always
+  silhouette-visible" constraint true by construction rather than by tuning.
 - **Buildings get facades:** the same generated set provides a facade
   per building tier (brick storefront / apartment grid / glass tower) —
   bold, flat-color reads, not photorealism.
@@ -242,9 +285,19 @@ for the flat cartoon mobile-game look of the reference, not photorealism.
   (2026-07-27 material pass):** `EDIBLE_LIFT` (1.06) and `TOO_BIG_DIM`
   (0.62) are a scalar VALUE multiply on `tmpColor`, not a hue blend — this
   preserves hue and the per-instance palette pick while giving a
-  1.71:1 grayscale-legible ratio. Record the principle: edibility signals
-  through value, never hue, so it never collides with the per-metro
-  pastel palette above it. **Architectural constraint, worth knowing
+  1.71:1 grayscale-legible ratio. **That 1.71:1 is a linear-space albedo
+  ratio, not what reaches the screen** — the measured RENDERED ratio (what a
+  screenshot actually shows, sRGB-encoded) is **1.284:1** (`= 1.71^(1/2.2)`).
+  The legibility conclusion is unaffected; this is a correction to which
+  space the number is quoted in, not to the design. **Verified stable under
+  the 2026-07-28 lighting rebalance (`4377c82`, §5):** rendered ratio held at
+  1.284 → 1.281 across the light-rig change, because lighting is a linear
+  multiplier on `material.color × instanceColor` — the edibility tint is
+  baked into `instanceColor` before that multiply, so the ratio between
+  edible-lifted and too-big-dimmed instances survives ANY lighting rig, not
+  just this one. Record the principle: edibility signals through value,
+  never hue, so it never collides with the per-metro pastel palette above
+  it. **Architectural constraint, worth knowing
   before adding per-part prop materials:** only `.color` survives the
   instancing merge (`propkit.js` — vertex colors carry per-part color into
   one shared `InstancedMesh` material), so per-part metalness/roughness
@@ -311,6 +364,63 @@ second shadow under every prop. `instancing.js` `SHADOW_COLOR` went
 hue shift is deliberate, not cosmetic: shade is lit by the sky-blue
 hemisphere fill, so shadowed ground should read cooler as well as darker,
 matching how the cast shadow itself renders.
+
+**Shadow snap + lighting-rig pass (2026-07-28, `4377c82`).** Two shipped
+changes and one re-derivation, all downstream of the shadow-frustum crawl
+fix (tech-architecture.md §1 has the texel-grid math; this is the visual
+side).
+
+- **Lights: ambient/hemisphere/directional `0.55/0.70/0.90 → 0.12/0.85/1.55`.**
+  Flat ambient was the reason flat-shaded geometry read cheap — it adds equal
+  irradiance to every normal, which is pure form-destroying lift. Measured off
+  a 0.5-grey probe sphere on the live build (every world normal visible at
+  once, read back with `gl.readPixels`): key:fill ratio 1.31 → 1.81 and the
+  sphere's tonal spread (the signal that carries FORM) up 18%. Chosen to hold
+  frame mean luma to +0.5% (106.6 → 107.1) so no metro's authored palette
+  shifts under it; a hotter rig (0.06/0.90/1.75) scored better on the probe
+  but drifted frame mean +3% and started blowing the tops of pale facades.
+  Ambient is not zeroed — 0.12 is what keeps a north-facing wall in a street
+  canyon off the hemisphere's floor value; the hemisphere's warm ground bounce
+  is doing the real fill work now, which is why it (not the ambient) absorbed
+  most of the intensity the ambient gave up. Night keeps its existing
+  day/night ratios (ambient ×0.51, sun ×0.50, hemisphere ×0.43) applied on top
+  of these new day values, so night darkens by exactly as much as before.
+- **`PCFSoftShadowMap → PCFShadowMap`, deliberate — not a downgrade.** r185
+  silently swaps `PCFSoftShadowMap` for `PCFShadowMap` with a console warning
+  regardless, so the setting had been a no-op for a while (the earlier note
+  here recorded the mechanism and got the consequence wrong). In r185,
+  `PCFShadowMap` is already five Vogel-disk samples rotated per pixel by
+  interleaved gradient noise — roughly 20 filtered taps — so PCFSoft's only
+  remaining effect was the warning itself. The real soft-edge dial was always
+  `shadow.radius`, sitting at its default of 1 (hard) the whole time. Moved to
+  3 — a ~3-device-pixel penumbra at every hole size, because a shadow texel is
+  ~1 device pixel at every radius by construction (the shadow box tracks 14×
+  avatar radius, the chase camera stands off 12× avatar radius, so texel size
+  and camera distance scale together) — and it is free: GPU-timed
+  1.848 → 1.795 ms/frame, radius 1 vs. radius 3, inside run-to-run spread.
+- **`SHADOW_OPACITY` re-derived again, `0.18 → 0.12`** (`instancing.js`).
+  Not a re-tune — the 0.18 above was fitted to the OLD light rig; rebalancing
+  ambient/sun roughly doubles how dark a real cast shadow lands, so leaving
+  0.18 in place would have recreated the exact double-darkening the
+  0.26 → 0.18 change existed to remove. Measured on the live deploy (toggle
+  each contributor, read back the framebuffer, multiply mean luma delta by
+  frame coverage for an honest "light removed" figure): cast shadows alone
+  went from removing 0.526 to 1.450 (2.8×) under the new rig. The decal's
+  darkening job is over; 0.12 sizes it to the residual job only — the
+  grazing-angle case where the shadow map's texel footprint is unreliable,
+  and the contact edge right under a prop where `normalBias` pushes the cast
+  shadow off the footprint.
+
+**Tone mapping considered and rejected (2026-07-28, `4377c82`), with
+measurement.** ACES/AgX/Neutral all have highlight rollover to sell; this
+scene has none to give them — clipping measured 0.00% in every configuration
+tried, so a tone curve can only redistribute an existing 0–182 range, not
+protect a blown highlight. AgX flattens the palette (frame sd 25.6 → 23.7,
+saturation 0.289 → 0.230) and shrinks the rendered edibility ratio to 1.226,
+which would invalidate the per-metro grayscale ladder §3 calibrates
+luma-by-luma. Worth recording explicitly: tone mapping is the obvious "make
+it look expensive" lever, and it is wrong here for a specific, measured
+reason, not a taste call.
 
 **The eat→grow loop (2026-07-27).** After the clutter purge the loop had
 a 2%/80ms scale pop for an eat and *nothing at all* for growth. Three
