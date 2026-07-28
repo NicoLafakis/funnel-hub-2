@@ -37,9 +37,9 @@
   storefront classifications.
 - Chase framing uses the approved 55° pitch/FOV 40 lens at a 17.5r standoff,
   widened from 12r after live Loop frontage occluded too much of the grid.
-- The Loop retains one northern civic plaza; the former duplicate plaza at
-  column 3/row 1 is developed frontage, removing the largest dead concrete
-  parcel from the target-comparison view.
+- The Loop's civic plaza is a compact landmark court inside a developed host
+  block; neither it nor the former duplicate plaza consumes a full block of
+  dead concrete.
 
 ## Verified automated baseline
 

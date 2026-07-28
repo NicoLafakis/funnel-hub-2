@@ -258,11 +258,6 @@ function buildChicagoLoop(world) {
       // remains the opening feast park for immediate-playability.
       let zone = ix === edges.length - 2 ? 'park' : 'residential';
       if (ix === 2 && iz === 2) zone = 'park';
-      // One civic plaza is enough at this gameplay scale. The former second
-      // plaza at (3,1) produced the target comparison's largest dead concrete
-      // parcel; keeping it residential restores the built Michigan-adjacent
-      // frontage and leaves the northern plaza as the civic focal point.
-      if (ix === 1 && iz === 3) zone = 'plaza';
       blocks.push({
         x: (left + right) / 2,
         z: (bottom + top) / 2,
@@ -274,7 +269,18 @@ function buildChicagoLoop(world) {
       });
     }
   }
-  const landmarkPlaza = blocks.find((b) => b.chicago.column === 1 && b.chicago.row === 3);
+  // A real Loop plaza is a court within a developed block, not an entire
+  // city block of empty paving. Keep the host block residential so frontage
+  // builds around it, while the compact descriptor preserves the landmark's
+  // central clear court and placement contract.
+  const civicHost = blocks.find((b) => b.chicago.column === 1 && b.chicago.row === 3);
+  const landmarkPlaza = {
+    ...civicHost,
+    w: civicHost.w * 0.38,
+    d: civicHost.d * 0.38,
+    zone: 'plaza',
+    synthetic: true,
+  };
 
   // Faux surrounding city: a dense deterministic grid outside the playable
   // square. Distance, fog, and simplified silhouettes do the work that a
