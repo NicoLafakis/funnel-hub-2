@@ -27,6 +27,13 @@ skyline context continue the city beyond the playable square without entering
 collision or progression. See
 [`0007-chicago-loop-authored-city/00-findings.md`](0007-chicago-loop-authored-city/00-findings.md).
 
+**Background continuation (2026-07-28):** gameplay worlds must not terminate
+at a sparse prop ring. Chicago establishes the pattern: reuse the playable
+area's road/block rhythm as low-detail instanced context, preserve geographic
+edges such as lake or river, simplify and desaturate with distance, then let
+fog erase fine detail. A full-screen DOF pass is optional—not a prerequisite
+for a convincing faux city—provided near, middle, and far silhouettes overlap.
+
 The single biggest visual upgrade. **Levels get procedural district layouts
 instead of uniform scatter:**
 

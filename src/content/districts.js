@@ -271,27 +271,65 @@ function buildChicagoLoop(world) {
   }
   const landmarkPlaza = blocks.find((b) => b.chicago.column === 1 && b.chicago.row === 3);
 
+  // Faux surrounding city: a dense deterministic grid outside the playable
+  // square. Distance, fog, and simplified silhouettes do the work that a
+  // post-process DOF pass would do at much higher mobile cost. Chicago remains
+  // geographically legible: city north/west/south, Lake Michigan to the east.
   const contextBuildings = [];
-  const bands = [
-    { side: 'north', count: 15, offset: half + world * 0.095 },
-    { side: 'west', count: 12, offset: -half - world * 0.09 },
-    { side: 'south', count: 12, offset: -half - world * 0.10 },
-  ];
-  for (const band of bands) {
-    for (let i = 0; i < band.count; i += 1) {
-      const t = (i + 0.5) / band.count - 0.5;
-      const pulse = ((i * 37 + band.count * 11) % 9) / 8;
-      const w = world * (0.045 + (i % 3) * 0.008);
-      const d = world * (0.05 + ((i + 1) % 3) * 0.009);
-      const rec = {
-        x: band.side === 'west' ? band.offset : t * world * 1.28,
-        z: band.side === 'north' ? band.offset : band.side === 'south' ? band.offset : t * world * 1.25,
-        w,
-        d,
-        h: world * (0.10 + pulse * 0.16),
-        tone: (i + band.count) % 4,
-      };
-      contextBuildings.push(rec);
+  const contextTrees = [];
+  const contextRoads = [];
+  const step = world * 0.105;
+  const extent = 15;
+  for (let i = -extent; i <= extent; i += 1) {
+    const p = i * step;
+    contextRoads.push({ x: p, z: 0, w: step * 0.16, d: step * (extent * 2 + 1) });
+    contextRoads.push({ x: 0, z: p, w: step * (extent * 2 + 1), d: step * 0.16 });
+  }
+  for (let gx = -extent; gx < extent; gx += 1) {
+    for (let gz = -extent; gz < extent; gz += 1) {
+      const x = (gx + 0.5) * step;
+      const z = (gz + 0.5) * step;
+      const outsidePlayable = Math.abs(x) > half + step * 0.25 || Math.abs(z) > half + step * 0.25;
+      const eastLake = x > half + step * 0.2;
+      if (!outsidePlayable || eastLake) continue;
+
+      const code = Math.abs(gx * 92821 + gz * 68917 + 137);
+      // Regular empty blocks keep the low-detail field from reading as one
+      // unbroken wall and become suburban green pockets in the far distance.
+      if (code % 11 === 0) {
+        for (let t = 0; t < 5; t += 1) {
+          contextTrees.push({
+            x: x + (((code + t * 31) % 17) / 16 - 0.5) * step * 0.62,
+            z: z + (((code + t * 47) % 19) / 18 - 0.5) * step * 0.62,
+            s: world * (0.010 + ((code + t) % 4) * 0.002),
+          });
+        }
+        continue;
+      }
+
+      const distance = Math.hypot(x, z) / world;
+      const near = distance < 0.95;
+      const pulse = (code % 97) / 96;
+      const footprint = step * (0.58 + (code % 4) * 0.045);
+      const heightBase = near ? world * 0.055 : world * 0.026;
+      const heightRange = near ? world * 0.15 : world * 0.065;
+      const h = heightBase + pulse * heightRange;
+      contextBuildings.push({
+        x,
+        z,
+        w: footprint,
+        d: footprint * (0.82 + (code % 5) * 0.055),
+        h,
+        tone: code % 4,
+        distanceBand: near ? 0 : 1,
+      });
+      for (let t = 0; t < 2; t += 1) {
+        contextTrees.push({
+          x: x + (t ? 1 : -1) * step * 0.39,
+          z: z + (((code + t * 13) % 9) / 8 - 0.5) * step * 0.58,
+          s: world * (0.009 + ((code + t) % 3) * 0.002),
+        });
+      }
     }
   }
 
@@ -304,7 +342,11 @@ function buildChicagoLoop(world) {
       water: [
         { x: 0, z: half + world * 0.035, w: world * 1.55, d: world * 0.09 },
         { x: -half - world * 0.035, z: 0, w: world * 1.32, d: world * 0.075, rotY: Math.PI / 2 },
+        { x: half + world * 1.15, z: 0, w: world * 2.2, d: world * 4.2, lake: true },
       ],
+      ground: { x: 0, z: 0, w: step * (extent * 2 + 1), d: step * (extent * 2 + 1) },
+      roads: contextRoads,
+      trees: contextTrees,
       // The elevated tracks use the same four-street rectangle that gives the
       // district its name. Render-only: no collision or progression mass.
       rail: [

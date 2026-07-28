@@ -468,17 +468,19 @@ async function main() {
           .every((block) => block.zone === 'park'));
     check('the Loop carries river, elevated rail, and surrounding skyline context',
       d1.context && d1.context.id === 'chicago-loop'
-        && d1.context.water.length === 2
+        && d1.context.water.length === 3
         && d1.context.rail.length === 4
-        && d1.context.buildings.length === 39);
+        && d1.context.buildings.length === 454
+        && d1.context.roads.length === 62
+        && d1.context.trees.length === 1138);
     check('authored Chicago context remains render-only and absent from level 2',
       generateDistrict(generateLevel(2)).context === null);
     const contextGroup = cityContextMod.createCityContext(THREE, d1.context);
     check('Chicago context builds as a finite, low-draw scene group',
       contextGroup.isGroup
         && contextGroup.children.length > 0
-        && contextGroup.children.filter((child) => child.isInstancedMesh).length === 6
-        && contextGroup.children.length === 8);
+        && contextGroup.children.filter((child) => child.isInstancedMesh).length === 13
+        && contextGroup.children.length === 17);
   }
 
   // ---------------------------------------------------------------------

@@ -14,6 +14,8 @@
 - Level 1 is an authored Chicago Loop pilot: a fixed orthogonal block plan,
   eastern park edge, elevated rail cue, river edges, and instanced perimeter
   skyline replace the generic layout and dead horizon for that level only.
+- Its render-only background now continues the city with 454 buildings, 1,138
+  trees, 62 road strips, distance-softened materials, and an eastern lakefront.
 
 ## Verified automated baseline
 

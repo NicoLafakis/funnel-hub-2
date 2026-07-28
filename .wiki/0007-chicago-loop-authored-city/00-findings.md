@@ -17,6 +17,8 @@ Compared references:
 
 - [`actual-in_game-graphics-city.png`](../../assets/references/actual-in_game-graphics-city.png)
 - [`target-in_game-graphics-city.png`](../../assets/references/target-in_game-graphics-city.png)
+- [`target-in_game-graphics-background-01.png`](../../assets/references/target-in_game-graphics-background-01.png)
+- [`target-in_game-graphics-background-02.png`](../../assets/references/target-in_game-graphics-background-02.png)
 
 | Dimension | Current reference | Target reference | Required correction |
 |---|---|---|---|
@@ -35,6 +37,21 @@ The key finding is that collision correctness is necessary but insufficient.
 The actual reference is now capable of legal placement, but it lacks authored
 urban intent. The target reads as a city because streets, blocks, buildings,
 open spaces, traffic, and background all agree on one spatial hierarchy.
+
+### Background-reference update (2026-07-28)
+
+The two added references clarify that the horizon is not a decorative skyline
+strip. It is a continuation of the same block-and-road grammar visible in the
+play area. Reference 01 fills every edge with progressively smaller blocks and
+tree canopy; reference 02 makes water a meaningful boundary, then carries the
+scene with bridges, a far skyline, and terrain. Both soften only distant detail
+while preserving strong near/midground silhouettes.
+
+The runtime does not ship a post-processing composer, so this pass does not add
+a costly full-screen depth-of-field shader. It uses the equivalent gameplay
+technique: instanced simplified geometry, a quieter far-distance palette, and
+the existing exponential fog. Chicago combines both reference modes—dense city
+continuation north/west/south and a broad Lake Michigan edge to the east.
 
 ## Chicago research translated into level rules
 
@@ -67,9 +84,11 @@ camera, spawn, and footprint contracts.
 - The existing seeded prop allocator populates those authored zones, and the
   final physical-bounds pass remains authoritative.
 - Four elevated-rail segments form the Loop cue above the playable streets.
-- Two water planes imply the Chicago River along the north and west edges.
-- Thirty-nine instanced low-detail buildings extend the city beyond the north,
-  west, and south boundaries, filling the former dead horizon.
+- Two narrow water planes imply the Chicago River along the north and west
+  edges; a third broad plane establishes Lake Michigan to the east.
+- 454 low-detail buildings, 1,138 tree canopies, 62 road strips, and rooftop
+  silhouettes extend the city beyond the north, west, and south boundaries.
+  Distance-banded color and fog soften the far field without post-processing.
 - Background context is render-only: it cannot be eaten, collided with, added
   to spatial hashes, or counted as progression mass.
 - The generic Harbor bridge signature is disabled for the Chicago pilot, and
@@ -91,7 +110,7 @@ camera, spawn, and footprint contracts.
 ## Acceptance evidence
 
 - Level 1 remains deterministic and preserves every prop count and mass budget.
-- Chicago context has two river planes, four rail segments, and 39 instanced
-  skyline buildings.
+- Chicago context has three water planes, four rail segments, 454 instanced
+  buildings, 1,138 trees, and 62 background road strips.
 - Level 2 and all later levels receive no Chicago context.
 - Full invariant and placement audits must remain green before deployment.
