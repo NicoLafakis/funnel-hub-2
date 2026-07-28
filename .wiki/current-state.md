@@ -35,6 +35,8 @@
 - Chicago civic modules appear once each; repeated block frontage draws from
   architectural profiles, including corrected Tribune Tower and historic
   storefront classifications.
+- Chase framing uses the approved 55° pitch/FOV 40 lens at a 15.5r standoff,
+  widened from 12r after live Loop frontage occluded too much of the grid.
 
 ## Verified automated baseline
 

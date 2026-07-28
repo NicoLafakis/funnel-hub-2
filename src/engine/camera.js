@@ -44,8 +44,9 @@ const FOV_DEFAULT = 40;
 
 // Eye distance as a multiple of avatar radius (B2: radius-derived — never an
 // absolute constant; V1 shipped a camera inside the avatar that way). At 55°
-// pitch this yields ~6.9r horizontal standoff / ~9.8r height.
-const DIST_RADIUS_MULT = 12.0;
+// pitch this yields ~8.9r horizontal standoff / ~12.7r height. The former
+// 12r distance left dense Loop frontage dominating the frame edges.
+const DIST_RADIUS_MULT = 15.5;
 
 // Orbit limits (game-design §1/§2): yaw ±120° from behind-avatar, pitch
 // clamped to 15°–55° absolute. Q/E steps are 45°.

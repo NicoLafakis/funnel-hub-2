@@ -69,17 +69,18 @@ only in a narrow forward cone (D2).
   changes framing distance, pitch, or FOV merely because the player turns.
   Section 1's gesture-stable movement basis prevents the historical feedback
   loop between heading and camera-relative input. The follow is a
-  velocity-bearing critically damped angular spring (0.2s smooth time), so a
+  velocity-bearing critically damped angular spring (0.16s smooth time), so a
   left/right reversal preserves angular velocity continuity while catching
   the avatar more promptly than the former first-order exponential lag.
-- **High pitch (55°), long lens (FOV 40), long standoff (12r).** *Amended
+- **High pitch (55°), long lens (FOV 40), long standoff (15.5r).** *Amended
   2026-07-27*: the original 40° / FOV 70 / 4r put the hole at ~85% of the
   frame width at spawn against the reference's ~23%, which inverted this
   section's own goal. A high pitch with a narrow FOV at distance is what
   gives the genre its flat toy-city read; a wide FOV up close reads as a
   fisheye at the player's feet. Orbit pitch range moves to 35°–65° to match.
   Genre reference: hole.io shows far more floor than avatar for a reason —
-  the food *is* the game.
+  the food *is* the game. Live Loop comparison moved the standoff from 12r to
+  15.5r so dense frontage reads as a city grid instead of foreground walls.
 - **Size-adaptive lag:** camera damping decreases as radius grows so big
   avatars don't feel like steering a blimp through molasses.
 - **Edge look-ahead:** camera biases ~15% toward the dominant nearby edible
