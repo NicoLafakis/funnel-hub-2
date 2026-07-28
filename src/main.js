@@ -51,7 +51,7 @@ import * as propkit from './content/propkit.js';
 import { createLandmark } from './content/landmarks.js';
 import { generateDistrict } from './content/districts.js';
 import {
-  bakeGroundTexture, bakeGroundDetail, roadMarkingQuads, DETAIL_TILE_WORLD,
+  bakeGroundTexture, bakeGroundDetail, roadMarkingQuads, detailTileRepeat,
 } from './content/groundtex.js';
 import { loadCityTextures } from './content/textures.js';
 import { loadModelKit } from './content/modelkit.js';
@@ -143,6 +143,51 @@ function starGlyphs(count) {
 // Disposes every geometry/material/texture under `root` and detaches it from
 // its parent — called before a level's content is torn down/replaced so a
 // full 100-level playthrough doesn't leak GPU buffers.
+// Average colour of the OUTER BAND of a baked ground canvas, as a CSS string
+// THREE.Color parses. Used by the horizon skirt (0004 defect 4) so the plane
+// that continues the world past the map edge is the colour the map actually
+// ends on, rather than a hand-matched constant that drifts every time the bake
+// or the exposure budget moves.
+//
+// Method: one drawImage downsample to 32x32 (the browser's own box filter does
+// the averaging, so this never touches the full 1016-2016px bitmap per pixel),
+// then mean the outermost ring of that grid — 124 samples. Cheap enough to run
+// once per level build and completely independent of what groundtex chose to
+// paint out there.
+//
+// Returns null with no DOM or no canvas, so every caller must have a fallback.
+// Never called at module top level (headless discipline: the logic suite runs
+// this file's imports in Node).
+const GROUND_EDGE_SAMPLE = 32;
+function sampleGroundEdgeColor(sourceCanvas) {
+  if (!sourceCanvas || typeof document === 'undefined') return null;
+  try {
+    const n = GROUND_EDGE_SAMPLE;
+    const small = document.createElement('canvas');
+    small.width = n;
+    small.height = n;
+    const sctx = small.getContext('2d', { willReadFrequently: true });
+    if (!sctx) return null;
+    sctx.drawImage(sourceCanvas, 0, 0, n, n);
+    const { data } = sctx.getImageData(0, 0, n, n);
+    let r = 0; let g = 0; let b = 0; let count = 0;
+    for (let j = 0; j < n; j += 1) {
+      for (let i = 0; i < n; i += 1) {
+        if (i !== 0 && i !== n - 1 && j !== 0 && j !== n - 1) continue;
+        const o = (j * n + i) * 4;
+        r += data[o]; g += data[o + 1]; b += data[o + 2];
+        count += 1;
+      }
+    }
+    if (!count) return null;
+    return `rgb(${Math.round(r / count)},${Math.round(g / count)},${Math.round(b / count)})`;
+  } catch (err) {
+    // A tainted canvas would throw on getImageData. The bake is same-origin so
+    // this cannot happen today; the caller's fallback covers it if it ever can.
+    return null;
+  }
+}
+
 function disposeObject3D(root) {
   if (!root) return;
   root.traverse((node) => {
@@ -555,8 +600,18 @@ export async function main() {
       tex.colorSpace = THREE.SRGBColorSpace;
       // The ground is viewed at a very grazing angle at the far end of the
       // map; 4x anisotropy was leaving the lane paint smeared out there, and
-      // the sharper bake is wasted without it. Capped by the device.
-      tex.anisotropy = Math.min(8, engine.renderer.capabilities.getMaxAnisotropy());
+      // the sharper bake is wasted without it.
+      //
+      // NO HARDCODED CAP (0004 defect 2). This used to be min(8, max), and the
+      // 8 was doing nothing but throwing away half the filtering the device was
+      // offering: every WebGL2 target we care about reports 16 (measured 16 on
+      // the live build, and 16 is the ceiling on Adreno / Mali / Apple GPUs
+      // too). Anisotropic taps are only spent where the sampling footprint is
+      // actually anisotropic — i.e. the far, grazing third of the ground — so
+      // this is not a full-screen 16x cost, and the ground is the ONE surface
+      // in the game where grazing minification dominates the frame. Whatever
+      // the device reports is the right answer; do not re-cap it.
+      tex.anisotropy = engine.renderer.capabilities.getMaxAnisotropy();
       groundMat.map = tex;
       groundMat.color.set('#ffffff');
     }
@@ -588,20 +643,111 @@ export async function main() {
     const detailCanvas = bakeGroundDetail({ seed: layout.seed });
     if (detailCanvas) {
       const dtex = new THREE.CanvasTexture(detailCanvas);
-      // NON-COLOUR data: this is a multiplier, not an albedo. Tagging it sRGB
-      // would push it through a decode it was never encoded with.
-      dtex.colorSpace = THREE.NoColorSpace;
+      // COLOUR SPACE — sRGB, and the old NoColorSpace tag was wrong (0004
+      // defect 2d). The reflex "a multiplier is data, so tag it NoColorSpace"
+      // is right for maps a shader consumes in linear working space (roughness,
+      // metalness, normals). This map is not one of those. It is a
+      // MeshBasicMaterial's ONLY input, so it becomes the fragment's output
+      // colour, and it is then multiplied against the FRAMEBUFFER, which holds
+      // display-referred sRGB-encoded values (outputColorSpace = srgb, no sRGB
+      // framebuffer in play). The multiply therefore happens in sRGB space, so
+      // the number that has to land in the framebuffer is the authored one.
+      //
+      // Walk the two tags through the pipeline for the tile's DETAIL_FLOOR of
+      // 0.78 (groundtex.js authors the grain to bottom out at x0.78):
+      //   NoColorSpace: 0.78 sampled raw -> shader output 0.78 -> encoded to
+      //     sRGB on write -> 0.90 lands in the framebuffer. The darkest grain
+      //     multiplies by 0.90, not 0.78: HALF the authored contrast, silently.
+      //   SRGBColorSpace: 0.78 decoded to linear 0.573 -> shader output 0.573
+      //     -> encoded back -> 0.78 lands in the framebuffer. Exact round trip,
+      //     which is what a display-space multiplier wants.
+      // groundtex.js's DETAIL_FLOOR / DETAIL_GAMMA calibration (mean ~x0.95)
+      // is written against the authored numbers, so sRGB is the tag that makes
+      // that calibration true rather than aspirational.
+      dtex.colorSpace = THREE.SRGBColorSpace;
       dtex.wrapS = THREE.RepeatWrapping;
       dtex.wrapT = THREE.RepeatWrapping;
-      const reps = level.world / DETAIL_TILE_WORLD;
+      // Whole-number repeats: a fractional count cuts the last tile mid-pattern
+      // against the plane edge, which is the one place this tile is not
+      // seamless. See groundtex.js detailTileRepeat() for the <=1.2%
+      // effective-tile-size price and why it is acceptable.
+      const reps = detailTileRepeat(level.world);
       dtex.repeat.set(reps, reps);
-      dtex.anisotropy = Math.min(8, engine.renderer.capabilities.getMaxAnisotropy());
+      // Whatever the device offers — see the layout map above for why the old
+      // min(8, ...) cap was pure loss.
+      dtex.anisotropy = engine.renderer.capabilities.getMaxAnisotropy();
       const detailMat = new THREE.MeshBasicMaterial({
         map: dtex,
         blending: THREE.MultiplyBlending,
+        // PREMULTIPLIED ALPHA IS LOAD-BEARING. DO NOT REMOVE (0004 defect 1).
+        //
+        // three.js will not emit a multiply blend equation for a material whose
+        // premultipliedAlpha is false. WebGLState.setBlending() has two
+        // switch blocks — one for premultipliedAlpha true, one for false — and
+        // the false block has NO MultiplyBlending case at all. It logs
+        //   "THREE.WebGLState: MultiplyBlending requires material.premultipliedAlpha = true"
+        // and RETURNS WITHOUT SETTING gl.blendFunc, leaving whatever the last
+        // material set — in practice NormalBlending's SRC_ALPHA /
+        // ONE_MINUS_SRC_ALPHA. This tile's alpha is 255 everywhere, so under
+        // NormalBlending it does not modulate the ground, it REPLACES it: a
+        // near-white opaque plane over the entire city, at 100% grain contrast
+        // instead of ~10%. That is both the "ground blown out white" report and
+        // most of the "spastic" crawl, from one missing boolean.
+        // (node_modules/three/src/renderers/webgl/WebGLState.js:670-696, r185.)
+        //
+        // Measured on the live build before the fix: 545 of that error in a
+        // single 453-frame run, ~127/second.
+        //
+        // The failure is SILENT in the sense that nothing throws and nothing
+        // goes black — you just get a wrong, plausible-looking frame plus
+        // console spam. Anyone adding another MultiplyBlending or
+        // SubtractiveBlending material must set this too. (AdditiveBlending is
+        // NOT affected: the non-premultiplied block does have an additive case,
+        // SRC_ALPHA / ONE, so the three additive materials in landmarks.js,
+        // signatures.js and the shockwave pool are correct as they stand.)
+        premultipliedAlpha: true,
         transparent: true,
         depthWrite: false,
         fog: false,
+        // GROUND-STACK DEPTH LADDER, rung 1 of 3 (0004 defect 3c). The three
+        // ground layers are separated by WORLD units — ground 0.00, this grain
+        // 0.05, lane paint 0.08, blob shadow decals 0.15 — and world units are
+        // the wrong currency for depth, for exactly the reason spelled out at
+        // avatar.js DISC_DEPTH_BIAS: the chase camera stands off at 12*radius,
+        // so the depth quantum at the ground grows quadratically as the hole
+        // grows. Before scene.js fixed near/far the quantum was 2.51 world
+        // units at fog near and the ENTIRE stack collapsed into one value; the
+        // order held only because this plane does not write depth and the
+        // opaque paint happened to be created first, i.e. by luck. Even after
+        // the near fix the quantum reaches 0.069u at the far ground corner,
+        // which is larger than this plane's own 0.05 lead over the ground.
+        //
+        // polygonOffset is denominated in quanta AT THE FRAGMENT'S OWN DEPTH,
+        // so it is distance- and radius-independent by construction. The
+        // ladder, all negative (= toward the eye) and all strictly inside the
+        // budget avatar.js reserves for the mouth (disc -2, collar -6):
+        //
+        //     ground plane        0   (main.js groundMat)
+        //     ground detail      -1   (here)
+        //     road markings      -2   (paintMat below)
+        //     blob shadow decals -3   (instancing.js shadowMat)
+        //
+        // The rungs only break TIES; the geometric Y offsets still carry the
+        // ordering at close range, which is why the mouth disc's 0.22-unit
+        // lead over the paint is never at risk from the paint's matching -2.
+        //
+        // TRAP: if renderer reversedDepthBuffer is ever enabled, EVERY sign in
+        // this ladder must flip. Reversed-Z makes larger window z mean nearer,
+        // and three passes polygonOffsetFactor/Units straight to gl.polygonOffset
+        // with no compensation (WebGLState.js:860-878).
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+        // This map is a multiplier against already-tone-mapped framebuffer
+        // content, so it must not be tone-mapped itself. A no-op today
+        // (renderer.toneMapping is NoToneMapping) and cheap insurance for the
+        // moment the lighting pass turns tone mapping on.
+        toneMapped: false,
       });
       const detail = new THREE.Mesh(new THREE.PlaneGeometry(level.world, level.world), detailMat);
       detail.rotation.x = -Math.PI / 2;
@@ -623,12 +769,21 @@ export async function main() {
     // Every quad merges into ONE BufferGeometry, so the entire marking set
     // across every street costs a single draw call.
     //
-    // Y-ORDER, and why it works out: paint sits at 0.08, ABOVE the detail
-    // plane at 0.05. Paint is opaque so it draws in the opaque pass and writes
-    // depth; the detail plane is transparent and depth-TESTS (depthWrite off,
-    // depthTest on), so its fragments fail behind the paint and the grain
+    // Y-ORDER, and what actually enforces it. Paint sits at 0.08, ABOVE the
+    // detail plane at 0.05. Paint is opaque so it draws in the opaque pass and
+    // writes depth; the detail plane is transparent and depth-TESTS (depthWrite
+    // off, depthTest on), so its fragments fail behind the paint and the grain
     // never muddies the paint. Where there is no paint the detail sits above
     // bare ground and passes. Blob shadows stay above everything at 0.15.
+    //
+    // That paragraph used to end there, and as written it was FALSE (0004
+    // defect 3): 0.03 world units of separation is not a depth difference the
+    // buffer could resolve at gameplay range — the whole stack quantised to one
+    // value, and the order survived on draw-order luck. It is true now, for two
+    // reasons that both had to be added: scene.js's near/far fix (0.081 -> 0.0004
+    // world units of depth resolution at the avatar) and the explicit
+    // polygonOffset ladder on the three materials, which is what makes the
+    // ordering hold at ANY distance rather than at close range only.
     const quads = roadMarkingQuads(layout);
     if (quads.length) {
       const positions = new Float32Array(quads.length * 4 * 3);
@@ -666,6 +821,12 @@ export async function main() {
       // to sit in the same light as the asphalt under it, or it glows at night.
       const paintMat = new THREE.MeshStandardMaterial({
         roughness: 0.9, metalness: 0.0, vertexColors: true,
+        // GROUND-STACK DEPTH LADDER, rung 2 of 3. See the block comment above
+        // detailMat for the whole ladder and why world-unit Y offsets are the
+        // wrong currency.
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
       });
       const paint = new THREE.Mesh(paintGeo, paintMat);
       paint.receiveShadow = true;
@@ -674,6 +835,116 @@ export async function main() {
       root.add(paint);
     }
     root.add(ground);
+
+    // HORIZON SKIRT — the world must not end in a visible slab edge (0004
+    // defect 4, `09-far.png`: the 2415-unit ground plane terminating in a hard
+    // line with buildings overhanging into raw sky-blue).
+    //
+    // WHY THE EDGE IS REACHABLE AT ALL. The chase camera's shallowest pitch is
+    // 35 degrees (camera.js PITCH_MIN) and its vertical FOV is 70 (main.js
+    // passes fov: 70), so the TOP ray of the frame sits at 35 - 35 = 0 degrees:
+    // dead level with the horizon. At the default 55-degree pitch the top ray
+    // is 20 degrees down and reaches the ground ~2.75x the camera height away;
+    // at 35 degrees it never reaches the ground at all. Fog does not start
+    // until world*0.85 (2053u on level 1), so the first thing the player sees
+    // out there is an unfogged, fully-lit cliff.
+    //
+    // WHAT THIS IS, AND WHAT IT DELIBERATELY IS NOT. Under the "premium
+    // stylized" direction (art-direction.md: Monument Valley / Donut County
+    // polish on a flat-cartoon read) the answer is cheap and flat, not a
+    // photoreal skybox and not a cubemap. This is ONE flat ring, unlit-adjacent
+    // and untextured, that continues the ground outward and lets the EXISTING
+    // fog dissolve it:
+    //
+    //   * Its colour is MEASURED off the baked ground, not authored. Two
+    //     earlier attempts and what each measured:
+    //       1. a hand-picked tint from the zone palette — A/B'd against the
+    //          live build it landed ~40% darker than the lit, textured ground
+    //          it was meant to continue, replacing the hard slab edge with an
+    //          equally hard TONE edge. A constant also has to be re-matched
+    //          every time the lighting or GROUND_ALBEDO_SCALE moves, and the
+    //          lighting pass is about to move all three lights.
+    //       2. sharing groundMat with UVs clamped to the map's border texels
+    //          (the classic clamped-ground-extension trick). Tone matched
+    //          perfectly — and streaked the border's roads, kerbs and lane
+    //          paint radially outward as hard lines all the way to the rim.
+    //          Worse than the void it replaced.
+    //     What actually works is the average of the map's OUTER BAND, taken
+    //     from the bake itself: the ground is downsampled to 32x32 with one
+    //     drawImage and the outermost ring of that grid is averaged (124
+    //     pixels, one time, at level build). That is by definition the colour
+    //     the ground reads as where it ends, it needs no palette assumption, it
+    //     tracks any future change to the bake for free, and because it goes on
+    //     a MeshStandardMaterial with the ground's roughness/metalness and the
+    //     same +Y normal it is lit identically — so the join matches under
+    //     whatever the lighting pass does next.
+    //   * Flat, so 64x1 segments / 128 triangles is enough. Fog is a per-vertex
+    //     view depth interpolated per-fragment, and view depth is linear across
+    //     a flat quad, so a single radial band fogs exactly as smoothly as
+    //     twenty-four would.
+    //   * Radii: inner 0.48*world. The ring is a polygon, so its true inradius
+    //     is 0.48*world*cos(pi/64) = 0.4794*world, still inside the square's
+    //     0.5*world inscribed circle — no gap can open at the axis mid-points
+    //     where the square's edge comes closest to the centre, and the corners
+    //     at 0.707*world are covered with room to spare. Outer is
+    //     half + fogFar, which puts the rim at or past FULL fog from any camera
+    //     position, so the rim itself is never a visible edge.
+    //   * No vertex-colour ramp and no second material: scene.fog already fades
+    //     it to fogColor over [fogNear, fogFar], and engine.scene.background is
+    //     set to that SAME colour a few lines up. So the ring reaches sky
+    //     colour on its own, and anything past fog far is already exactly the
+    //     clear colour — which is why scene.js's far = 12000 can clip the outer
+    //     rim on the largest levels with no visible seam at all.
+    //   * y = -2, i.e. UNDER the opaque ground plane, so the overlap is
+    //     occluded by depth rather than by ordering. 2 units is 29x the depth
+    //     increment at the far ground corner under the new near/far, so it
+    //     cannot z-fight; and a 2-unit step seen from 200-1800 units of camera
+    //     height at 2000+ units of range is far under a pixel.
+    //   * receiveShadow/castShadow off: the shadow camera never covers it and
+    //     it has nothing to occlude.
+    //
+    // COST, measured live: +1 draw call (42 -> 43, inside the ~40s budget
+    // art-direction.md §3 sets), +1 shader program, +0 textures, 128 triangles.
+    // It fills only the band of sky the ground edge used to occupy — zero
+    // pixels at the default 55-degree pitch, a strip at the top of frame at
+    // minimum pitch — so this is not a full-screen fill and does not threaten
+    // the mobile frame budget.
+    //
+    // KNOWN RESIDUAL, deliberately left: between the map edge and fog near
+    // (2053u on level 1) the skirt reads as a stretched continuation of the
+    // ground's border rather than as haze, because fog was deliberately pushed
+    // out to keep the district crisp to the edge (see the fog comment above,
+    // and 0003's "the reference keeps the whole district crisp"). Pulling fog
+    // back in would fix the stretch and undo that decision; that trade belongs
+    // to the lighting/atmosphere pass, not here.
+    //
+    // NOT a gameplay change: nothing reads this mesh. It is not in
+    // state.propObjects, not in either spatial hash, not a camera obstacle, and
+    // the play bounds (layout.world) are untouched.
+    //
+    // Deliberately NOT done here, and surfaced instead: a vertical two-tone
+    // GRADIENT SKY. It would draw a real horizon line, but it replaces a free
+    // glClear with a full-screen textured background pass — a genuine bandwidth
+    // cost on a tiled mobile GPU for an atmosphere decision that belongs to the
+    // sky/lighting pass, not to fixing a hard geometry edge.
+    const skirtGeo = new THREE.RingGeometry(
+      level.world * 0.48, level.world / 2 + fogFar, 64, 1,
+    );
+    const skirtMat = new THREE.MeshStandardMaterial({
+      // Fallback is the raw metro ground colour, which is exactly what
+      // groundMat itself falls back to when the bake produced no canvas
+      // (headless / no DOM), so the two still agree in that path.
+      color: sampleGroundEdgeColor(baked.canvas) || metro.ground,
+      roughness: 0.93,
+      metalness: 0.0,
+    });
+    const skirt = new THREE.Mesh(skirtGeo, skirtMat);
+    skirt.rotation.x = -Math.PI / 2;
+    skirt.position.y = -2;
+    skirt.receiveShadow = false;
+    skirt.castShadow = false;
+    skirt.name = 'horizon-skirt';
+    root.add(skirt);
 
     // Props: the district layout's seeded placements, turned into the runtime
     // prop-object contract (live fields the instanced world reads per frame:

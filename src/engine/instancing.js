@@ -110,6 +110,19 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     transparent: true,
     opacity: SHADOW_OPACITY,
     depthWrite: false,
+    // GROUND-STACK DEPTH LADDER, rung 3 of 3 (0004 defect 3c). These decals sit
+    // at y=0.15, above the lane paint at 0.08 and the grain plane at 0.05, and
+    // a world-unit lead is the wrong currency for depth once the chase camera
+    // retreats to 12*radius (see avatar.js DISC_DEPTH_BIAS, and the full ladder
+    // at main.js detailMat). -3 keeps them ahead of the paint's -2 and still
+    // strictly inside the -2 disc / -6 collar budget the mouth reserves: the
+    // mouth disc leads these decals by 0.15 world units geometrically, which is
+    // ~15 quanta at the largest radius the game actually reaches, so a
+    // one-quantum bias difference cannot overturn it and the blobs can never
+    // bleed onto the hole.
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
   });
 
   // Preallocated frame-loop temporaries (zero allocation in update()).

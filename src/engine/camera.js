@@ -198,7 +198,19 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
           // safety envelope and retain the normal framed position.
           const minimumSafeDistance = r * 1.5;
           if (hits[0].distance >= minimumSafeDistance) {
-            const pull = Math.max(minimumSafeDistance, hits[0].distance - 0.5);
+            // Stand-off from the hit face, DERIVED FROM THE NEAR PLANE rather
+            // than the flat 0.5 this used to use (0004 defect 3). scene.js
+            // raised camera.near from 0.1 to 20 to buy back 200x of depth
+            // precision, and a 0.5-unit stand-off would have parked the eye
+            // deep inside the near plane of the very surface it was avoiding —
+            // the landmark's front face would clip away and the player would
+            // see straight through the level's boss. Keeping this coupled to
+            // camera.near means the two can never drift apart again: raise
+            // near and this follows. 1.5x is margin for the frame's lerp
+            // overshoot, since camera.position eases toward desiredPos rather
+            // than snapping to it.
+            const clearance = Math.max(0.5, camera.near * 1.5);
+            const pull = Math.max(minimumSafeDistance, hits[0].distance - clearance);
             desiredPos.copy(rayOrigin).addScaledVector(rayDir, pull);
           }
         }

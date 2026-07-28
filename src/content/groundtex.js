@@ -72,7 +72,8 @@ import { mulberry32 } from '../data/seeds.js';
 //
 // Paying 22% sharpness on levels 1-65 is the right trade now and would NOT
 // have been before the detail tile existed. High-frequency surface grain moved
-// to bakeGroundDetail at a flat 16 tx/u (38x this map at L100), and lane paint
+// to bakeGroundDetail at a flat 8 tx/u (19x this map at L100 — it was 16 tx/u
+// until the moire fix doubled DETAIL_TILE_WORLD), and lane paint
 // moved to geometry. What is left in this bake is low-frequency structure, and
 // its finest feature is the 20-unit kerb ring — 8.5 texels at 0.42, with the
 // 16-unit slab pitch at 6.7. Neither is close to aliasing.
@@ -167,6 +168,17 @@ export const GROUND_ZONE_MIX = {
   block: { target: '#bdb2d2', t: 0.84, wash: 0.30 },
 };
 
+// HORIZON NOTE (0004 defect 4). main.js continues this map past the play
+// bounds with a skirt ring that shares the ground's material and CLAMPS its
+// UVs, so the skirt inherits this bake's outermost texels rather than a
+// hand-matched tint. Nothing here needs to export an edge colour, and nothing
+// should start doing so — a constant would have to be re-matched every time the
+// lighting or GROUND_ALBEDO_SCALE moves, and clamping cannot drift.
+// The relevant property of this bake is therefore that its OUTER BAND is well
+// defined: step 1 below fills the whole canvas with cssOf.pavement before
+// anything else is drawn, and districts.js keeps blocks and streets inboard of
+// the map edge, so the border texels are always that fill.
+
 // Sidewalk ring around each street. 9 was a 5-texel sliver that vanished at
 // gameplay distance — the reference's pavements are broad enough to walk a
 // row of pedestrians and lamps down, and the road/kerb/block transition is
@@ -207,16 +219,93 @@ const MIN_STREET_FOR_PARKING = 52;  // bays only on genuinely wide carriageways
 //
 // So the layout map carries LOW-frequency information only (which zone, where
 // the roads and paint are) and a small SEAMLESS TILE carries the high-frequency
-// surface grain, repeated at a fixed world size. 512px over 32 world units is
-// 16 texels per world unit — 29x the layout map, and ~2 texels per device pixel
+// surface grain, repeated at a fixed world size. 512px over 64 world units is
+// 8 texels per world unit — 19x the layout map, and ~1 texel per device pixel
 // at the gameplay camera, which is correctly sampled rather than smeared.
+// (It was 512px over 32u / 16 tx/u until the moire fix — see DETAIL_TILE_WORLD.)
 // Cost is one 512px texture (1.0MB, +mips 1.4MB) regardless of level size.
 //
 // This is the half of 0003 §8 defect 4 that the first pass missed: the defect
 // is titled "stretched, NOT TILED", and constant world density fixed only the
 // "not stretched" half.
-export const DETAIL_TILE_WORLD = 32;
+//
+// --- 32 -> 64: THE MOIRE CRAWL (0004 defect 2) ----------------------------
+// The shipped 32u tile moired violently under camera motion: hard parallel
+// stripes ruled across the whole ground, changing every frame as the camera
+// translated. Two things were blamed and only one of them was the cause.
+//
+// NOT the cause: the non-integer repeat (2415/32 = 75.46875). A repeat is a
+// constant multiplier baked into the texture matrix of a plane that never
+// moves, so it cannot change the sampling phase from frame to frame — the UVs
+// of a static world-space plane are identical on every frame regardless of
+// where the camera is. All a fractional repeat produces is ONE partial tile at
+// the far edge of the plane. That is a real (small) artifact and it is fixed
+// below by detailTileRepeat(), but it was never the crawl.
+//
+// NOT the cause: DETAIL_TEX_SIZE. Aliasing is set by the WORLD-space frequency
+// of the content against the device-pixel grid — units per cycle — and texture
+// resolution does not change units per cycle at all. It changes TEXELS per
+// cycle, which is already adequate (see below). Raising 512 -> 1024 is 4x the
+// texture memory for exactly zero effect on the artifact being reported.
+//
+// THE cause, in two parts:
+//   1. main.js was failing to set premultipliedAlpha on the multiply material,
+//      so WebGLState refused the multiply blend equation (545 console errors in
+//      a 453-frame live run) and the tile rendered as a near-OPAQUE plane at
+//      100% contrast instead of a ~5-10% modulation. The same grain, ~10x
+//      louder. That is fixed in main.js and is the dominant term.
+//   2. Even at correct amplitude, the tile's finest surviving octave sat
+//      exactly ON Nyquist. Budget, at the gameplay camera's measured 0.124
+//      world units per device pixel (see the DETAIL PASS note above):
+//
+//        lattice 128 at TILE_WORLD 32 -> 32/128 = 0.250 u/cycle -> 2.02 px/cycle
+//        lattice 128 at TILE_WORLD 64 -> 64/128 = 0.500 u/cycle -> 4.03 px/cycle
+//
+//      2.02 px/cycle IS the Nyquist limit; anything there beats against the
+//      pixel grid and the beat pattern translates with the camera, which is
+//      precisely "spastic crawl". 4.03 px/cycle is 2x margin.
+//
+// So the lever is TILE_WORLD, not TEX_SIZE, and it is doubled. What that costs
+// and what it does not:
+//   texel density  16.0 -> 8.0 tx/u   (still 19x the layout map's 0.42 tx/u)
+//   texels/cycle   4    -> 4          (unchanged — TEX_SIZE/128, TILE_WORLD
+//                                      does not enter; 4 is already adequate)
+//   texture memory 1.0MB -> 1.0MB     (same 512px tile)
+//   grain feature size doubles in world units. That is the one real cost: the
+//   surface reads as broader wear rather than fine speckle. Under the
+//   "premium stylized" direction (Monument Valley / Donut County, not
+//   photoreal) broad soft variation is the correct read anyway, and the fine
+//   grain it replaces was never visible as grain — only as aliasing.
+// Reverting is one constant. If the ground reads too plain, go back to 32 and
+// instead drop the lattice-128 octave from groundDetailPixels().
+export const DETAIL_TILE_WORLD = 64;
 export const DETAIL_TEX_SIZE = 512;
+
+/**
+ * Whole-number tile repeats across a world of this size.
+ *
+ * The tile is RepeatWrapping'd across a plane whose UVs run 0..1, so the repeat
+ * count is also the tile's phase at the plane's far edge. A fractional count
+ * (2415/64 = 37.734) cuts the last tile mid-pattern and leaves a visible
+ * discontinuity ruled down the far edge of the ground quad — the one place the
+ * tile is NOT seamless. Rounding to an integer lands the wrap exactly on the
+ * plane edge and the tile is seamless everywhere.
+ *
+ * The price is that the EFFECTIVE tile size stops being exactly
+ * DETAIL_TILE_WORLD: world/round(world/64) instead of 64. Measured over all
+ * 100 distinct world sizes (2415..4800) the worst deviation is 1.151% (world
+ * 2460 -> 64.737u), so the "same surface reads at the same size on level 1 and
+ * level 100" invariant this whole file exists to protect survives to within
+ * 1.2%. For scale, GROUND_TEXELS_PER_UNIT above knowingly accepts a 22% spread
+ * on the layout map for a texture-memory cap. 1.2% is noise.
+ *
+ * Pure and DOM-free so the logic suite can assert it.
+ * @param {number} world - level.world, in world units.
+ * @returns {number} integer repeat count, >= 1.
+ */
+export function detailTileRepeat(world) {
+  return Math.max(1, Math.round(world / DETAIL_TILE_WORLD));
+}
 // Darkest the grain may multiply the ground by. Multiply-blended, so this is
 // darkening-only, which is what surface grain physically is (dirt, wear,
 // joints) — grain never adds light.

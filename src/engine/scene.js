@@ -18,7 +18,60 @@ export function createEngine(canvasEl, THREE) {
 
   const scene = new THREE.Scene();
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 20000);
+  // NEAR/FAR — a depth-precision budget, not defaults (0004 defect 3).
+  //
+  // This shipped as (0.1, 20000): a 200,000:1 ratio into a 24-bit fixed-point
+  // depth buffer, with logarithmicDepthBuffer off. Depth resolution in a
+  // standard perspective projection is
+  //
+  //     dz(z) = z^2 * (far - near) / (near * far * (2^24 - 1))
+  //
+  // which for far >> near collapses to ~z^2 / (near * 2^24): resolution is set
+  // almost entirely by NEAR, and lowering FAR buys almost nothing. Measured on
+  // the old values:
+  //
+  //     dz(368u, at the avatar)     = 0.081 world units
+  //     dz(2052u, at fog near)      = 2.51  world units
+  //
+  // The ground stack is base ground y=0.00, ground-detail y=0.05, road paint
+  // y=0.08 — the WHOLE stack fits inside a single depth increment at the
+  // avatar, and 30 objects sit within 0.05 of y=0. It did not visibly z-fight
+  // only because the detail plane has depthWrite off and the paint happened to
+  // draw first; that is luck, not ordering, and it was one material change away
+  // from breaking.
+  //
+  // NEAR = 20. Justified against the measured minimum camera-to-geometry
+  // distance across the whole level ladder, not guessed:
+  //   * camera.js frames at dist = 12 * avatar.radius() with pitch 35-65 deg.
+  //     avatar.radius() floors at 26 on EVERY level (avatar.js: 26 + sqrt(...)),
+  //     and radiusCap = world*0.2 is never reached (max realistic radius ~151).
+  //     So the closest the camera ever legitimately sits to the hero is
+  //     12r - 1.35r = 10.65 * 26 = 277 units. NEAR is 14x inside that.
+  //   * the only other geometry the camera can approach is a tall building it
+  //     is already flying into: max prop height is 419u (building-large, every
+  //     level; 671u at L75) against a camera height of 12r*sin(pitch) = 179-283u
+  //     at spawn radius. That fly-through is a PRE-EXISTING artifact — at
+  //     near 0.1 you see through the building's culled backfaces, at near 20 you
+  //     see through it 20 units sooner. It is not made meaningfully worse.
+  //   * the one place a 20-unit near plane is genuinely new is camera.js's
+  //     landmark pull-in, which parked the eye 0.5 units off the landmark face.
+  //     That clearance is now derived from camera.near — see camera.js.
+  //
+  // FAR = 12000. Measured requirement is 8595 units (level 100: camera standoff
+  // 12*151 = 1807 plus the 6788-unit ground diagonal), and the largest fog far
+  // is 9600 (level 100, world*2.0). Anything past fog far is 100% fog colour,
+  // and scene.background is set to that same colour by main.js, so far-plane
+  // clipping out there is literally invisible. 12000 covers both with margin.
+  //
+  // Result: 600:1 instead of 200,000:1, and
+  //     dz(368u)  = 0.0004 world units  (202x finer)
+  //     dz(2052u) = 0.0125 world units  (201x finer)
+  //     dz(4830u) = 0.069  world units  (at the far ground corner)
+  // The 0.05 ground/detail gap is now 4 depth increments even at fog near.
+  // logarithmicDepthBuffer stays OFF on purpose: it costs a per-fragment
+  // gl_FragDepth write (which also disables early-Z) on every mobile GPU, and
+  // 600:1 does not need it.
+  const camera = new THREE.PerspectiveCamera(60, 1, 20, 12000);
   camera.position.set(0, 6, 12);
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.55);
@@ -48,6 +101,15 @@ export function createEngine(canvasEl, THREE) {
   // map size. followShadow() below keeps it centred on the avatar and sized to
   // the current view, which is what keeps the shadows sharp as the hole grows.
   renderer.shadowMap.enabled = true;
+  // NOTE (0004, left for the lighting pass — deliberately NOT fixed here):
+  // PCFSoftShadowMap is deprecated in r185 and WebGLShadowMap silently swaps it
+  // for PCFShadowMap with a console warning (node_modules/three/src/renderers/
+  // webgl/WebGLShadowMap.js:99). renderer.shadowMap.type reads back as 1
+  // (PCFShadowMap), not 2, on the live build — so the "soft" in this line has
+  // been a no-op for a while. Related and also unfixed here: the shadow frustum
+  // below is re-aimed every frame without texel snapping, which is why the
+  // shadow edges crawl (2048px over a 2*410u box = 0.42 world units per shadow
+  // texel, measured live).
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);

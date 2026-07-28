@@ -84,6 +84,26 @@ builds on.
     the advertised target, so the displayed goal is not a sufficient goal
     there. Fix spec and regression tests in §7. Probes in `evidence/`.
 
+12. [`0005-ground-rendering-defect/00-findings.md`](0005-ground-rendering-defect/00-findings.md)
+    — 2026-07-27 root-cause analysis of "the ground is doing something spastic and
+    it's causing tremendous screen tearing and glitching with the texture maps for
+    the ground/floor." Two independent causes. Primary: `followShadow()`
+    (`src/engine/scene.js:61-77`) rebuilds the sun's orthographic shadow volume from
+    the live avatar radius every frame with no texel snapping and no size hysteresis,
+    so the 2048px shadow map's world-to-texel mapping both translates and rescales
+    per frame and the world-space meaning of `shadow.bias` rescales with it (texel
+    0.36u at spawn to 6.6u at the level-1 radius cap; bias 2.4u to 44.6u). The ground
+    is the primary receiver. Structural: `near = 0.1` / `far = 20000`
+    (`src/engine/scene.js:21`) leaves a depth quantum of 0.058 world units at the
+    avatar's own feet at minimum radius, so all three unprotected ground-adjacent Y
+    offsets (detail 0.05, lane paint 0.08, blob decals 0.15) have zero depth
+    separation at every radius, and the layer order holds only because Three r185's
+    opaque sort is material-id ordered and the material creation order happens to
+    match the Y order. Kills six hypotheses with evidence, including filtering/mips
+    (correct by default), NPOT (WebGL2, moot), per-frame re-bake (none), pixel ratio
+    and canvas sizing (correct), and double render (single vsynced call). Fix spec in
+    §7, prevention in §8. Not fixed; no source touched.
+
 ## Working agreements (edit as the project evolves)
 
 - Docs are source-of-truth for *intent*; code comments for *mechanism*.
