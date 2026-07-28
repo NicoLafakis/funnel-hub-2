@@ -135,21 +135,24 @@ export function createRingBudget({ maxConcurrent = 2, playerLockoutSeconds = 0.3
   let live = 0;
   let lockout = 0;
   let droppedTotal = 0; // diagnostic only
+  let limit = Math.max(0, Math.floor(maxConcurrent));
 
   return {
     // Call when the PLAYER tiers up: starts the lockout window.
     notifyPlayerTierUp() { lockout = playerLockoutSeconds; },
     tryClaim() {
-      if (lockout > 0 || live >= maxConcurrent) { droppedTotal += 1; return false; }
+      if (lockout > 0 || live >= limit) { droppedTotal += 1; return false; }
       live += 1;
       return true;
     },
+    setMaxConcurrent(value) { limit = Math.max(0, Math.floor(value)); },
     release() { if (live > 0) live -= 1; },
     update(dt) { if (lockout > 0) lockout = Math.max(0, lockout - dt); },
     reset() { live = 0; lockout = 0; },
     get liveCount() { return live; },
     get lockoutRemaining() { return lockout; },
     get droppedTotal() { return droppedTotal; },
+    get maxConcurrent() { return limit; },
   };
 }
 

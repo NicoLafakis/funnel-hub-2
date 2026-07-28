@@ -1,6 +1,6 @@
 # 0001. Normalize progression economy against level target
 
-**Status:** Proposed · **Date:** 2026-07-24
+**Status:** Accepted · **Date:** 2026-07-24
 
 Serves [PRD 0001](../requirements.md).
 

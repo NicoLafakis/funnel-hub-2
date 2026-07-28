@@ -13,6 +13,8 @@
 // No browser-only API (document/window) is touched at module top level — only
 // inside createEngine(), so a bare `import` of this file never throws in Node.
 
+import { QUALITY_PROFILES } from './quality.js';
+
 // --- Sun shadow geometry (0005 RC-1). See followShadow() for the derivations.
 // Every one of these is load-bearing; none is a taste value.
 export const SHADOW_MAP_SIZE = 2048;
@@ -38,9 +40,11 @@ const SHADOW_BIAS_TEXELS = 1.0;
 // Normal-offset bias, in shadow texels. Sized against the 3-texel PCF radius.
 const SHADOW_NORMAL_BIAS_TEXELS = 3.0;
 
-export function createEngine(canvasEl, THREE) {
+export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true });
   renderer.setClearColor(0x0b0f14, 1);
+  let activeQuality = QUALITY_PROFILES[quality] || QUALITY_PROFILES.high;
+  let activeShadowMapSize = activeQuality.shadowMapSize;
 
   const scene = new THREE.Scene();
 
@@ -189,7 +193,7 @@ export function createEngine(canvasEl, THREE) {
   // dither pattern is pinned to the SCREEN and does not crawl with the world.
   renderer.shadowMap.type = THREE.PCFShadowMap;
   sun.castShadow = true;
-  sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+  sun.shadow.mapSize.set(activeShadowMapSize, activeShadowMapSize);
   sun.shadow.radius = 3;
   // bias / normalBias are NOT constants any more — followShadow() derives both
   // from the box geometry on every rebuild. See the block comment there.
@@ -273,9 +277,9 @@ export function createEngine(canvasEl, THREE) {
   function followShadow(x, z, extent) {
     // Quantise the box size. SHADOW_HALF_MIN is itself a power of two so the
     // floor cannot land the ladder on a non-power-of-two rung.
-    const want = Math.max(SHADOW_HALF_MIN, extent);
+    const want = Math.max(SHADOW_HALF_MIN, extent * activeQuality.shadowDistanceMult);
     const half = 2 ** Math.ceil(Math.log2(want));
-    const texel = (2 * half) / SHADOW_MAP_SIZE;
+    const texel = (2 * half) / activeShadowMapSize;
 
     // Snap the box centre to the texel grid in light space. The input point is
     // (x, 0, z); LS_X has no Y component by construction (up x z always does),
@@ -343,6 +347,23 @@ export function createEngine(canvasEl, THREE) {
   }
 
   const clock = new THREE.Clock();
+  const frameTimes = [];
+  let lastRenderAt = null;
+
+  function setQuality(next) {
+    const profile = typeof next === 'string' ? QUALITY_PROFILES[next] : next;
+    if (!profile) return false;
+    activeQuality = profile;
+    activeShadowMapSize = profile.shadowMapSize;
+    renderer.shadowMap.enabled = profile.shadows;
+    sun.castShadow = profile.shadows;
+    sun.shadow.mapSize.set(activeShadowMapSize, activeShadowMapSize);
+    if (sun.shadow.map && typeof sun.shadow.map.dispose === 'function') sun.shadow.map.dispose();
+    sun.shadow.map = null;
+    shadowHalf = 0;
+    resize();
+    return true;
+  }
 
   // Device-pixel-ratio aware resize, capped at 2 — same spirit as the old
   // game's `resize()` (index.html git history: `DPR = Math.min(window.devicePixelRatio||1, 2)`).
@@ -350,7 +371,7 @@ export function createEngine(canvasEl, THREE) {
     const hasWindow = typeof window !== 'undefined';
     const w = hasWindow ? window.innerWidth : (canvasEl.clientWidth || 1);
     const h = hasWindow ? window.innerHeight : (canvasEl.clientHeight || 1);
-    const dpr = Math.min((hasWindow ? window.devicePixelRatio : 1) || 1, 2);
+    const dpr = Math.min((hasWindow ? window.devicePixelRatio : 1) || 1, activeQuality.dprCap);
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, true);
     camera.aspect = w / Math.max(1, h);
@@ -363,8 +384,34 @@ export function createEngine(canvasEl, THREE) {
   resize();
 
   function render() {
+    const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    if (lastRenderAt !== null) {
+      frameTimes.push(now - lastRenderAt);
+      if (frameTimes.length > 300) frameTimes.shift();
+    }
+    lastRenderAt = now;
     renderer.render(scene, camera);
   }
 
-  return { scene, camera, renderer, clock, resize, render, setMood, followShadow };
+  function getPerformanceSnapshot() {
+    const sorted = [...frameTimes].sort((a, b) => a - b);
+    const averageMs = frameTimes.length ? frameTimes.reduce((sum, n) => sum + n, 0) / frameTimes.length : 0;
+    const p95Ms = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] : 0;
+    return {
+      quality: activeQuality.id,
+      dpr: renderer.getPixelRatio(),
+      averageMs,
+      p95Ms,
+      sustainedFps: averageMs > 0 ? 1000 / averageMs : 0,
+      longFrames: frameTimes.filter((n) => n > 50).length,
+      calls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
+      memory: { ...renderer.info.memory },
+      profile: { ...activeQuality },
+    };
+  }
+
+  setQuality(activeQuality);
+
+  return { scene, camera, renderer, clock, resize, render, setMood, followShadow, setQuality, getPerformanceSnapshot };
 }

@@ -1,5 +1,5 @@
 # Flywheel V2 CI (tech-architecture.md §5): logic + difficulty-invariant
-# suites, build, and headless E2E on every PR and every push to main.
+# suites, build, and live-deployment mobile E2E on every PR and push to main.
 # game-design.md §5: a level that fails an invariant blocks merge.
 name: CI
 
@@ -38,17 +38,11 @@ jobs:
         run: |
           npm install -g playwright
           npx playwright install chromium --with-deps
-          mkdir -p "$HOME/ci-appdata/npm/node_modules"
-          ln -s "$(npm root -g)/playwright" "$HOME/ci-appdata/npm/node_modules/playwright"
+          mkdir -p "${{ runner.temp }}/ci-appdata/npm/node_modules"
+          ln -s "$(npm root -g)/playwright" "${{ runner.temp }}/ci-appdata/npm/node_modules/playwright"
 
-      - name: Start dev server (:3003)
-        run: |
-          node scripts/serve.js &
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:3003/ > /dev/null && exit 0
-            sleep 1
-          done
-          echo "dev server did not come up" && exit 1
-
-      - name: Headless E2E (boot smoke + scripted flow)
-        run: APPDATA="$HOME/ci-appdata" npm run test:e2e
+      - name: Live mobile touch matrix
+        env:
+          APPDATA: ${{ runner.temp }}/ci-appdata
+          LIVE_URL: ${{ vars.FLYWHEEL_LIVE_URL }}
+        run: npm run test:e2e

@@ -93,7 +93,10 @@ export const RIVAL_AWARD_FRACTION = 0.10;
 export const REPLAY_REWARD_FRACTION = 0.20;
 export const ORDINARY_MASS_FRACTION = 0.78;
 export const AVAILABLE_MASS_BUDGET_FRACTION = 8;
-export const RIVAL_HOARD_SAFETY = 0.95;
+// Leave a small deterministic margin below modeled player reach. Exact parity
+// is brittle when physically legal relocation changes route ordering without
+// changing any mass.
+export const RIVAL_HOARD_SAFETY = 0.948;
 
 // Deterministic per-district route calibration. These coefficients were
 // measured against the seeded no-upgrade soak route and keep clears inside

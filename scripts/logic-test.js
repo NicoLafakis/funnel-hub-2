@@ -61,6 +61,11 @@ async function main() {
   const upgradesMod = await import('../src/meta/upgrades.js');
   const progressionMod = await import('../src/meta/progression.js');
   const avatarMod = await import('../src/engine/avatar.js');
+  const inputMod = await import('../src/engine/input.js');
+  const qualityMod = await import('../src/engine/quality.js');
+  const effectsMod = await import('../src/engine/effects.js');
+  const physicalBoundsMod = await import('../src/content/physical-bounds.js');
+  const startupMod = await import('../src/meta/startup.js');
   const THREE = await import('three');
 
   const {
@@ -70,6 +75,116 @@ async function main() {
   } = formulas;
   const { METROS } = metrosMod;
   const { generateAllLevels, generateLevel } = levelsMod;
+
+  console.log('INPUT:');
+  {
+    const machine = inputMod.createInputMachine();
+    machine.pointerDown({ id: 1, x: 350, y: 580, pointerType: 'touch', viewportW: 360, viewportH: 640 });
+    machine.pointerMove({ id: 1, x: 310, y: 520, viewportW: 360, viewportH: 640 });
+    machine.update(0.1, {});
+    check('first touch owns movement even in the lower-right quadrant',
+      machine.state === 'key-steer' && Math.hypot(machine.move.x, machine.move.z) > 0);
+    check('input diagnostics expose stable movement ownership',
+      machine.pointerRoles.length === 1 && machine.pointerRoles[0].role === 'stick');
+
+    machine.pointerDown({ id: 2, x: 40, y: 500, pointerType: 'touch', viewportW: 360, viewportH: 640 });
+    machine.pointerMove({ id: 2, x: 80, y: 500, viewportW: 360, viewportH: 640 });
+    check('second touch owns camera while movement remains held',
+      machine.state === 'orbit'
+        && machine.pointerRoles.find((p) => p.id === 1).role === 'stick'
+        && machine.pointerRoles.find((p) => p.id === 2).role === 'orbit'
+        && machine.consumeOrbit().yaw > 0);
+
+    machine.pointerUp(1);
+    check('remaining camera touch is not silently promoted to movement',
+      machine.pointerRoles.length === 1 && machine.pointerRoles[0].role === 'orbit');
+    machine.pointerDown({ id: 3, x: 300, y: 500, pointerType: 'touch', viewportW: 360, viewportH: 640 });
+    check('next new touch may claim movement while camera ownership stays stable',
+      machine.pointerRoles.find((p) => p.id === 2).role === 'orbit'
+        && machine.pointerRoles.find((p) => p.id === 3).role === 'stick');
+
+    machine.blur();
+    machine.update(0.3, {});
+    check('lifecycle cancellation clears roles and reaches neutral within 300ms',
+      machine.state === 'idle' && machine.pointerRoles.length === 0
+        && machine.move.x === 0 && machine.move.z === 0);
+  }
+
+  console.log('ADAPTIVE QUALITY:');
+  check('automatic initial quality is conservative on mobile and high on desktop',
+    qualityMod.selectInitialQuality({ mobile: true }) === 'medium'
+      && qualityMod.selectInitialQuality({ mobile: true, deviceMemory: 4 }) === 'low'
+      && qualityMod.selectInitialQuality({ mobile: false }) === 'high');
+  check('manual quality mode overrides automatic device selection',
+    qualityMod.selectInitialQuality({ mode: 'high', mobile: true, deviceMemory: 2 }) === 'high');
+  {
+    const controller = qualityMod.createQualityController({ initial: 'high', sustainMs: 100, cooldownMs: 0 });
+    check('short frame-time spikes do not flap quality', controller.sample(40) === null && controller.tier === 'high');
+    controller.sample(40);
+    const changed = controller.sample(40);
+    check('sustained poor frame time downgrades exactly one tier', changed === 'medium' && controller.tier === 'medium');
+    for (let i = 0; i < 10; i += 1) controller.sample(40);
+    check('automatic downgrade is limited to once per level', controller.tier === 'medium');
+    controller.beginLevel();
+    controller.sample(40); controller.sample(40);
+    check('quality can downgrade again only after a new level and sustained pressure', controller.sample(40) === 'low');
+  }
+
+  console.log('PHYSICAL BOUNDS:');
+  {
+    const entries = Object.values(physicalBoundsMod.PHYSICAL_BOUNDS);
+    check('every registered visual ID resolves authoritative physical metadata',
+      entries.length === Object.keys(archetypesMod.VISUAL_ARCHETYPES).length
+        && entries.every((b) => b.width > 0 && b.depth > 0 && b.height > 0
+          && Number.isFinite(b.baseAnchor.x) && Number.isFinite(b.baseAnchor.y) && Number.isFinite(b.baseAnchor.z)
+          && b.forwardAxis === '+z'
+          && b.allowedZones.length > 0 && b.worldUnitsPerMetre === propkit.WORLD_UNITS_PER_METRE));
+    check('committed bounds exactly match every merged runtime geometry',
+      Object.values(archetypesMod.VISUAL_ARCHETYPES).every((descriptor) => {
+        const measured = propkit.visualGeometryFingerprint(descriptor.id, descriptor.gameplayKind, THREE).bounds;
+        const declared = physicalBoundsMod.PHYSICAL_BOUNDS[descriptor.id];
+        return measured.length === 6
+          && approxEqual(declared.width, measured[3] - measured[0])
+          && approxEqual(declared.height, measured[4] - measured[1])
+          && approxEqual(declared.depth, measured[5] - measured[2])
+          && approxEqual(declared.baseAnchor.x, (measured[0] + measured[3]) / 2)
+          && approxEqual(declared.baseAnchor.y, measured[1])
+          && approxEqual(declared.baseAnchor.z, (measured[2] + measured[5]) / 2);
+      }));
+    const fp = physicalBoundsMod.renderedGroundFootprint('street_person_red', 'person', 3, Math.PI / 2);
+    check('rendered ground footprint applies final scale and yaw without THREE',
+      fp.width === physicalBoundsMod.PHYSICAL_BOUNDS.street_person_red.width * 3
+        && fp.depth === physicalBoundsMod.PHYSICAL_BOUNDS.street_person_red.depth * 3
+        && fp.yaw === Math.PI / 2);
+  }
+
+  console.log('STARTUP:');
+  check('fresh saves route directly to level 1 while returning saves retain the map',
+    startupMod.startRoute(saveMod.defaultSave()) === 'level-1'
+      && startupMod.startRoute({ unlockedLevel: 2, stars: { 1: 1 } }) === 'world-map');
+  {
+    const latch = startupMod.createStartLatch();
+    check('repeated Start actions accept at most one transition',
+      latch.accept() === true && latch.accept() === false && latch.accepted === true);
+  }
+  {
+    let textures = 'pending';
+    let models = 'pending';
+    let releaseTexture;
+    const delayed = new Promise((resolve) => { releaseTexture = resolve; });
+    const optional = startupMod.beginOptionalAssets({
+      textures: () => delayed,
+      models: () => Promise.reject(new Error('optional model unavailable')),
+      onTextures: (value) => { textures = value; },
+      onModels: (value) => { models = value; },
+    });
+    await Promise.resolve();
+    check('delayed optional assets do not synchronously block startup', textures === 'pending');
+    releaseTexture('loaded');
+    await Promise.all([optional.textureTask, optional.modelTask]);
+    check('delayed and rejected optional assets resolve to loaded/procedural outcomes',
+      textures === 'loaded' && models === null);
+  }
 
   // ---------------------------------------------------------------------
   console.log('FORMULAS:');
@@ -372,6 +487,13 @@ async function main() {
 
   // ---------------------------------------------------------------------
   console.log('SAVE/LOAD:');
+  {
+    const normalizedSettings = saveMod.saveSave({ settings: { soundMuted: true, qualityMode: 'turbo', resolvedQuality: 'low' } }).settings;
+    check('quality and sound settings normalize without breaking old saves',
+      normalizedSettings.soundMuted === true
+        && normalizedSettings.qualityMode === 'auto'
+        && normalizedSettings.resolvedQuality === 'low');
+  }
   {
     // Mocked localStorage path.
     const memStore = {};
@@ -1384,6 +1506,43 @@ async function main() {
     }
     check('every Audio method is callable without throwing when no AudioContext exists', !threw);
     check('Audio.ac stays null with no AudioContext available (never fakes one)', Audio.ac === null);
+  }
+
+  console.log('MOBILE UI CONTRACT:');
+  {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const root = path.join(path.dirname(process.argv[1]), '..');
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    const mainSrc = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
+    check('viewport permits zoom and requests full safe-area coverage',
+      /viewport-fit=cover/.test(html) && !/user-scalable=no|maximum-scale=1/.test(html));
+    check('pause and sound controls are named 44px touch targets',
+      /id="pauseBtn"[^>]+aria-label="Pause game"/.test(html)
+        && /\.iconbtn\{width:44px;height:44px/.test(html)
+        && (html.match(/class="[^"]*sound-toggle/g) || []).length >= 3);
+    check('all four safe-area insets are represented in the UI contract',
+      ['top', 'right', 'bottom', 'left'].every((side) => html.includes(`env(safe-area-inset-${side})`)));
+    check('Level Complete exposes primary next, optional upgrade, and map actions',
+      /id="nextBtn"/.test(html) && /id="upgradeBtn"/.test(html) && /id="doneMapBtn"/.test(html)
+        && /nextBtn\.addEventListener\('click', continueDirectly\)/.test(mainSrc));
+    check('pause stops play updates and persisted quality/sound controls are wired',
+      /state\.mode = 'paused'/.test(mainSrc)
+        && /state\.saveData\.settings\.qualityMode = normalized/.test(mainSrc)
+        && /state\.saveData\.settings\.soundMuted = Audio\.muted/.test(mainSrc));
+    check('final campaign Next reaches victory before chapter-end map routing',
+      mainSrc.indexOf('level.n >= LEVEL_COUNT', mainSrc.indexOf('function continueDirectly'))
+        < mainSrc.indexOf('level.levelInChapter >= 10', mainSrc.indexOf('function continueDirectly')));
+    check('runtime quality applies profile effects and optional-detail density',
+      /setMaxConcurrent\(Math\.max\(0, Math\.round\(2 \* profile\.effectsDensity\)\)\)/.test(mainSrc)
+        && /state\.world\.setQuality\(profile\)/.test(mainSrc));
+  }
+
+  {
+    const budget = effectsMod.createRingBudget({ maxConcurrent: 2 });
+    check('quality can lower the rival feedback budget without suppressing player feedback',
+      budget.tryClaim() && budget.tryClaim() && budget.maxConcurrent === 2
+        && (budget.setMaxConcurrent(0), budget.maxConcurrent === 0 && !budget.tryClaim()));
   }
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

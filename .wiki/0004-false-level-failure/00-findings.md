@@ -5,7 +5,7 @@
 **HEAD investigated:** `330f569`
 **Severity:** high (the loss is legitimate, the game's own copy tells the
 player it was not, which reads as a broken win check)
-**Status:** FIXED (2026-07-27), uncommitted in the working tree. §7 is the
+**Status:** FIXED (2026-07-27) in commit `9c1f460`. §7 is the
 original fix outline and §9 the build sheet; both were written before any code
 existed and are kept verbatim as the record of what was specified. What was
 actually built, and the two deviations from the sheet, are in §10 at the

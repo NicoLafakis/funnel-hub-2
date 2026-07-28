@@ -136,6 +136,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
   let propGroup = [];
   let propSlot = [];
   let edibilityState = new Uint8Array(0);
+  let detailDensity = 1;
 
   // Blob shadows: one InstancedMesh covering every prop, slot === propIndex.
   let shadowMesh = null;
@@ -556,6 +557,14 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     }
   }
 
+  // Quality tiers may remove cheap decorative grounding, but never hide the
+  // edible meshes themselves. This saves one instanced draw and its matrix
+  // uploads on the low tier without changing gameplay information.
+  function setQuality(profile = {}) {
+    detailDensity = Number.isFinite(profile.detailDensity) ? profile.detailDensity : 1;
+    if (shadowMesh) shadowMesh.visible = detailDensity >= 0.7;
+  }
+
   /**
    * Hide/show a prop (eaten props collapse to zero scale but keep their
    * slot). Hidden props skip matrix updates entirely.
@@ -600,6 +609,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     pulseInstance,
     setBuildingGlow,
     setGlobalTint,
+    setQuality,
     setVisible,
     dispose,
     get drawCalls() { return groups.size + (shadowMesh ? 1 : 0); },

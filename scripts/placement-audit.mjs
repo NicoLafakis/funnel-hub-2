@@ -21,6 +21,9 @@
 import { generateLevel } from '../src/data/levels.js';
 import { generateDistrict } from '../src/content/districts.js';
 import { kindFootprint, kindRenderScale } from '../src/content/propkit.js';
+import { physicalBoundsFor } from '../src/content/physical-bounds.js';
+import { landmarkBoundsFor } from '../src/content/physical-bounds.js';
+import { capstoneGateRadius } from '../src/data/formulas.js';
 
 // Default to the full campaign. The tightest ceiling here is 0.5%, and a
 // 20-level sample only yields ~1000 buildings — about 5 buildings of
@@ -89,7 +92,8 @@ function streetRect(st) {
 // The prop's footprint AS DRAWN: authored local w/d scaled by the art render
 // scale, oriented by the prop's own yaw.
 function propRect(p) {
-  const dim = kindFootprint(p.kind);
+  const physical = physicalBoundsFor(p.visualId, p.kind);
+  const dim = p.visualId ? { w: physical.width, d: physical.depth } : kindFootprint(p.kind);
   const s = kindRenderScale(p.kind, p.radius * (p.scaleMult || 1));
   return { x: p.x, z: p.z, hw: (dim.w / 2) * s, hd: (dim.d / 2) * s, rotY: p.rotY || 0 };
 }
@@ -146,11 +150,13 @@ const totals = {
   lampsKerbside: 0, lampsArmOverRoad: 0,
   clutter: 0, clutterInRoad: 0,
   buildingPairs: 0, buildingsIntersecting: 0, worstIntersection: 0, worstIntersectionAt: '',
+  allPairs: 0, allIntersecting: 0, worstAllIntersection: 0, worstAllIntersectionAt: '',
 };
 const archetypes = {};
 
 for (let n = 1; n <= LEVELS; n += 1) {
-  const layout = generateDistrict(generateLevel(n));
+  const level = generateLevel(n);
+  const layout = generateDistrict(level);
   archetypes[layout.archetype] = (archetypes[layout.archetype] || 0) + 1;
   const streets = layout.streets.map(streetRect);
 
@@ -173,6 +179,40 @@ for (let n = 1; n <= LEVELS; n += 1) {
         if (depth > totals.worstIntersection) {
           totals.worstIntersection = depth;
           totals.worstIntersectionAt = `L${n} ${ra.kind}/${rb.kind}`;
+        }
+      }
+    }
+  }
+
+  const allRects = layout.props.map((q) => ({ r: propRect(q), kind: q.kind, visualId: q.visualId }));
+  const landmarkPhysical = landmarkBoundsFor(level.metro.landmarkType);
+  if (landmarkPhysical) {
+    const scale = Math.min(1, capstoneGateRadius(level) / landmarkPhysical.boundingRadius);
+    allRects.push({
+      kind: level.metro.landmarkType,
+      visualId: level.metro.landmarkType,
+      r: {
+        x: layout.landmark.x,
+        z: layout.landmark.z,
+        hw: landmarkPhysical.width * scale / 2,
+        hd: landmarkPhysical.depth * scale / 2,
+        rotY: layout.landmark.rotY || 0,
+      },
+    });
+  }
+  for (let i = 0; i < allRects.length; i += 1) {
+    for (let j = i + 1; j < allRects.length; j += 1) {
+      const a = allRects[i];
+      const b = allRects[j];
+      const reach = Math.hypot(a.r.hw, a.r.hd) + Math.hypot(b.r.hw, b.r.hd);
+      if (Math.hypot(a.r.x - b.r.x, a.r.z - b.r.z) > reach) continue;
+      totals.allPairs += 1;
+      const depth = obbOverlapDepth(a.r, b.r);
+      if (depth > 0) {
+        totals.allIntersecting += 1;
+        if (depth > totals.worstAllIntersection) {
+          totals.worstAllIntersection = depth;
+          totals.worstAllIntersectionAt = `L${n} ${a.visualId || a.kind}/${b.visualId || b.kind}`;
         }
       }
     }
@@ -277,22 +317,18 @@ if (totals.buildingsInRoad) {
   console.log(`\n  mean carriageway overhang of an offending building: ${mean.toFixed(1)}u`);
 }
 
-// Building-on-building intersection: INFORMATIONAL, deliberately not gated.
-// See findings §18 and §19. No pass threshold is given because any threshold
-// today's number satisfies would be one invented to be satisfied, rather than
-// one derived from what a city should look like. The number is printed so it
-// stays visible and so a future change can be read against it.
-//
-// NOTE this row counts BUILDINGS ONLY. The all-kind figure is worse and is the
-// real measure — 11.36% of all props, of which 58.4% are still `buried` rather
-// than near-misses (§19). Do not read a falling number here as the map being
-// clean; cross-kind overlap (a bike inside a shopfront) is invisible to this
-// row by construction, which is exactly how the defect stayed hidden.
-console.log('\n  INFORMATIONAL (not gated, see findings §18, §19):');
+// Final transformed physical footprints are a hard gate. The building-only
+// row remains a diagnostic breakdown, while any all-kind penetration above
+// OVERLAP_EPSILON fails the audit.
+console.log('\n  PHYSICAL-PLACEMENT GATE:');
+if (totals.allIntersecting > 0) failed = true;
+console.log(`    all-kind intersections above ${OVERLAP_EPSILON}u: ${totals.allIntersecting}`
+  + ` of ${totals.allPairs} close pairs`);
+console.log(`    worst all-kind intersection: ${totals.worstAllIntersection.toFixed(1)}u  ${totals.worstAllIntersectionAt}`);
 console.log(`    buildings intersecting another building: ${totals.buildingsIntersecting}`
   + ` of ${totals.buildingPairs} close pairs`
   + `  (${fmt(totals.buildingsIntersecting, totals.buildings)} of all buildings)`);
-console.log(`    worst intersection depth: ${totals.worstIntersection.toFixed(1)}u  ${totals.worstIntersectionAt}`);
+console.log(`    worst building intersection: ${totals.worstIntersection.toFixed(1)}u  ${totals.worstIntersectionAt}`);
 
 console.log(`\n${failed ? 'FAIL' : 'PASS'} — see .wiki/0003-hole-feel-and-visual-fidelity/00-findings.md §2, §8`);
 process.exitCode = failed ? 1 : 0;

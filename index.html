@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="icon" type="image/png" href="assets/logo-mark.png">
 <meta property="og:title" content="Flywheel — Swallow the CRM">
 <meta property="og:description" content="A rogue flywheel is eating the entire HubSpot platform. 10 Hubs. One flywheel. Zero survivors.">
@@ -14,15 +14,20 @@
   :root{
     --orange:#ff5c35; --coral:#ff7a59; --navy:#213343; --navy2:#33475b;
     --teal:#00a4bd; --cream:#f5f8fa; --gold:#f5c26b;
+    --safe-top:env(safe-area-inset-top);--safe-right:env(safe-area-inset-right);
+    --safe-bottom:env(safe-area-inset-bottom);--safe-left:env(safe-area-inset-left);
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{width:100%;height:100%;overflow:hidden;background:#101820;font-family:'Trebuchet MS','Segoe UI',system-ui,sans-serif;user-select:none;}
   #game{display:block;width:100%;height:100%;touch-action:none;}
 
   /* ---------- HUD ---------- */
-  #hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px;pointer-events:none;z-index:5;}
+  #hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 12px calc(14px + env(safe-area-inset-left));pointer-events:none;z-index:5;}
   .hud-left,.hud-right{display:flex;flex-direction:column;gap:6px;}
   .hud-right{align-items:flex-end;}
+  .hud-controls{display:flex;gap:8px;pointer-events:auto;}
+  .iconbtn{width:44px;height:44px;border-radius:50%;border:3px solid #1c2733;background:#fff;color:#1c2733;font:800 19px/1 inherit;cursor:pointer;box-shadow:0 3px 0 rgba(28,39,51,.35);}
+  .iconbtn:focus-visible,.btn:focus-visible,.select-control:focus-visible{outline:3px solid var(--gold);outline-offset:3px;}
   /* Chunky Hole.io-style chrome: bright rounded-full pills, thick dark
      outline, subtle inner highlight, cartoon type. */
   .pill{background:#fff;color:#1c2733;padding:7px 16px;border-radius:999px;font-size:14px;font-weight:800;letter-spacing:.5px;border:3px solid #1c2733;box-shadow:inset 0 2px 0 rgba(255,255,255,.65),0 3px 0 rgba(28,39,51,.35);white-space:nowrap;}
@@ -52,10 +57,10 @@
      than an animated one on purpose: index.html's reduced-motion block kills
      every animation globally, so any state that only reads as "act now" while
      moving would silently vanish for those players. */
-  #capstonechip{font-size:12.5px;letter-spacing:.4px;background:#e8eef3;color:#3d5060;}
+  #capstonechip{font-size:14px;letter-spacing:.4px;background:#e8eef3;color:#3d5060;}
   #capstonechip.ready{background:linear-gradient(180deg,#8bea45,#5fc41d);color:#12300a;}
   #capstonechip.done{background:#fff;color:#7d8f9c;opacity:.65;}
-  #sizehint{font-size:11.5px;font-weight:700;letter-spacing:.3px;color:#1c2733;padding:4px 12px;background:#fff;border:2px solid #1c2733;border-radius:99px;box-shadow:0 2px 0 rgba(28,39,51,.3);}
+  #sizehint{font-size:14px;font-weight:700;letter-spacing:.3px;color:#1c2733;padding:4px 12px;background:#fff;border:2px solid #1c2733;border-radius:99px;box-shadow:0 2px 0 rgba(28,39,51,.3);}
 
   /* ---------- Banner (big center announcements) ---------- */
   /* Objective speech bubble (Hole.io "Grow to Size 15!" style): white rounded
@@ -67,7 +72,7 @@
   #banner.show{opacity:1;transform:translateX(-50%) scale(1);}
 
   /* ---------- Toasts (achievements) ---------- */
-  #toasts{position:fixed;left:14px;bottom:14px;display:flex;flex-direction:column;gap:8px;z-index:8;pointer-events:none;}
+  #toasts{position:fixed;left:calc(14px + env(safe-area-inset-left));bottom:calc(14px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;z-index:8;pointer-events:none;}
   .toast{background:linear-gradient(135deg,rgba(33,51,67,.96),rgba(16,24,32,.96));border:1px solid var(--gold);color:#fff;padding:10px 16px;border-radius:12px;font-size:13.5px;box-shadow:0 4px 20px rgba(0,0,0,.55);animation:toastIn .3s cubic-bezier(.2,1.4,.4,1);max-width:300px;}
   .toast b{color:var(--gold);}
   @keyframes toastIn{from{transform:translateX(-130%);opacity:0}}
@@ -75,8 +80,8 @@
   @keyframes toastOut{to{transform:translateX(-130%);opacity:0}}
 
   /* ---------- Fake CRM notifications ---------- */
-  #notifs{position:fixed;right:14px;top:108px;display:flex;flex-direction:column;gap:8px;z-index:8;pointer-events:none;max-width:min(300px,70vw);}
-  .notif{background:rgba(245,248,250,.96);color:#213343;padding:9px 13px;border-radius:10px;font-size:12.5px;line-height:1.35;box-shadow:0 4px 18px rgba(0,0,0,.4);border-left:3px solid var(--orange);animation:notifIn .3s cubic-bezier(.2,1.4,.4,1);}
+  #notifs{position:fixed;right:calc(14px + env(safe-area-inset-right));top:calc(108px + env(safe-area-inset-top));display:flex;flex-direction:column;gap:8px;z-index:8;pointer-events:none;max-width:min(300px,70vw);}
+  .notif{background:rgba(245,248,250,.96);color:#213343;padding:9px 13px;border-radius:10px;font-size:14px;line-height:1.35;box-shadow:0 4px 18px rgba(0,0,0,.4);border-left:3px solid var(--orange);animation:notifIn .3s cubic-bezier(.2,1.4,.4,1);}
   @keyframes notifIn{from{transform:translateX(130%);opacity:0}}
   .notif.out{animation:notifOut .4s forwards;}
   @keyframes notifOut{to{transform:translateX(130%);opacity:0}}
@@ -86,7 +91,7 @@
      column — max-height 100dvh + overflow-y auto — so ALL buttons stay
      reachable at 360x640 and 800x450. `safe center` keeps content centered
      when it fits but never clips the top when it overflows. */
-  .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:safe center;text-align:center;z-index:10;background:radial-gradient(ellipse at center,rgba(33,51,67,.88),rgba(10,16,22,.96));backdrop-filter:blur(6px);padding:24px;transition:opacity .35s;max-height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:safe center;text-align:center;z-index:10;background:radial-gradient(ellipse at center,rgba(33,51,67,.88),rgba(10,16,22,.96));backdrop-filter:blur(6px);padding:calc(24px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));transition:opacity .35s;max-height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
   .hidden{opacity:0;pointer-events:none;}
   .logo{font-size:clamp(52px,10vw,96px);font-weight:900;letter-spacing:-2px;line-height:.95;
     background:linear-gradient(120deg,var(--coral) 20%,var(--gold) 60%,var(--teal));-webkit-background-clip:text;background-clip:text;color:transparent;
@@ -96,6 +101,13 @@
   .btn{margin-top:30px;background:linear-gradient(135deg,var(--orange),var(--coral));color:#fff;border:none;padding:16px 46px;font-size:19px;font-weight:800;border-radius:999px;cursor:pointer;letter-spacing:.5px;box-shadow:0 8px 28px rgba(255,92,53,.45);transition:transform .15s,box-shadow .15s;}
   .btn:hover{transform:scale(1.06);box-shadow:0 12px 34px rgba(255,92,53,.6);}
   .btn:active{transform:scale(.97);}
+  .btn.secondary{background:#fff;color:#213343;box-shadow:0 6px 20px rgba(0,0,0,.25);}
+  .btn.tertiary{background:transparent;border:2px solid rgba(255,255,255,.65);box-shadow:none;}
+  .actionrow{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:22px;}
+  .actionrow .btn{margin-top:0;}
+  .settings-box{display:grid;gap:14px;width:min(100%,380px);margin-top:22px;padding:18px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:16px;text-align:left;}
+  .settings-box label{display:grid;gap:7px;color:#fff;font-size:14px;font-weight:800;}
+  .select-control{min-height:44px;border-radius:10px;border:2px solid #1c2733;padding:8px 12px;font:700 16px inherit;background:#fff;color:#1c2733;}
   .minilogo{font-size:56px;margin-bottom:8px;animation:bob 2.2s ease-in-out infinite;}
   @keyframes bob{50%{transform:translateY(-10px)}}
   .ovtitle{font-size:clamp(30px,5.5vw,48px);font-weight:900;color:#fff;}
@@ -115,6 +127,7 @@
   .bgvid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
   #startScreen::after{content:'';position:absolute;inset:0;background:linear-gradient(rgba(10,16,22,.45),rgba(10,16,22,.82));pointer-events:none;}
   #startScreen>*:not(.bgvid){position:relative;z-index:2;}
+  #startScreen .tag:not(#mobilePremise),#startScreen .howto{display:none;}
   .hubicon{width:min(34vw,150px);border-radius:50%;box-shadow:0 8px 30px rgba(0,0,0,.55),0 0 40px rgba(0,164,189,.2);margin-bottom:14px;}
   .emblem{width:min(40vw,190px);border-radius:50%;margin-bottom:10px;
     box-shadow:0 0 60px rgba(255,92,53,.45),0 0 120px rgba(0,164,189,.25);
@@ -150,7 +163,7 @@
      gestures and the real joystick visual (#stickBase/#stickNub below).
      They appear only on coarse pointers AND only while the HUD is up (i.e.
      in play), via the sibling selector — zero JS required. */
-  .touchzone{position:fixed;bottom:0;top:38%;width:50%;z-index:4;pointer-events:none;display:none;align-items:flex-end;justify-content:center;padding-bottom:9vh;color:rgba(255,255,255,.55);font-size:11.5px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;}
+  .touchzone{position:fixed;bottom:env(safe-area-inset-bottom);top:38%;width:50%;z-index:4;pointer-events:none;display:none;align-items:flex-end;justify-content:center;padding-bottom:9vh;color:rgba(255,255,255,.72);font-size:14px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;}
   #touchStick{left:0;}
   #touchOrbit{right:0;}
   .touchzone span{position:relative;text-shadow:0 2px 0 rgba(28,39,51,.6);}
@@ -194,7 +207,7 @@
 
   /* Screen-space corner minimap (game-design §2). Canvas is injected by
      src/ui/minimap.js; this styles the container + canvas chrome. */
-  #minimap{position:fixed;right:14px;bottom:14px;width:96px;height:96px;z-index:6;pointer-events:none;transition:opacity .3s;}
+  #minimap{position:fixed;right:calc(14px + env(safe-area-inset-right));bottom:calc(14px + env(safe-area-inset-bottom));width:96px;height:96px;z-index:6;pointer-events:none;transition:opacity .3s;}
   #minimap canvas{display:block;width:96px;height:96px;border-radius:14px;border:3px solid #1c2733;box-shadow:0 4px 0 rgba(28,39,51,.35);}
 
   /* Duelist telegraph (game-design §4): screen-edge arrow, rotated toward the
@@ -222,7 +235,7 @@
   /* ---------- Small viewports (B9): 360x640 portrait, 800x450 landscape ---------- */
   @media (max-width:420px){
     .logo{font-size:46px;}
-    .tag{font-size:13.5px;margin-top:10px;}
+    .tag{font-size:14px;margin-top:10px;}
     .howto{font-size:12px;gap:8px;margin-top:18px;}
     .btn{padding:14px 34px;font-size:16px;margin-top:22px;}
     .emblem{width:min(34vw,130px);}
@@ -230,9 +243,9 @@
     .metro-levels{grid-template-columns:repeat(5,minmax(0,1fr));}
   }
   @media (max-height:480px){
-    .overlay{justify-content:flex-start;padding-top:14px;padding-bottom:14px;}
+    .overlay{justify-content:flex-start;padding-top:calc(14px + env(safe-area-inset-top));padding-bottom:calc(14px + env(safe-area-inset-bottom));}
     .logo{font-size:38px;}
-    .tag{font-size:12.5px;margin-top:8px;}
+    .tag{font-size:14px;margin-top:8px;}
     .howto{display:none;}
     .minilogo{font-size:34px;margin-bottom:2px;}
     .emblem{width:76px;margin-bottom:4px;}
@@ -243,6 +256,8 @@
     .credit{margin-top:14px;}
     #worldMapGrid{max-height:46dvh;margin-top:10px;}
     #shopTracks{margin-top:10px;}
+    .actionrow{margin-top:12px;}
+    .settings-box{margin-top:10px;padding:12px;}
   }
 
   /* ---------- prefers-reduced-motion (tech §6): kill shake/slow-mo-flavored
@@ -268,6 +283,10 @@
     <span id="sizehint">🌀 swallow things smaller than your rim</span>
   </div>
   <div class="hud-right">
+    <div class="hud-controls" aria-label="Game controls">
+      <button class="iconbtn sound-toggle" id="hudSoundBtn" type="button" aria-label="Mute sound" aria-pressed="false">🔊</button>
+      <button class="iconbtn" id="pauseBtn" type="button" aria-label="Pause game">⏸</button>
+    </div>
     <span class="pill" id="timer">⏱ 60</span>
     <span class="pill" id="score">Mass <b>0</b> / 100</span>
     <!-- The landmark win condition, always on while it applies. 91 of 100
@@ -283,8 +302,8 @@
 <div id="notifs"></div>
 
 <!-- V2: touch affordance hints (visible only on coarse pointers while playing) -->
-<div class="touchzone" id="touchStick" aria-hidden="true"><span>Drag — move</span></div>
-<div class="touchzone" id="touchOrbit" aria-hidden="true"><span>Drag — orbit cam</span></div>
+<div class="touchzone" id="touchStick" aria-hidden="true"><span>First touch — move</span></div>
+<div class="touchzone" id="touchOrbit" aria-hidden="true"><span>Second touch — camera</span></div>
 
 <!-- V2: corner minimap (canvas injected by src/ui/minimap.js) -->
 <div id="minimap" class="hidden" aria-hidden="true"></div>
@@ -323,7 +342,9 @@
     <span>🏙️ Devour landmarks. Yes, THE landmarks.</span>
     <span>🎵 M — mute · 👾 try the Konami code</span>
   </div>
+  <div class="tag" id="mobilePremise">Eat the CRM, outgrow the competition, and leave absolutely no actionable follow-up.</div>
   <button class="btn" id="startBtn">SPIN IT UP</button>
+  <button class="iconbtn sound-toggle" id="startSoundBtn" type="button" aria-label="Mute sound" aria-pressed="false">🔊</button>
   <div class="credit">Not affiliated with HubSpot, Inc. · All records were harmed</div>
 </div>
 
@@ -343,7 +364,31 @@
   <div class="minilogo">🎉</div>
   <div class="ovtitle" id="doneTitle">Hub Swallowed!</div>
   <div class="ovsub" id="doneDesc"></div>
-  <button class="btn" id="nextBtn">NEXT HUB →</button>
+  <div class="actionrow">
+    <button class="btn" id="nextBtn">NEXT LEVEL →</button>
+    <button class="btn secondary" id="upgradeBtn">UPGRADE</button>
+    <button class="btn tertiary" id="doneMapBtn">WORLD MAP</button>
+  </div>
+</div>
+
+<!-- PAUSE / SETTINGS -->
+<div class="overlay hidden" id="pauseScreen" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+  <div class="minilogo" aria-hidden="true">⏸</div>
+  <div class="ovtitle" id="pauseTitle">Flywheel Parked</div>
+  <div class="ovsub">The CRM is enjoying a brief and legally mandated lunch break.</div>
+  <div class="settings-box">
+    <label for="qualitySelect">Graphics quality
+      <select class="select-control" id="qualitySelect">
+        <option value="auto">Auto — let the phone negotiate</option>
+        <option value="high">High — polished pipeline</option>
+        <option value="medium">Medium — respectable spreadsheet</option>
+        <option value="low">Low — quarterly-budget mode</option>
+      </select>
+    </label>
+    <button class="btn secondary sound-toggle" id="pauseSoundBtn" type="button" aria-label="Mute sound" aria-pressed="false">🔊 SOUND ON</button>
+  </div>
+  <button class="btn" id="resumeBtn">RESUME EATING</button>
+  <button class="btn tertiary" id="pauseMapBtn">SAVE &amp; WORLD MAP</button>
 </div>
 
 <!-- FAIL -->

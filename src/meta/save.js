@@ -91,6 +91,11 @@ export function defaultSave() {
     seedHistory: [],
     achievements: [],
     bestCombo: 0,
+    settings: {
+      soundMuted: false,
+      qualityMode: 'auto',
+      resolvedQuality: null,
+    },
   };
 }
 
@@ -164,6 +169,15 @@ function normalizeDaily(raw) {
     wins: Math.max(0, Math.floor(safeNumber(src.wins, defaults.wins))),
     plays: Math.max(0, Math.floor(safeNumber(src.plays, defaults.plays))),
   };
+}
+
+function normalizeSettings(raw) {
+  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const qualityMode = ['auto', 'high', 'medium', 'low'].includes(src.qualityMode)
+    ? src.qualityMode : 'auto';
+  const resolvedQuality = ['high', 'medium', 'low'].includes(src.resolvedQuality)
+    ? src.resolvedQuality : null;
+  return { soundMuted: src.soundMuted === true, qualityMode, resolvedQuality };
 }
 
 function normalizeRewardClaims(raw, stars) {
@@ -270,6 +284,7 @@ function normalizeSave(raw) {
     seedHistory: safeArray(raw.seedHistory, defaults.seedHistory).slice(-SEED_HISTORY_CAP),
     achievements: safeArray(raw.achievements, defaults.achievements),
     bestCombo: Math.max(0, safeNumber(raw.bestCombo, defaults.bestCombo)),
+    settings: normalizeSettings(raw.settings),
   };
 }
 

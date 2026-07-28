@@ -20,8 +20,8 @@
 //                               plane yields a world target; the avatar walks
 //                               straight to it and stops on arrival
 //   - mouse right-drag       -> orbit (yaw + pitch)
-//   - touch, left half       -> virtual stick (analog key-steer)
-//   - touch, right half / 2nd finger -> orbit drag
+//   - first active touch     -> virtual stick (analog key-steer)
+//   - second active touch    -> orbit drag
 //   - pinch (two touches)    -> camera pitch
 //   Touch one-finger resolves to the tech-§6 halves scheme rather than the
 //   desktop drag-target; the two docs conflict and §6 is the mobile-specific
@@ -212,9 +212,11 @@ export function createInputMachine({ toGround = null } = {}) {
     const rec = { id, x, y, originX: x, originY: y, button, pointerType, role: null };
 
     if (pointerType === 'touch' || pointerType === 'pen') {
-      const half = x < viewportW / 2 ? 'left' : 'right';
-      if (pointers.size === 0) {
-        rec.role = half === 'left' ? 'stick' : 'orbit';
+      // ADR-0003: the first unclaimed touch owns movement wherever it lands.
+      // If movement lifts while orbit remains, the next new touch may claim
+      // movement; existing roles never transfer implicitly.
+      if (stickPointerId === null) {
+        rec.role = 'stick';
       } else {
         // Second finger always orbits (game-design §1); the pair also
         // enables pinch-pitch (tech §6).
@@ -417,6 +419,9 @@ export function createInputMachine({ toGround = null } = {}) {
     get state() { return state; },
     get move() { return smoothed; },
     get orbitSteps() { return orbitSteps; },
+    get pointerRoles() {
+      return [...pointers.values()].map((p) => ({ id: p.id, role: p.role, pointerType: p.pointerType }));
+    },
     // Visual state for the on-screen joystick (see the contract above):
     // origin = where the finger landed, dx/dy = clamped nub deflection.
     get stick() {
@@ -462,6 +467,8 @@ export function createInput({ screenToGround = null, canvas = null } = {}) {
     machine.handleKeyUp(e.key);
   }
   function onPointerDown(e) {
+    if (e.target && typeof e.target.closest === 'function'
+      && e.target.closest('button,select,input,a,[data-game-ui]')) return;
     const { w, h } = viewport();
     machine.pointerDown({
       id: e.pointerId,
@@ -483,6 +490,9 @@ export function createInput({ screenToGround = null, canvas = null } = {}) {
   function onBlur() {
     machine.blur();
   }
+  function onVisibilityChange() {
+    if (typeof document !== 'undefined' && document.hidden) machine.blur();
+  }
   function onContextMenu(e) {
     // Right-drag orbits; the context menu must not eat the gesture.
     e.preventDefault();
@@ -496,6 +506,8 @@ export function createInput({ screenToGround = null, canvas = null } = {}) {
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
     window.addEventListener('blur', onBlur);
+    window.addEventListener('orientationchange', onBlur);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibilityChange);
     if (canvas && typeof canvas.addEventListener === 'function') {
       canvas.addEventListener('contextmenu', onContextMenu);
     }
@@ -510,6 +522,8 @@ export function createInput({ screenToGround = null, canvas = null } = {}) {
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
       window.removeEventListener('blur', onBlur);
+      window.removeEventListener('orientationchange', onBlur);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibilityChange);
       if (canvas && typeof canvas.removeEventListener === 'function') {
         canvas.removeEventListener('contextmenu', onContextMenu);
       }

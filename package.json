@@ -6,9 +6,11 @@
   "scripts": {
     "start": "node scripts/serve.js",
     "build": "node scripts/build.js",
-    "test": "node scripts/logic-test.js && node scripts/invariant-test.js",
+    "test": "node scripts/logic-test.js && node scripts/invariant-test.js && node scripts/placement-audit.mjs 100",
     "test:district-objects": "node scripts/district-object-report.js",
-    "test:e2e": "node scripts/smoke-test.cjs && node scripts/flow-test.cjs",
+    "bounds": "node scripts/generate-physical-bounds.js",
+    "test:e2e": "node scripts/mobile-live-test.cjs",
+    "test:mobile-live": "node scripts/mobile-live-test.cjs",
     "test:golden": "node scripts/golden-test.cjs",
     "test:play": "node scripts/play-bot.cjs",
     "ship": "node scripts/ship.js",

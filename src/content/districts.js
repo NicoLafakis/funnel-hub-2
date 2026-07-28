@@ -25,6 +25,9 @@ import {
 // propkit is deliberately THREE-free and DOM-free at module scope (see its
 // header), so importing it here keeps this module a pure-data generator.
 import { kindFootprint, kindRenderScale } from './propkit.js';
+import { physicalBoundsFor } from './physical-bounds.js';
+import { landmarkBoundsFor } from './physical-bounds.js';
+import { capstoneGateRadius } from '../data/formulas.js';
 
 export const ARCHETYPES = ['grid', 'radial', 'organic'];
 export const ZONES = ['plaza', 'avenue', 'park', 'residential'];
@@ -727,8 +730,9 @@ function createOccupancy() {
 // chosen. Testing them at yaw 0 and then spinning them would let a prop rotate
 // into its neighbour, so they are tested as the rotation-invariant square that
 // bounds them at every yaw. Slightly conservative, and correct at every yaw.
-function occupancyRect(kind, radius, x, z, rotY, unrotated) {
-  const dim = kindFootprint(kind);
+function occupancyRect(kind, radius, x, z, rotY, unrotated, visualId = null) {
+  const physical = physicalBoundsFor(visualId, kind);
+  const dim = visualId ? { w: physical.width, d: physical.depth } : kindFootprint(kind);
   const s = kindRenderScale(kind, radius);
   const hw = (dim.w / 2) * s;
   const hd = (dim.d / 2) * s;
@@ -1434,6 +1438,85 @@ export function generateDistrict(level, opts = {}) {
   const landmarkClearHalfWidth = 720;
   if (Math.abs(landmark.x) < landmarkClearHalfWidth && landmark.z > -240 && landmark.z < 50) {
     landmark.x = clamp((landmark.x < 0 ? -1 : 1) * landmarkClearHalfWidth, -bound, bound);
+  }
+
+  // Final legal-slot allocation. Earlier passes establish authored zoning and
+  // road relationships; this pass is the release contract over the transforms
+  // the renderer actually receives. Largest footprints reserve first, and any
+  // conflicting prop walks a deterministic candidate sequence until its final
+  // oriented footprint is legal. No RNG is consumed and no budget is dropped.
+  const finalOccupancy = createOccupancy();
+  const landmarkPhysical = landmarkBoundsFor(level.metro.landmarkType);
+  if (landmarkPhysical) {
+    const landmarkScale = Math.min(1, capstoneGateRadius(level) / landmarkPhysical.boundingRadius);
+    finalOccupancy.add({
+      x: landmark.x,
+      z: landmark.z,
+      hw: landmarkPhysical.width * landmarkScale / 2,
+      hd: landmarkPhysical.depth * landmarkScale / 2,
+      rotY: landmark.rotY || 0,
+      landmark: true,
+    });
+  }
+  const ordered = [...props].sort((a, b) => {
+    const ar = occupancyRect(a.kind, a.radius * (a.scaleMult || 1), a.x, a.z, a.rotY, a.tierIndex <= 1, a.visualId);
+    const br = occupancyRect(b.kind, b.radius * (b.scaleMult || 1), b.x, b.z, b.rotY, b.tierIndex <= 1, b.visualId);
+    return (br.hw * br.hd) - (ar.hw * ar.hd) || props.indexOf(a) - props.indexOf(b);
+  });
+  const offRoadKind = (p) => !p.onRoad;
+  const roadClear = (p, rect) => {
+    if (!offRoadKind(p)) return true;
+    for (const st of streets) {
+      if (rectOverlapDepth(rect, { x: st.x, z: st.z, hw: st.w / 2, hd: st.d / 2, rotY: st.rotY }) > OCCUPANCY_EPSILON) return false;
+    }
+    return true;
+  };
+  const legalFinal = (p, x, z) => {
+    const rect = occupancyRect(p.kind, p.radius * (p.scaleMult || 1), x, z, p.rotY, p.tierIndex <= 1, p.visualId);
+    const reach = Math.hypot(rect.hw, rect.hd);
+    if (Math.abs(x) + reach > world / 2 || Math.abs(z) + reach > world / 2) return null;
+    if (p.tierIndex >= 4 && Math.abs(x) < CAMERA_CORRIDOR_HALF_WIDTH + p.radius
+      && z > CAMERA_CORRIDOR_Z_MIN && z < CAMERA_CORRIDOR_Z_MAX) return null;
+    if (!roadClear(p, rect) || finalOccupancy.blocked(rect)) return null;
+    return rect;
+  };
+  for (const p of ordered) {
+    let accepted = legalFinal(p, p.x, p.z);
+    if (!accepted && p.onRoad && typeof p.streetIndex === 'number' && streets[p.streetIndex]) {
+      const st = streets[p.streetIndex];
+      const c = Math.cos(st.rotY);
+      const s = Math.sin(st.rotY);
+      const laneZ = (p.lane >= 0 ? 1 : -1) * st.d * 0.25;
+      const startX = (p.x - st.x) * c - (p.z - st.z) * s;
+      for (let i = 1; i <= 160 && !accepted; i += 1) {
+        const offset = Math.ceil(i / 2) * 18 * (i % 2 ? 1 : -1);
+        const lx = startX + offset;
+        if (Math.abs(lx) > st.w / 2) continue;
+        const q = rectPoint(st, lx, laneZ);
+        accepted = legalFinal(p, q.x, q.z);
+        if (accepted) { p.x = q.x; p.z = q.z; }
+      }
+    }
+    if (!accepted) {
+      const startX = p.x;
+      const startZ = p.z;
+      const step = Math.max(18, Math.min(72, p.radius * 0.5));
+      for (let ring = 1; ring <= 80 && !accepted; ring += 1) {
+        for (let side = -ring; side <= ring && !accepted; side += 1) {
+          const candidates = [
+            [side, -ring], [ring, side], [side, ring], [-ring, side],
+          ];
+          for (const [gx, gz] of candidates) {
+            accepted = legalFinal(p, startX + gx * step, startZ + gz * step);
+            if (accepted) { p.x = accepted.x; p.z = accepted.z; break; }
+          }
+        }
+      }
+    }
+    if (!accepted) {
+      throw new Error(`No legal placement: level=${level.n} kind=${p.kind} visualId=${p.visualId || 'fallback'} x=${p.x} z=${p.z}`);
+    }
+    finalOccupancy.add(accepted);
   }
 
   return {

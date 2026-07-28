@@ -24,16 +24,17 @@ commit history (`de9df67`…`912d816`) and `STATUS.md`.
 - **D1 — Empty-world feel.** Uniform random prop scatter over a huge plane.
   Even after the "feast ring" fix, the city is props-on-a-colored-plane, not
   a place. A flat ground color gives zero motion parallax. *Fixed partially
-  with a grid; the real fix is district layout (see art-direction.md).*
+  with seeded district layouts, zoning, streets, and ground surfaces. Physical
+  overlap remains active debt; see `current-state.md` and plan 0006.*
 - **D2 — Content budget tuned for a top-down game.** ~1.43× target total
   mass works when you see whole neighborhoods; the chase camera sees a cone.
   Level 1 was literally unwinnable until counts were tripled.
-- **D3 — The avatar is a sphere with a wireframe shell.** It reads as "a
-  ball," not as a flywheel/vortex character. No squash, no tilt-through-turns
-  that reads at distance, no wake/trail on the ground.
-- **D4 — Meta is linear and consequence-free.** Five upgrade tracks, all
-  "more of a stat," bought in order, no builds, no trade-offs. Stars exist
-  but nothing asks for them.
+- **D3 — The avatar was a sphere with a wireframe shell.** Closed in V2:
+  the current hero is an extruded flywheel with readable growth/eating
+  feedback. The sphere, vortex, and flat-wheel forms are historical.
+- **D4 — Meta was linear and consequence-free.** Closed for the V2 baseline:
+  mutually exclusive builds, respec, objective stars, metro tokens/perks,
+  collection rewards, and daily state now exist. Prestige remains optional.
 
 ## What V1 got right (keep)
 

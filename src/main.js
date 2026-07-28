@@ -34,6 +34,7 @@ import { createAvatar, createHoleVisual, SKINS } from './engine/avatar.js';
 import { createGrowthEffects, createRingBudget, RIVAL_RING } from './engine/effects.js';
 import { createChaseCamera } from './engine/camera.js';
 import { createInput } from './engine/input.js';
+import { createQualityController, selectInitialQuality } from './engine/quality.js';
 import { createSpatialHash } from './engine/spatialhash.js';
 import { createInstancedWorld } from './engine/instancing.js';
 import { createPool } from './engine/pools.js';
@@ -72,6 +73,7 @@ import { evaluateWin, failReasonText, capstoneEffectiveRadius } from './systems/
 import { createStormController } from './systems/storms.js';
 
 import { loadSave, saveSave, logSeed } from './meta/save.js';
+import { beginOptionalAssets, createStartLatch, startRoute } from './meta/startup.js';
 import {
   createAvailableMassLedger, starResult, levelReward,
 } from './meta/progression.js';
@@ -251,28 +253,34 @@ export async function main() {
   // across every level; only the level's content (ground/instanced props/
   // landmark/rivals/storm) is rebuilt per level.
   // -------------------------------------------------------------------------
-  const engine = createEngine(canvasEl, THREE);
+  const initialSave = loadSave();
+  const mobileDevice = typeof navigator !== 'undefined'
+    && (navigator.maxTouchPoints > 0 || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || ''));
+  const initialQuality = selectInitialQuality({
+    mode: initialSave.settings.qualityMode,
+    mobile: mobileDevice,
+    deviceMemory: typeof navigator !== 'undefined' ? navigator.deviceMemory : null,
+    hardwareConcurrency: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : null,
+  });
+  const engine = createEngine(canvasEl, THREE, { quality: initialQuality });
+  const qualityController = createQualityController({ initial: initialQuality });
   const avatar = createAvatar(engine.scene, THREE);
 
   // Realistic city surfaces (Leonardo-generated, textures.js): facade maps
   // for the three building tiers + ground zone patterns. Loaded once for the
   // whole session; null => procedural look (missing files / headless).
   let cityTextures = null;
-  try {
-    cityTextures = await loadCityTextures(THREE);
-  } catch (e) {
-    cityTextures = null;
-  }
 
   // Blender prop pack (modelkit.js): authored low-poly trees/people/lamps/car
   // decoded into BufferGeometries and handed to propkit, which prefers them
   // over the procedural bakes (normalized to the same footprints). null =>
   // procedural props everywhere — the game boots identically without the files.
-  try {
-    propkit.setModelKit(await loadModelKit(THREE));
-  } catch (e) {
-    propkit.setModelKit(null);
-  }
+  beginOptionalAssets({
+    textures: () => loadCityTextures(THREE),
+    models: () => loadModelKit(THREE),
+    onTextures: (loaded) => { cityTextures = loaded; },
+    onModels: (loaded) => { propkit.setModelKit(loaded); },
+  });
 
   // Per-level lighting mood (metro palette + night dimming) goes through
   // engine.setMood() — scene.js owns the fixtures; main never pokes light
@@ -308,8 +316,8 @@ export async function main() {
   const minimap = createMinimap({ container: document.getElementById('minimap') });
 
   const state = {
-    mode: 'start', // start | worldmap | intro | play | done | fail | win | shop
-    saveData: loadSave(),
+    mode: 'start', // start | worldmap | intro | play | paused | suspended | done | fail | win | shop
+    saveData: initialSave,
     achievementTracker: createAchievementTracker(),
     levelN: 1,
     level: null,
@@ -1270,6 +1278,7 @@ export async function main() {
       seed: layout.seed,
     });
     state.world.set(worldProps);
+    state.world.setQuality(engine.getPerformanceSnapshot().profile);
     worldProps.forEach((p, i) => state.worldIndex.set(p, i));
     // Night variant: emissive window-glow on the building kinds (cheap — no
     // bloom, just a warm material emissive on those groups).
@@ -1508,6 +1517,15 @@ export async function main() {
   // how many rivals the level spawns. See createRingBudget's header.
   const rivalRingBudget = createRingBudget({ maxConcurrent: 2, playerLockoutSeconds: 0.35 });
 
+  function applyRuntimeQuality(tier) {
+    engine.setQuality(tier);
+    const profile = engine.getPerformanceSnapshot().profile;
+    rivalRingBudget.setMaxConcurrent(Math.max(0, Math.round(2 * profile.effectsDensity)));
+    if (state.world) state.world.setQuality(profile);
+  }
+
+  applyRuntimeQuality(initialQuality);
+
   // Beat-1 cleanup: the pulse writes instance colors outside edibilityState,
   // so the edibility tint is force re-applied to every spawn-feast prop when
   // the beat ends (overlays.js's beat transition releases the hand itself).
@@ -1543,6 +1561,7 @@ export async function main() {
     hideOverlay('failScreen');
     hideOverlay('winScreen');
     hideOverlay('shopScreen');
+    hideOverlay('pauseScreen');
     hideOverlay('hud');
     hideOverlay('minimap');
     const grid = document.getElementById('worldMapGrid');
@@ -1561,6 +1580,17 @@ export async function main() {
     });
     saveSave(state.saveData);
     showLevelIntro();
+  }
+
+  function startFreshLevelOne() {
+    state.levelN = 1;
+    state.level = generateLevel(1);
+    state.isDailyRun = false;
+    state.mercy = createMercyTracker();
+    logSeed(state.saveData, { seed: state.level.seed, levelN: 1, date: todayStr(), kind: 'level' });
+    saveSave(state.saveData);
+    hideOverlay('startScreen');
+    beginPlay();
   }
 
   function onPlayDaily() {
@@ -1634,6 +1664,8 @@ export async function main() {
 
   function beginPlay() {
     Audio.init();
+    hideOverlay('pauseScreen');
+    qualityController.beginLevel();
     const level = state.level;
     state.perks = perkEffects(state.saveData);
 
@@ -1861,7 +1893,7 @@ export async function main() {
         + `🪙 +${coins} coins${state.runCoins > 0 ? ` (+${state.runCoins} from goldens)` : ''} &nbsp;·&nbsp; ${starGlyphs(stars)}`;
     }
     const nextBtn = document.getElementById('nextBtn');
-    if (nextBtn) nextBtn.textContent = level.n < LEVEL_COUNT ? 'CONTINUE →' : 'FINISH →';
+    if (nextBtn) nextBtn.textContent = level.n < LEVEL_COUNT ? 'NEXT LEVEL →' : 'FINISH →';
 
     showOverlay('doneScreen');
     hideOverlay('hud');
@@ -2067,8 +2099,13 @@ export async function main() {
     const k = e.key.toLowerCase();
 
     if (k === 'm') {
-      Audio.muted = !Audio.muted;
-      showToast(Audio.muted ? '🔇 <b>Muted.</b> The flywheel judges you silently.' : '🔊 <b>Sound on.</b> Let them hear it.');
+      setSoundMuted(!Audio.muted);
+      return;
+    }
+
+    if (k === 'escape') {
+      if (state.mode === 'play') pauseGame();
+      else if (state.mode === 'paused') resumeGame();
       return;
     }
 
@@ -2787,7 +2824,32 @@ export async function main() {
       state.world.update(dt, engine.camera);
     }
     engine.render();
+    if (state.saveData.settings.qualityMode === 'auto') {
+      const changedTier = qualityController.sample(dt * 1000);
+      if (changedTier) {
+        applyRuntimeQuality(changedTier);
+        state.saveData.settings.resolvedQuality = changedTier;
+        saveSave(state.saveData);
+      }
+    }
     requestAnimationFrame(frame);
+  }
+
+  function continueDirectly() {
+    hideOverlay('doneScreen');
+    const level = state.level;
+    if (state.isDailyRun) {
+      openWorldMap();
+    } else if (level.n >= LEVEL_COUNT) {
+      showWinScreen();
+    } else if (level.levelInChapter >= 10) {
+      openWorldMap();
+    } else {
+      state.levelN = level.n + 1;
+      state.level = generateLevel(state.levelN);
+      state.mercy = createMercyTracker();
+      beginPlay();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -2795,9 +2857,12 @@ export async function main() {
   // ---------------------------------------------------------------------------
   const startBtn = document.getElementById('startBtn');
   if (startBtn) {
+    const startLatch = createStartLatch();
     startBtn.addEventListener('click', () => {
+      if (!startLatch.accept()) return;
       Audio.init();
-      openWorldMap();
+      if (startRoute(state.saveData) === 'level-1') startFreshLevelOne();
+      else openWorldMap();
     });
   }
   const goBtn = document.getElementById('goBtn');
@@ -2805,11 +2870,40 @@ export async function main() {
 
   const nextBtn = document.getElementById('nextBtn');
   if (nextBtn) {
-    nextBtn.addEventListener('click', () => {
-      hideOverlay('doneScreen');
-      openShop();
-    });
+    nextBtn.addEventListener('click', continueDirectly);
   }
+
+  const upgradeBtn = document.getElementById('upgradeBtn');
+  if (upgradeBtn) upgradeBtn.addEventListener('click', openShop);
+
+  const doneMapBtn = document.getElementById('doneMapBtn');
+  if (doneMapBtn) doneMapBtn.addEventListener('click', openWorldMap);
+
+  const pauseBtn = document.getElementById('pauseBtn');
+  if (pauseBtn) pauseBtn.addEventListener('click', pauseGame);
+
+  const resumeBtn = document.getElementById('resumeBtn');
+  if (resumeBtn) resumeBtn.addEventListener('click', resumeGame);
+
+  const pauseMapBtn = document.getElementById('pauseMapBtn');
+  if (pauseMapBtn) pauseMapBtn.addEventListener('click', () => {
+    saveSave(state.saveData);
+    openWorldMap();
+  });
+
+  document.querySelectorAll('.sound-toggle').forEach((button) => {
+    button.addEventListener('click', () => {
+      Audio.init();
+      setSoundMuted(!Audio.muted);
+    });
+  });
+
+  const qualitySelect = document.getElementById('qualitySelect');
+  if (qualitySelect) {
+    qualitySelect.value = state.saveData.settings.qualityMode;
+    qualitySelect.addEventListener('change', () => applyQualityMode(qualitySelect.value));
+  }
+  syncSoundControls();
 
   const retryBtn = document.getElementById('retryBtn');
   if (retryBtn) {
@@ -2831,7 +2925,101 @@ export async function main() {
 
   // Debug/verification handle (used by the headless smoke scripts; harmless
   // in production — no behavior hangs off it).
-  window.__fw = { engine, avatar, chaseCamera, state };
+  window.__fw = {
+    engine,
+    avatar,
+    chaseCamera,
+    state,
+    inputSnapshot: () => input.machine.pointerRoles,
+    performanceSnapshot: () => {
+      const style = getComputedStyle(document.documentElement);
+      return {
+        ...engine.getPerformanceSnapshot(),
+        visibleInstances: state.propObjects.filter((p) => p._visible !== false && !p._eaten).length,
+        activeEffects: document.querySelectorAll('.massfloat:not([style*="opacity: 0"])').length,
+        activePointers: input.machine.pointerRoles,
+        viewport: { width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio || 1 },
+        orientation: screen.orientation ? screen.orientation.type : (innerWidth > innerHeight ? 'landscape' : 'portrait'),
+        safeArea: {
+          top: style.getPropertyValue('--safe-top').trim(),
+          right: style.getPropertyValue('--safe-right').trim(),
+          bottom: style.getPropertyValue('--safe-bottom').trim(),
+          left: style.getPropertyValue('--safe-left').trim(),
+        },
+      };
+    },
+  };
+
+  Audio.muted = state.saveData.settings.soundMuted;
+
+  function syncSoundControls() {
+    document.querySelectorAll('.sound-toggle').forEach((button) => {
+      button.setAttribute('aria-pressed', Audio.muted ? 'true' : 'false');
+      button.setAttribute('aria-label', Audio.muted ? 'Turn sound on' : 'Mute sound');
+      button.textContent = button.id === 'pauseSoundBtn'
+        ? (Audio.muted ? '🔇 SOUND OFF' : '🔊 SOUND ON')
+        : (Audio.muted ? '🔇' : '🔊');
+    });
+  }
+
+  function setSoundMuted(muted, announce = true) {
+    Audio.muted = !!muted;
+    state.saveData.settings.soundMuted = Audio.muted;
+    saveSave(state.saveData);
+    syncSoundControls();
+    if (announce) {
+      showToast(Audio.muted ? '🔇 <b>Muted.</b> The flywheel judges you silently.' : '🔊 <b>Sound on.</b> Let them hear it.');
+    }
+  }
+
+  function applyQualityMode(mode) {
+    const normalized = ['auto', 'high', 'medium', 'low'].includes(mode) ? mode : 'auto';
+    const tier = selectInitialQuality({
+      mode: normalized,
+      mobile: mobileDevice,
+      deviceMemory: typeof navigator !== 'undefined' ? navigator.deviceMemory : null,
+      hardwareConcurrency: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : null,
+    });
+    state.saveData.settings.qualityMode = normalized;
+    state.saveData.settings.resolvedQuality = tier;
+    qualityController.setTier(tier);
+    applyRuntimeQuality(tier);
+    saveSave(state.saveData);
+    const select = document.getElementById('qualitySelect');
+    if (select) select.value = normalized;
+  }
+
+  function pauseGame() {
+    if (state.mode !== 'play') return;
+    input.machine.blur();
+    state.mode = 'paused';
+    showOverlay('pauseScreen');
+  }
+
+  function resumeGame() {
+    if (state.mode !== 'paused') return;
+    hideOverlay('pauseScreen');
+    state.mode = 'play';
+  }
+
+  let resumeMode = null;
+  function suspendForLifecycle() {
+    input.machine.blur();
+    if (state.mode === 'play') {
+      resumeMode = 'play';
+      state.mode = 'suspended';
+    }
+  }
+  function resumeFromLifecycle() {
+    if (state.mode === 'suspended' && resumeMode === 'play') state.mode = 'play';
+    resumeMode = null;
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) suspendForLifecycle();
+    else resumeFromLifecycle();
+  });
+  window.addEventListener('pagehide', suspendForLifecycle);
+  window.addEventListener('pageshow', resumeFromLifecycle);
 }
 
 if (typeof document !== 'undefined') {

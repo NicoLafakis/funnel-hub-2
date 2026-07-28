@@ -16,15 +16,18 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
 - **InstancedMesh per (kind, tint) pair.** The 7 prop tiers × golden
   variant = ≤15 draw calls for all props, down from ~400. Transforms update
   per-frame via instance matrices (tumble, vacuum pull, squash).
-- **Object pooling everywhere:** props, particles, floaters, rival crumbs.
-  Zero allocations in the frame loop — V1 allocates vectors per frame in
-  the camera and swallow paths.
+- **Pooling and reuse on hot paths:** props, particles, floaters, and rival
+  crumbs reuse bounded storage. Treat zero frame-loop allocation as a target
+  requiring profiling evidence, not an already-proven global property.
 - **Frustum + distance culling** through the spatial hash (already needed
   for rivals): props beyond 1.2× fog distance skip matrix updates.
-- **Shadows:** blob decals under props, not shadow maps. One directional
-  light for form, hemisphere for fill.
-- **Budget watchdog in dev builds:** frame-time histogram; warn at >14ms
-  p95. Perf regressions get caught like test failures, not player reports.
+- **Shadows:** the current renderer uses both blob decals and a directional
+  shadow map with a power-of-two projection ladder and light-space texel
+  snapping. Plan 0006 adds runtime high/medium/low profiles that change DPR,
+  shadow-map size, and shadow enablement without a restart.
+- **Performance diagnostics:** plan 0006 adds a read-only frame-time,
+  quality, draw-call, triangle, and memory snapshot. Real-device performance is
+  unmeasured; headless rAF-derived FPS is invalid evidence.
 - **Depth precision is a budget, not a default.** `camera.near`/`camera.far`
   (`scene.js`) set how many of the depth buffer's 2^24 fixed-point values land
   near the ground: `dz(z) ≈ z^2 / (near * 2^24)` for `far >> near`, so
@@ -297,8 +300,10 @@ THREE passed in, never imported by systems; pure functions where possible.
 
 - Overlays become scrollable flex columns with `max-height: 100dvh` and
   `overflow-y: auto`; buttons never leave the viewport at 360×640.
-- Touch: left half = virtual stick (move), right half = orbit drag; pinch
-  = camera pitch. Larger HUD tap targets (≥44px).
+- Touch uses first-active-touch movement and second-touch orbit, with stable
+  ownership until release and lifecycle cancellation. Pause and sound use
+  named 44px touch targets; safe-area spacing and zoomable viewport behavior
+  are part of the current mobile contract.
 - `prefers-reduced-motion`: disables screen shake, slow-mo, and the
   flywheel's idle spin (`avatar.js` `setSpinEnabled(false)`; the debris
   stream it used to gate was removed with the vortex funnel, see

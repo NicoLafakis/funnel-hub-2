@@ -40,10 +40,12 @@ camera swings, your keys no longer match the screen.
   the pointer onto the ground plane) rather than a screen-center direction —
   the avatar pathfinds straight to it and stops on arrival. Fixes the
   "always driving toward the edge" class of bug structurally (B4).
-  *Resolved in V2 implementation:* on touch devices the tech-arch §6 scheme
-  wins instead — left half = virtual stick, right half = orbit, pinch =
-  pitch — so one-finger drag-target is mouse-only (documented in
-  `src/engine/input.js`).
+  *Current implementation:* touch uses left-half movement and right-half
+  orbit, with pinch pitch; one-finger drag-target remains mouse-only. The
+  external mobile review found this makes a first touch on the right fail to
+  move. Proposed ADR 0003 supersedes the intended mapping: first active
+  non-UI touch owns movement and the second owns orbit. Until implemented,
+  the current left/right behavior remains mechanism, not target design.
 - Input layer gets a formal state machine (`idle / key-steer / drag-target /
   orbit`) with enter+exit transitions and unit tests for each.
 
@@ -152,15 +154,18 @@ levels. Maximum growth and utility builds must complete no earlier than 25% of
 their extended timer and must retain the 15% event cap. Combo never multiplies
 growth mass.
 
-**Acceptance:** all nine invariants, the full determinism pass, and the
-representative maximum-build ceiling run in CI. Any failure blocks merge.
+**Acceptance:** all nine invariants and the full determinism pass run in CI.
+Invariants 1–9 are release gates; the maximum-build floor remains separately
+reported debt until the builds are retuned rather than normalized to the
+current failure. As of the 0006 implementation worktree on 2026-07-28, all
+nine gameplay invariants pass 100/100; see `current-state.md`.
 
 **Correction (2026-07-27):** the maximum-build ceiling above described "5
 sampled levels, 100/100" — actually a sampling artefact. Run over the full
 100 levels it fails 31/300 (walked bot) to 120/300 (competent-play model)
 combinations, worst 4.8%, concentrated in the utility build. This gate is
 now deliberately left RED as known debt (owner `src/meta/upgrades.js`), not
-blocking merge, until the builds are retuned. See
+misrepresented as a passing gate, until the builds are retuned. See
 `0003-hole-feel-and-visual-fidelity/00-findings.md` §13–§16 for the full
 derivation and why the floor was not lowered to paper over it. Also: a
 required capstone being "edible by 90% of the timer" (invariant 4) is

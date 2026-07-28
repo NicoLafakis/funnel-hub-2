@@ -60,7 +60,8 @@ V1: five linear stat tracks you buy in order (D4 — consequence-free).
   replays have texture.
 - **Stars buy things.** 3★ a district → metro token; 10 tokens → that
   metro's skin + a permanent per-metro perk (e.g. Old Fog Town: fog shows
-  prop silhouettes). Stars currently do nothing (D4).
+  prop silhouettes). Implemented in the v2 meta/save model; D4's original
+  "stars do nothing" state is historical.
 - **Skyline-opedia 2.0:** entries unlock per metro prop variant (§2) with
   the existing joke flavor text; completing a metro page = small coin
   bounty + a gallery card. Collection completion is the completionist loop.

@@ -63,7 +63,10 @@ const RESPAWN_MARGIN = 200; // 200 + Math.random()*(world-400)
 // un-eatable sizes — the player starves at 0 mass (observed live on levels
 // 21+). 6s gives the player the uncontested opening feast the level design
 // intends; afterwards rivalry proceeds normally. (B5 fix — keep.)
-export const RIVAL_WARMUP_SECONDS = 6;
+// Accurate, non-intersecting streets lengthen early pickup routes. Give the
+// player a full ten-second uncontested read before rivals begin stripping the
+// same physically legal corridors.
+export const RIVAL_WARMUP_SECONDS = 10;
 
 // Radius (world units) used to count how "dense" a candidate object's
 // neighborhood is for the cluster heuristic (Bandit raid-AI).
