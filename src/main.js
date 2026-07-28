@@ -109,8 +109,24 @@ import { createMinimap } from './ui/minimap.js';
 const FOG_DENSITY_PER_WORLD = 0.55;
 // How far past the map edge the unlit haze band takes to reach full sky colour,
 // as a fraction of world width. The lit ground skirt underneath only has to
-// survive this far; past it every pixel is exactly the horizon colour.
+// survive this far; past it every pixel is exactly the horizon colour — and as
+// of the horizon-seam fix that is literally true rather than aspirational: the
+// skirt's outer radius IS `world/2 + HAZE_RUN`, the same expression, not a
+// separately-chosen number that happened to be near it. See buildLevelWorld().
 const HAZE_RUN_WORLD = 0.35;
+// The haze ring's radial vertex rings, split into the two jobs they do. The
+// split is what makes the skirt rim un-missable rather than well-aimed:
+//   RAMP   — rings spent on the alpha 0 -> 1 ramp. Because the ramp is keyed on
+//            the SAME `hazeRun` the ring spacing is derived from, alpha reaches
+//            exactly 1 ON a real vertex ring (k = RAMP/RAMP), not somewhere
+//            between two of them where it would only be approximately 1.
+//   MARGIN — rings of alpha-EXACTLY-1 haze kept OUTSIDE the skirt's rim, so the
+//            rim is covered by a band with real width instead of by a boundary
+//            it has to land on. One ring is 0.2*HAZE_RUN = 169u on level 1.
+// Their sum is the geometry's phiSegments, so triangle count is unchanged from
+// the 6 this shipped with (5 + 1) — this is a re-partition, not a subdivision.
+const HAZE_RAMP_RINGS = 5;
+const HAZE_MARGIN_RINGS = 1;
 // Radius of the sky dome. It is depth-test-exempt and re-centred on the camera
 // every frame, so this is not an occlusion distance — it only has to stay
 // inside camera.far (12000, scene.js) with room for the camera's own height.
@@ -942,12 +958,13 @@ export async function main() {
     //     is 0.48*world*cos(pi/64) = 0.4794*world, still inside the square's
     //     0.5*world inscribed circle — no gap can open at the axis mid-points
     //     where the square's edge comes closest to the centre, and the corners
-    //     at 0.707*world are covered with room to spare. The OUTER radius used
-    //     to be half + fogFar (6037u on level 1); it is now
-    //     half + 1.25*HAZE_RUN (2264u), because the haze band below reaches full
-    //     opacity at half + HAZE_RUN and everything past that was lit-shaded and
-    //     then painted over. The 1.25 is margin against the ring's polygonal
-    //     inradius at the rim.
+    //     at 0.707*world are covered with room to spare. The OUTER radius is
+    //     `skirtOuter`, derived below — it is not a number chosen here. It ran
+    //     to half + fogFar (6037u on level 1) originally, then to
+    //     half + 1.25*HAZE_RUN (2264u), and is now half + HAZE_RUN (2053u).
+    //     Every pixel past that was being lit-shaded and then painted over by
+    //     the haze; see THE SEAM THAT WAS LEFT, below, for why 1.25 was not
+    //     merely wasteful but actively wrong.
     //   * y = -2, i.e. UNDER the opaque ground plane, so the overlap is
     //     occluded by depth rather than by ordering. 2 units is 29x the depth
     //     increment at the far ground corner under the new near/far, so it
@@ -985,19 +1002,81 @@ export async function main() {
     // to sky is the identical colour on both sides.
     //
     // The skirt also gets SHORTER as a direct consequence: it used to run to
-    // world/2 + fogFar (6037u on level 1) and now stops just past where the haze
-    // band is fully opaque, because every pixel beyond that was being shaded by
-    // a full MeshStandardMaterial and then completely covered. That is the one
-    // part of this change that is a straight performance win on the surface the
+    // world/2 + fogFar (6037u on level 1) and now stops where the haze band is
+    // fully opaque, because every pixel beyond that was being shaded by a full
+    // MeshStandardMaterial and then completely covered. That is the one part of
+    // this change that is a straight performance win on the surface the
     // verification pass measured at 40-50% of frame.
+    //
+    // THE SEAM THAT WAS LEFT, AND WHY IT WAS A CONSTRUCTION BUG (2026-07-28,
+    // adversarial verification of 4377c82; art-direction.md §1). The three-layer
+    // scheme above was right and the numbers wired into it were not. As shipped:
+    //
+    //   skirt outer radius   = half + 1.25*HAZE_RUN   (2264.06u on level 1)
+    //   haze outer radius    = half + 1.20*HAZE_RUN   (2221.80u)
+    //   haze alpha reaches 1 = half + HAZE_RUN/1.2    (~1911.9u, and not on a
+    //                                                  vertex ring, so "1" there
+    //                                                  was interpolation luck)
+    //
+    // The skirt therefore stuck out 42.26 world units PAST the ring that was
+    // supposed to be painting over it. Past the haze's own rim there is no haze
+    // at all, so those 42 units were bare lit skirt against bare sky. Seen from
+    // the play bound at the minimum 35-degree pitch that annulus subtends 0.37
+    // degrees, which at fov 70 over 900px is 4.2px: measured live as a 3-4px
+    // dark hairline arcing across the sky, adjacent channel-sum deltas
+    // 151/203/153/154/157 across five columns, line [131,135,152] against sky
+    // [163,203,255]. The same rim is the faint circle around the map at r=483.
+    //
+    // Note what kind of failure that is. The join itself was excellent — 1-3
+    // channel-sum through the whole ground->skirt->haze->sky ramp against a ~15
+    // target. Nothing was mis-tinted. TWO INDEPENDENTLY-CHOSEN CONSTANTS, 1.25
+    // and 1.2, simply had to be ordered and were not, and nothing in the code
+    // said they had to be. That is the class of bug this block now removes:
+    // fixing 1.25 to 1.15 would have made the picture right and left the trap
+    // armed for the next person to change HAZE_RUN_WORLD, the ring count, the
+    // pitch clamp or the world size.
+    //
+    // So the radii are DERIVED, once, here, and the invariant is an identity
+    // rather than an inequality that happens to hold:
+    //
+    //   hazeFull   — the radius at which the haze's alpha ramp completes. Lands
+    //                exactly on vertex ring HAZE_RAMP_RINGS because the ramp is
+    //                keyed on the same hazeRun the ring spacing comes from, so
+    //                alpha there is exactly 1, not 0.9976.
+    //   skirtOuter — literally `hazeFull`, the same binding. The skirt cannot
+    //                end anywhere the haze has not already saturated, because
+    //                there is no second expression that could disagree.
+    //   hazeOuter  — hazeFull plus HAZE_MARGIN_RINGS of alpha-1 haze, so the
+    //                covering band has width (169u on level 1) and the skirt rim
+    //                is interior to it rather than coincident with its edge.
+    //
+    // Two further guarantees fall out for free, both worth stating because they
+    // are why this needs no epsilon:
+    //   * Both rings are 64-gons built by RingGeometry with the same thetaStart
+    //     and thetaSegments, so the skirt's rim polygon and the haze's alpha-1
+    //     ring polygon are the SAME polygon, vertex for vertex. The polygonal
+    //     inradius that the old 1.25 was nominally margin against cancels out.
+    //   * The haze sits at y = -1 and the skirt at y = -2. From any eye above
+    //     both — every eye this camera can have — the higher surface at equal
+    //     radius projects ABOVE the lower one, so even the coincident case fails
+    //     in the safe direction. The margin ring is belt to that braces.
+    //
+    // And past hazeOuter there is nothing left to seam: alpha-1 haze is drawn
+    // over the sky dome, which is exactly skyHorizon at and below the horizon
+    // line, which is exactly scene.background and exactly scene.fog's colour.
+    // The ONE-COLOUR principle 4377c82 established is what terminates the stack;
+    // this block just stops the geometry from stepping outside its protection.
     //
     // NOT a gameplay change: nothing reads any of these three meshes. None is in
     // state.propObjects, none is in either spatial hash, none is a camera
     // obstacle, and the play bounds (layout.world) are untouched.
     const hazeRun = level.world * HAZE_RUN_WORLD;
-    const skirtGeo = new THREE.RingGeometry(
-      level.world * 0.48, level.world / 2 + hazeRun * 1.25, 64, 1,
-    );
+    const hazeInner = level.world / 2;
+    const hazeStep = hazeRun / HAZE_RAMP_RINGS;
+    const hazeFull = hazeInner + hazeRun;
+    const hazeOuter = hazeFull + hazeStep * HAZE_MARGIN_RINGS;
+    const skirtOuter = hazeFull;
+    const skirtGeo = new THREE.RingGeometry(level.world * 0.48, skirtOuter, 64, 1);
     const skirtMat = new THREE.MeshStandardMaterial({
       // Fallback is the raw metro ground colour, which is exactly what
       // groundMat itself falls back to when the bake produced no canvas
@@ -1033,19 +1112,28 @@ export async function main() {
     //
     // fog:false on purpose. Fogging the haze would apply the horizon colour
     // twice to the same pixels, and it is already exactly that colour.
-    const HAZE_RINGS = 6;
-    const hazeInner = level.world / 2;
-    const hazeOuter = level.world / 2 + hazeRun * 1.2;
-    const hazeGeo = new THREE.RingGeometry(hazeInner, hazeOuter, 64, HAZE_RINGS);
+    //
+    // Radii and ring count come from the derived block above the skirt — this
+    // mesh deliberately computes none of its own, because the whole seam defect
+    // was two meshes computing their own and disagreeing.
+    const hazeGeo = new THREE.RingGeometry(
+      hazeInner, hazeOuter, 64, HAZE_RAMP_RINGS + HAZE_MARGIN_RINGS,
+    );
     {
       const pos = hazeGeo.attributes.position;
       const col = new Float32Array(pos.count * 4);
       for (let i = 0; i < pos.count; i += 1) {
         const rad = Math.hypot(pos.getX(i), pos.getY(i)); // pre-rotation, XY plane
-        // Normalised position across the band, then smoothstep so the onset is
-        // gradual rather than a visible start line, and reaching 1 at 5/6 of the
-        // band so the outer rim is fully saturated well before it ends.
-        const k = Math.max(0, Math.min(1, ((rad - hazeInner) / (hazeRun)) * 1.2));
+        // Normalised position across the RAMP — not across the geometry. Keying
+        // on hazeRun is what puts alpha exactly 1 on the vertex ring at hazeFull
+        // (k = 1 there by definition), which is the ring the skirt's rim sits
+        // on. The old form multiplied by 1.2 to normalise across the geometry
+        // instead, which saturated the ramp early, between two vertex rings, and
+        // is why "fully opaque" was a place the skirt could be measured against
+        // but not a place it was built against.
+        // smoothstep after that, so the onset is gradual rather than a visible
+        // start line at the map edge.
+        const k = Math.max(0, Math.min(1, (rad - hazeInner) / hazeRun));
         const a = k * k * (3 - 2 * k);
         col[i * 4] = skyHorizon.r;
         col[i * 4 + 1] = skyHorizon.g;
