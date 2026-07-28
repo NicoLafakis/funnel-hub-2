@@ -27,7 +27,7 @@ async function enterLevelOne(page) {
   if (/localhost|127\.0\.0\.1/i.test(LIVE_URL)) throw new Error('live audit refuses localhost');
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch({ args: ['--disable-gpu-vsync', '--disable-frame-rate-limit'] });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', (error) => errors.push(`pageerror: ${error}`));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });

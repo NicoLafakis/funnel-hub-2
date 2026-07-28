@@ -25,7 +25,7 @@
   critically damped angular spring for continuous left/right follow velocity.
 - The approved target frame now owns the ground palette: charcoal asphalt and
   neutral concrete supersede the historical lavender-road reference palette.
-- Level 1 uses 2.25× interactive park-tree density to reproduce the Loop
+- Level 1 uses 3× interactive park-tree density to reproduce the Loop
   target's landscaped civic blocks without changing later Area 1 levels.
 - Its elevated rail now includes steel supports, two station decks and
   canopies, and a three-car L train assembled on the authored route.
@@ -35,7 +35,7 @@
 - Chicago civic modules appear once each; repeated block frontage draws from
   architectural profiles, including corrected Tribune Tower and historic
   storefront classifications.
-- Chase framing uses the approved 55° pitch/FOV 40 lens at a 15.5r standoff,
+- Chase framing uses the approved 55° pitch/FOV 40 lens at a 17.5r standoff,
   widened from 12r after live Loop frontage occluded too much of the grid.
 
 ## Verified automated baseline

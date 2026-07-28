@@ -1300,7 +1300,7 @@ async function main() {
     for (let i = 0; i < 60; i += 1) chase.update(DT);
     check('camera smoothly turns behind the avatar heading',
       Math.abs(shortestAngleTo(chase.followYaw, Math.PI / 2)) < 0.03
-        && camera.position.x < -200);
+        && camera.position.x < -230);
     check('camera follow reverses continuously and catches the player within one second', (() => {
       cameraAvatar.object3D.rotation.y = -1.2;
       let previousYaw = chase.followYaw;
