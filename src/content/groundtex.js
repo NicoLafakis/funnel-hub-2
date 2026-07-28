@@ -799,6 +799,7 @@ function streetCrossing(a, b) {
 export function bakeGroundTexture(layout, opts = {}) {
   const ground = (opts.metro && opts.metro.ground) || '#4a4a50';
   const descriptor = describeGround(layout, opts);
+  const chicagoLoop = layout.archetype === 'chicago-loop';
   if (typeof document === 'undefined') {
     return { canvas: null, descriptor };
   }
@@ -904,14 +905,42 @@ export function bakeGroundTexture(layout, opts = {}) {
         // 1000030503.jpg, and all of it stops parks reading as flat green.
         mottle(ctx, hw, hd, rng, tone('grass', 0.16), 26, 4, 14, 0.55);
         mottle(ctx, hw, hd, rng, tone('grass', -0.16), 20, 3, 11, 0.45);
-        const pathZ = (rng() * 2 - 1) * hd * 0.5;
-        ctx.strokeStyle = cssOf.sand;
-        ctx.lineWidth = 11;
-        ctx.beginPath();
-        ctx.moveTo(-hw, pathZ - hd * 0.12);
-        ctx.lineTo(hw, pathZ + hd * 0.12);
-        ctx.stroke();
-        if (Math.min(hw, hd) > 46 && rng() < 0.7) {
+        if (chicagoLoop) {
+          const insetX = hw * 0.48;
+          const insetZ = hd * 0.48;
+          ctx.strokeStyle = cssOf.sand;
+          ctx.lineWidth = 9;
+          ctx.beginPath();
+          ctx.moveTo(-hw, 0); ctx.lineTo(hw, 0);
+          ctx.moveTo(0, -hd); ctx.lineTo(0, hd);
+          ctx.moveTo(-insetX, -hd); ctx.lineTo(-insetX, hd);
+          ctx.moveTo(insetX, -hd); ctx.lineTo(insetX, hd);
+          ctx.moveTo(-hw, -insetZ); ctx.lineTo(hw, -insetZ);
+          ctx.moveTo(-hw, insetZ); ctx.lineTo(hw, insetZ);
+          ctx.stroke();
+
+          const plazaRadius = Math.min(hw, hd) * 0.20;
+          ctx.fillStyle = cssOf.plaza;
+          ctx.beginPath();
+          ctx.arc(0, 0, plazaRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = tone('plaza', -0.24);
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+          ctx.fillStyle = scaledCss('#5f91a3');
+          ctx.beginPath();
+          ctx.arc(0, 0, plazaRadius * 0.43, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          const pathZ = (rng() * 2 - 1) * hd * 0.5;
+          ctx.strokeStyle = cssOf.sand;
+          ctx.lineWidth = 11;
+          ctx.beginPath();
+          ctx.moveTo(-hw, pathZ - hd * 0.12);
+          ctx.lineTo(hw, pathZ + hd * 0.12);
+          ctx.stroke();
+        }
+        if (!chicagoLoop && Math.min(hw, hd) > 46 && rng() < 0.7) {
           const cw = Math.min(hw * 0.6, 54);
           const cd = Math.min(hd * 0.5, 30);
           const cx = (rng() * 2 - 1) * (hw - cw) * 0.7;

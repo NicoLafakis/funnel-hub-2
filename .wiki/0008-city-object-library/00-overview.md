@@ -62,6 +62,11 @@ and later areas, but Area 1 is the city-first pilot.
 - A dedicated regression gate asserts that Level 1 contains all 24 interactive
   Chicago icons plus all 24 context rail identities, and Levels 2-10 contain
   no `cityobj_chicago_*` identity.
+- The `chicago-loop` filename prefix is the level-scope contract: all 48 types
+  from those two sheets belong to Area 1 Level 1. The rail sheet is assembled
+  as infrastructure while the icon sheet supplies placed gameplay identities.
+- The opening park uses a Chicago-only formal path grid and central civic node;
+  generic levels retain the seeded recreation-path and sports-court treatment.
 
 ## Reference inventory
 
