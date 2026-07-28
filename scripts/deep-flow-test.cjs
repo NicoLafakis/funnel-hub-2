@@ -1,4 +1,16 @@
 // Deep flow: done screen -> build shop -> next level -> fail screen -> second wind.
+//
+// THIS IS A SCREEN TEST, NOT A PLAY TEST. It reaches those screens by POKING
+// GAME STATE directly (`window.__fw.avatar.mass = 1200` to force a win,
+// `window.__fw.state.timer = 0.3` to force a fail) rather than by playing.
+// That is deliberate and fine for what it covers — do the done/shop/fail/
+// second-wind overlays render, wire up and transition correctly — but it is
+// NOT evidence that any of those states is REACHABLE by a player, because no
+// player can assign to avatar.mass. Do not cite a green run here as proof the
+// game is winnable or losable.
+//
+// For player-fidelity coverage (real keyboard input only, zero state writes)
+// see scripts/play-bot.cjs (`npm run test:play`).
 const path = require('path');
 const { chromium } = require(process.env.APPDATA + '/npm/node_modules/playwright');
 
