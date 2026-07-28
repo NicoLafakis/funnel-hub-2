@@ -473,7 +473,7 @@ async function main() {
         .reduce((sum, tier) => sum + tier.baseCount, 0);
       return massPreserved
         && count(['car', 'bus']) === 74
-        && count(['building-small', 'building-medium', 'building-large']) === 114;
+        && count(['building-small', 'building-medium', 'building-large']) === 194;
     })());
     check('the Loop steps from low-rise park frontage to an outer tall skyline', (() => {
       const meanDistance = (kind) => {

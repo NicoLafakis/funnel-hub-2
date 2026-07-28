@@ -46,7 +46,9 @@
   canopies, and a three-car L train assembled on the authored route.
 - The authored Level 1 budget preserves every tier's global mass product while
   rebalancing the visible composition from 102 vehicles/63 buildings to 74
-  vehicles/114 buildings; later levels retain the global template.
+  vehicles/194 buildings; later levels retain the global template. Level 1's
+  160 small frontage pieces each carry half the former mass, preserving the
+  tier's exact 756-mass product while closing more of the street wall.
 - Level 1 orders those building sites by civic hierarchy: low-rise storefront
   runs frame the opening park, medium buildings step behind them, and large
   towers occupy the outer commercial skyline. Stable block sorting preserves

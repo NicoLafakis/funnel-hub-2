@@ -55,7 +55,9 @@ and later areas, but Area 1 is the city-first pilot.
 - Level 1 uses all 48 Chicago transit, landmark, and streetscape objects, distributed
   deterministically across its downtown-weighted gameplay placements. The
   authored budget preserves every tier's total mass while increasing buildings
-  from 63 to 114 and reducing road vehicles from 102 to 74.
+  from 63 to 194 and reducing road vehicles from 102 to 74; the 160 small
+  frontage pieces each carry half the former mass, keeping the tier's exact
+  756-mass product.
 - Chicago civic modules are one-off identities; repeated frontage favors the
   actual tower, mid-rise, storefront, and bridgehouse profiles. Tribune Tower
   and the historic Loop storefront row are explicitly classified as buildings.

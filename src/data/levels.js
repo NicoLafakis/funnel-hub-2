@@ -127,14 +127,14 @@ const LEVEL_TEMPLATE = [
 // The Loop preserves the exact mass carried by every global tier while
 // redistributing object count toward a downtown composition. This is a visual
 // density contract, not an easier economy: traffic 102 -> 74, buildings
-// 63 -> 114, loose props 184 -> 155, total objects 349 -> 343. Each row's
+// 63 -> 194, loose props 184 -> 155, total objects 349 -> 423. Each row's
 // baseMass * baseCount matches LEVEL_TEMPLATE exactly.
 const CHICAGO_LOOP_TEMPLATE = [
   { tierIndex: 0, baseRadius: TIER_RADII[0], baseMass: 4.7, baseCount: 80, kind: 'trash' },
   { tierIndex: 1, baseRadius: TIER_RADII[1], baseMass: 6, baseCount: 75, kind: 'bike' },
   { tierIndex: 2, baseRadius: TIER_RADII[2], baseMass: 10.8, baseCount: 50, kind: 'car' },
   { tierIndex: 3, baseRadius: TIER_RADII[3], baseMass: 28, baseCount: 24, kind: 'bus' },
-  { tierIndex: 4, baseRadius: TIER_RADII[4], baseMass: 9.45, baseCount: 80, kind: 'building-small' },
+  { tierIndex: 4, baseRadius: TIER_RADII[4], baseMass: 4.725, baseCount: 160, kind: 'building-small' },
   { tierIndex: 5, baseRadius: TIER_RADII[5], baseMass: 30, baseCount: 24, kind: 'building-medium' },
   { tierIndex: 6, baseRadius: TIER_RADII[6], baseMass: 76.5, baseCount: 10, kind: 'building-large', isCapstoneCandidate: true },
 ];
