@@ -25,6 +25,58 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
   light for form, hemisphere for fill.
 - **Budget watchdog in dev builds:** frame-time histogram; warn at >14ms
   p95. Perf regressions get caught like test failures, not player reports.
+- **Depth precision is a budget, not a default.** `camera.near`/`camera.far`
+  (`scene.js`) set how many of the depth buffer's 2^24 fixed-point values land
+  near the ground: `dz(z) ≈ z^2 / (near * 2^24)` for `far >> near`, so
+  resolution is set almost entirely by `near`. Shipped at `(0.1, 20000)` — a
+  200,000:1 ratio — the whole ground stack (ground 0.00, detail grain 0.05,
+  lane paint 0.08) collapsed into a single depth increment at the avatar
+  (0.081u of resolution against a 0.08u-tall stack) and held its visual order
+  only because Three r185 sorts opaques by `material.id` and the ids happened
+  to ascend with Y — luck, not design; full derivation and the "layer order is
+  a live tripwire" framing in `0005-ground-rendering-defect/00-findings.md`.
+  Fixed 2026-07-27 (`00ff4a1`) to `(20, 12000)`, a 600:1 ratio and 0.0004u of
+  resolution at the avatar. `near = 20` is sized off the closest the chase
+  camera legitimately gets to anything, 277u (`12r - 1.5r` at minimum
+  radius); `far = 12000` off the measured worst case, 8595u at L100 (camera
+  standoff `12*151` plus the 6788u ground diagonal) — note fog far is
+  `world * 2.0` (9600 at L100), not the 4830 an earlier pass through this
+  wiki implied. `camera.js`'s obstacle pull-in clearance now derives from
+  `camera.near` (`Math.max(0.5, camera.near * 1.5)`) instead of a flat 0.5
+  units, so a future near-plane change can't silently clip the landmark
+  stand-off again the way a 20-unit near plane would have against the old
+  constant.
+- **Ground depth-bias ladder.** Even after the near/far fix, quantization at
+  the far ground corner is still 0.069u — larger than the 0.05u the detail
+  plane leads the ground by — so the three previously-unprotected ground
+  layers now carry an explicit `polygonOffset` ladder instead of relying on Y
+  offsets and draw order: detail `-1`, lane paint `-2`, blob-shadow decals
+  `-3` (`main.js`, `instancing.js`). This sits strictly inside the avatar's
+  own `-2` (aperture disc) / `-6` (hub collar) budget (`avatar.js`, art-
+  direction.md §5), which is what keeps the mouth winning over the ground
+  stack at every radius. Any future ground-adjacent decal claims a rung in
+  this ladder rather than picking an arbitrary Y offset.
+- **Cost of the 2026-07-27 ground fix (`00ff4a1`):** +1 draw call (42 → 43)
+  and +128 triangles for the horizon skirt (art-direction.md §1 has the
+  description and its open items), no new textures — well inside the budget
+  above.
+- **Shadow pass has no effective culling (open, pre-existing).** Every prop
+  group casts shadows as one world-spanning `InstancedMesh`, so Three cannot
+  cull any instance out of the shadow pass and the full prop roster is
+  rasterized twice per frame (shadow map plus main pass); the main pass has a
+  real per-instance frustum cull, the shadow pass has none
+  (`0005-ground-rendering-defect/00-findings.md` §4.4). Measured on the live
+  deploy: 31.2fps sustained at 1440×900 on an Intel iGPU at 434k tris/frame.
+  Not caused by the 2026-07-27 fix above; recorded here because it is the
+  largest remaining GPU cost this wiki has a number for.
+- **Shadow-frustum crawl — IN PROGRESS, not fixed by `00ff4a1`.**
+  `followShadow()` (`scene.js`) rebuilds the sun's orthographic shadow volume
+  from the avatar's live radius every frame with no texel snapping and no
+  size hysteresis, so the shadow map's world-to-texel mapping both translates
+  and rescales per frame (`0005-ground-rendering-defect/00-findings.md` §4.1,
+  its RC-1). The commit message for `00ff4a1` names this the largest known
+  remaining contributor to motion instability and deliberately does not touch
+  it. A follow-up pass covering this plus atmosphere work is in flight.
 
 ## 2. World representation — the spatial hash is the world
 

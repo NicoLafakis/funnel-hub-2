@@ -102,7 +102,17 @@ builds on.
     match the Y order. Kills six hypotheses with evidence, including filtering/mips
     (correct by default), NPOT (WebGL2, moot), per-frame re-bake (none), pixel ratio
     and canvas sizing (correct), and double render (single vsynced call). Fix spec in
-    §7, prevention in §8. Not fixed; no source touched.
+    §7, prevention in §8. **Update (2026-07-27, `00ff4a1`):** the structural cause
+    (depth precision / `near`-`far`) is fixed — `camera.near`/`camera.far` moved
+    0.1/20000 → 20/12000 and the three ground layers got an explicit `polygonOffset`
+    ladder; see tech-architecture.md §1 and art-direction.md §5 for the numbers. That
+    same commit also fixed an unrelated but co-located blend-mode defect (missing
+    `premultipliedAlpha` on the ground-detail material, 545 → 0 console errors) and
+    added a horizon skirt; see art-direction.md §1. The **primary cause, the
+    per-frame unsnapped shadow-volume rebuild (§4.1, RC-1), is deliberately NOT
+    fixed** and is now the largest known remaining contributor to motion
+    instability — a follow-up pass covering it plus atmosphere work is in flight
+    (tech-architecture.md §1).
 
 ## Working agreements (edit as the project evolves)
 

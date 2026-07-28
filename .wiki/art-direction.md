@@ -6,6 +6,17 @@ band-aid for motion readability. The game has 10 beautiful metro identities
 on paper (Harbor Metropolis, Neon District, Desert Spires…) that are
 invisible in play.
 
+**Standing direction call (2026-07-27): "premium stylized."** Nico's explicit
+call for the current upgrade work: push the flat-cartoon Hole.io read toward
+Monument Valley / Donut County polish — richer surface detail, real depth
+cues, considered lighting — while staying explicitly NOT photoreal, NOT PBR.
+This confirms rather than overturns the standing decision at
+`src/content/textures.js:29` (`CITY_TEXTURES_ENABLED = false`) that quarantined
+the Leonardo-generated photoreal texture set in `assets/textures/photoreal/`:
+the photoreal set stays parked, and "premium" here means better-executed flat
+style, not a swap to photorealism. Everything below that references "not
+photorealism" is this call, stated once.
+
 ## 1. Districts, not scatter
 
 The single biggest visual upgrade. **Levels get procedural district layouts
@@ -60,6 +71,43 @@ instead of uniform scatter:**
   Nico:** the L100 ground texture runs ~16–22MB (`maxSize` in
   `groundTextureSize()` is the trade-off dial); see the findings doc §10
   for the full open-items roll-up.
+  **Blend-mode fix and detail-tile retune (2026-07-27, `00ff4a1`):** the
+  multiply-blended detail overlay was shipping without
+  `premultipliedAlpha: true`, and three's `WebGLState` has no MultiplyBlending
+  case in its non-premultiplied branch — it rejected the blend equation (545
+  console errors per live run), fell through to NormalBlending, and with the
+  tile's alpha at 255 that REPLACED the ground instead of modulating it: the
+  "blown-white ground" defect was a missing boolean, not bad texture content.
+  Full mechanism, evidence and the kill-list of other hypotheses live in
+  `0005-ground-rendering-defect/00-findings.md`; not repeated here. Fixing it
+  exposed a real aliasing defect underneath: the detail tile's finest octave
+  sat at 2.02 device px/cycle, on Nyquist, so it crawled under camera motion.
+  `DETAIL_TILE_WORLD` went 32 → 64 (top octave now 4.03 px/cycle, 2x margin;
+  detail texel density 16 → 8 tx/u, still 19x the layout map's 0.55 tx/u),
+  anisotropy went from a hardcoded `min(8, max)` to the uncapped device max
+  (16 on the live build — the 8 was throwing away half the filtering for
+  nothing), the detail repeat is now a whole number (`detailTileRepeat()`) so
+  the tile no longer cuts mid-pattern at the plane edge, and the detail map's
+  `colorSpace` moved `NoColorSpace` → `SRGBColorSpace` — the multiply lands
+  in an sRGB framebuffer, so the untagged map was arriving at 0.90 against
+  the authored 0.78 floor, half the intended contrast. **Open item, not
+  solved:** the 64u tile also halved close-range surface detail as a side
+  effect of fixing the aliasing — measured vHF 1.95 after vs. 3.31 before —
+  so the asphalt now reads flatter and more plasticky up close. A fidelity
+  regression hiding inside a real fix, verified on the live deploy, not yet
+  addressed.
+  The world also no longer ends in void: a **horizon skirt** (`RingGeometry`,
+  one flat ring from `0.48*world` out to `half + fogFar`, y = -2 so it sits
+  under the opaque ground plane and can't z-fight it) continues the ground
+  past the map edge and lets the existing fog dissolve it. Its colour is
+  sampled from the ground bake's own outer band (32×32 downsample, outermost
+  ring averaged) rather than hand-picked, so it tracks any future lighting
+  change for free. **Open item, not solved:** the hard world edge was
+  RELOCATED, not eliminated. Verified on the live deploy after the fix: the
+  ground→skirt join improved 271.6 → 49.0 (the commit message's claimed "34"
+  does not independently reproduce — 49.0 is the number that does, and is
+  the one to carry forward), but a new skirt→sky edge now measures 202.9 and
+  fills 40–50% of frame near the map edge.
 - **Buildings get facades:** the same generated set provides a facade
   per building tier (brick storefront / apartment grid / glass tower) —
   bold, flat-color reads, not photorealism.
@@ -240,6 +288,20 @@ Everything animates or it ships broken-feeling: prop tumble-in on eat
 this scale), one-point lighting (sun + hemisphere; no per-prop dynamic
 lights). Juice discipline per V1: effects fire on events, baseline play
 stays clean.
+
+**Ground depth-bias ladder (2026-07-27, `00ff4a1`).** The ground stack
+(detail grain, lane paint, prop blob-shadow decals) now carries an explicit
+`polygonOffset` ladder — detail `-1`, lane paint `-2`, blob-shadow decals `-3`
+(`main.js`, `instancing.js`) — instead of relying on world-unit Y offsets and
+material-creation-order luck; the "held together by luck" history and the
+depth-precision fix that made the ladder necessary are in tech-architecture.md
+and `0005-ground-rendering-defect/00-findings.md`. That ladder sits strictly
+inside the avatar's own `-2` (aperture disc) / `-6` (hub collar) `polygonOffset`
+budget (`avatar.js`), which is what keeps the mouth winning over the ground
+stack at every radius the game reaches. Any future ground-adjacent decal — a
+new juice beat, a new zone paint, the deferred tier-up prop re-tint sweep
+above — claims its own rung in this ladder rather than picking an arbitrary Y
+offset.
 
 **Blob shadow retune (2026-07-27), material pass.** Real cast shadows are
 on now (findings §6), so the blob decal's own darkening was stacking a
