@@ -197,17 +197,17 @@ export const PALETTE_BASE_KINDS = new Set([
 // non-white or a pastel instance hue x white detail renders as a flat slab
 // with zero window contrast. Chosen so (any pastel pick) x (fixed tint)
 // still reads as cool glass / dark trim against the body hue.
-const PALETTE_GLASS_TINT = '#587386'; // dark blue-grey window glass
-const PALETTE_TRIM_TINT = '#4f565e'; // neutral rooftop / facade trim
+const PALETTE_GLASS_TINT = '#7190a1'; // readable blue-grey window glass
+const PALETTE_TRIM_TINT = '#72777a'; // neutral rooftop / facade trim
 
 const CHICAGO_BUILDING_PALETTE = Object.freeze([
-  '#9b5e48', // red Chicago brick
-  '#b77855', // warm masonry
-  '#c2a472', // buff limestone
-  '#b9b3a5', // pale stone/concrete
-  '#527985', // blue-green curtain wall
-  '#697a82', // steel-grey glass
-  '#766987', // restrained purple landmark accent
+  '#b97860', // sunlit red Chicago brick
+  '#c9906b', // warm masonry
+  '#d0ad7e', // buff limestone
+  '#d0cbc0', // pale stone/concrete
+  '#b9ad96', // weathered limestone
+  '#7096a0', // blue-green curtain wall
+  '#87989d', // steel-grey glass
 ]);
 const CHICAGO_VEHICLE_PALETTE = Object.freeze([
   '#d9d9d3', '#d2a229', '#b94337', '#3f7398', '#4f765c', '#756585',

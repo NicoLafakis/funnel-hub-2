@@ -25,8 +25,9 @@
   critically damped angular spring for continuous left/right follow velocity.
 - The approved target frame now owns the ground palette: charcoal asphalt and
   neutral concrete supersede the historical lavender-road reference palette.
-- Level 1 uses 3× interactive park-tree density to reproduce the Loop
-  target's landscaped civic blocks without changing later Area 1 levels.
+- Level 1 uses 3.75× interactive tree density, weighted toward downtown
+  sidewalks, to reproduce the target's continuous canopy without changing
+  later Area 1 levels.
 - Its elevated rail now includes steel supports, two station decks and
   canopies, and a three-car L train assembled on the authored route.
 - The authored Level 1 budget preserves every tier's global mass product while

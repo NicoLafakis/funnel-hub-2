@@ -1269,13 +1269,15 @@ export function generateDistrict(level, opts = {}) {
     // The Loop target is defined by formal, tree-heavy civic parks. Keep the
     // extra canopy specific to the authored first level; later Area 1 levels
     // retain the metro baseline until their own city sections are authored.
-    const authoredMultiplier = chicagoPilot && flag === 'vegetation' ? 3 : 1;
+    const authoredMultiplier = chicagoPilot && flag === 'vegetation' ? 3.75 : 1;
     return Math.max(0, v) * authoredMultiplier;
   };
   const rngStreet = mulberry32((seed ^ 0x57EE7C0D) >>> 0);
   const STREET_PROP_POOLS = {
     // Trees: mostly grass (parks) and plaza edges, some sidewalk rows.
-    tree: [{ sites: parks, share: 0.5, zone: 'park' }, { sites: plazas, share: 0.2, zone: 'plaza' }, { sites: sidewalks, share: 0.3, zone: 'sidewalk' }],
+    tree: chicagoPilot
+      ? [{ sites: parks, share: 0.35, zone: 'park' }, { sites: sidewalks, share: 0.65, zone: 'sidewalk' }]
+      : [{ sites: parks, share: 0.5, zone: 'park' }, { sites: plazas, share: 0.2, zone: 'plaza' }, { sites: sidewalks, share: 0.3, zone: 'sidewalk' }],
     // People: strolling sidewalks and plazas, a few in the parks.
     person: [{ sites: sidewalks, share: 0.6, zone: 'sidewalk' }, { sites: plazas, share: 0.3, zone: 'plaza' }, { sites: parks, share: 0.1, zone: 'park' }],
     // Lamps: along road edges (sidewalk sites), a few lighting the plazas.
