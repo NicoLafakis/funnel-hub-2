@@ -258,7 +258,11 @@ function buildChicagoLoop(world) {
       // remains the opening feast park for immediate-playability.
       let zone = ix === edges.length - 2 ? 'park' : 'residential';
       if (ix === 2 && iz === 2) zone = 'park';
-      if ((ix === 1 && iz === 3) || (ix === 3 && iz === 1)) zone = 'plaza';
+      // One civic plaza is enough at this gameplay scale. The former second
+      // plaza at (3,1) produced the target comparison's largest dead concrete
+      // parcel; keeping it residential restores the built Michigan-adjacent
+      // frontage and leaves the northern plaza as the civic focal point.
+      if (ix === 1 && iz === 3) zone = 'plaza';
       blocks.push({
         x: (left + right) / 2,
         z: (bottom + top) / 2,

@@ -480,6 +480,9 @@ async function main() {
         && d1.streets.every((street) => street.rotY === 0 || street.rotY === Math.PI / 2)
         && d1.blocks.filter((block) => block.chicago && block.chicago.column === 4)
           .every((block) => block.zone === 'park'));
+    check('the Loop has one civic plaza and no duplicate dead-concrete block',
+      d1.blocks.filter((block) => block.zone === 'plaza').length === 1
+        && d1.blocks.find((block) => block.chicago.column === 3 && block.chicago.row === 1).zone === 'residential');
     check('the Loop carries river, elevated rail, and surrounding skyline context',
       d1.context && d1.context.id === 'chicago-loop'
         && d1.context.water.length === 3
