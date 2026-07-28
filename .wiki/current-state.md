@@ -51,6 +51,10 @@
   runs frame the opening park, medium buildings step behind them, and large
   towers occupy the outer commercial skyline. Stable block sorting preserves
   contiguous frontage runs and seeded output.
+- Chicago frontage slots use the small-building party-wall module instead of
+  the campaign's widest-mega-tower pitch. Medium and large buildings still
+  place first and reserve their full physical parcels through shared occupancy;
+  small shops then close the remaining street wall at the denser cadence.
 - Chicago civic modules appear once each; repeated block frontage draws from
   architectural profiles, including corrected Tribune Tower and historic
   storefront classifications.

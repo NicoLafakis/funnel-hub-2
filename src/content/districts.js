@@ -982,7 +982,15 @@ export function generateDistrict(level, opts = {}) {
   const parks = shuffle(parkSites(blocks, rngProps), rngProps);
   const plazas = shuffle(plazaSites(blocks, rngProps, landmarkPlaza), rngProps);
   const roads = shuffle(roadSites(streets, rngProps), rngProps);
-  const { corners, largeCorners, frontage } = buildingSites(blocks, rngProps, world, buildingPitch(budget));
+  // The generic generator sizes every frontage slot from the widest possible
+  // tier so any building can occupy any slot. Chicago instead builds its street
+  // wall from the shop module: large/medium tiers still place first and the
+  // shared occupancy grid clears the wider parcel they need, while remaining
+  // smalls can finally sit at a true party-wall cadence rather than tower pitch.
+  const frontageBudget = chicagoPilot
+    ? budget.filter((tier) => tier.kind === 'building-small')
+    : budget;
+  const { corners, largeCorners, frontage } = buildingSites(blocks, rngProps, world, buildingPitch(frontageBudget));
   // Chicago's civic park is framed by low-rise street walls, with the taller
   // commercial skyline stepping up behind them. Site arrays are consumed from
   // the end, so far-first sorts ascending and near-first sorts descending.
