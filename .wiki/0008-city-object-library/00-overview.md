@@ -45,8 +45,10 @@ and later areas, but Area 1 is the city-first pilot.
   per-object silhouettes without remote models or new dependencies.
 - All 234 IDs are registered collection identities and all appear at least once
   across Area 1.
-- Both Chicago Loop sheets are exclusive to Area 1, Level 1, so all 48 of
-  those types appear there. The 186 shared objects are divided across Levels
+- Both Chicago Loop sheets are exclusive to Area 1, Level 1. The 24 icon-sheet
+  types are interactive; the 24 rail-sheet types compose the render-only Loop
+  viaduct, stations, train, and streetscape instead of being scattered as
+  freestanding edible buildings or road vehicles. The 186 shared objects are divided across Levels
   2-10 at no more than 21 new types per level. With street props and goldens,
   Level 1 measures 59 opaque groups; the city-authored ceiling is 60. Other
   areas retain their previous ceiling of 24.
@@ -54,9 +56,9 @@ and later areas, but Area 1 is the city-first pilot.
   deterministically across its downtown-weighted gameplay placements. The
   authored budget preserves every tier's total mass while increasing buildings
   from 63 to 114 and reducing road vehicles from 102 to 74.
-- A dedicated regression gate asserts that Level 1 contains every Chicago
-  object, contains no shared-sheet city object, and Levels 2-10 contain no
-  `cityobj_chicago_*` identity.
+- A dedicated regression gate asserts that Level 1 contains all 24 interactive
+  Chicago icons plus all 24 context rail identities, and Levels 2-10 contain
+  no `cityobj_chicago_*` identity.
 
 ## Reference inventory
 

@@ -315,7 +315,9 @@ export const VISUAL_ARCHETYPES = Object.freeze(allArchetypes);
 export const DISTRICT_CATALOGS = Object.freeze(allCatalogs);
 
 // Area 1 is the Chicago pilot. Both `chicago-loop-*` reference sheets belong
-// exclusively to Level 1, so their 48 objects appear there together. The 186
+// exclusively to Level 1. Icon-sheet objects are interactive props; rail-sheet
+// objects are assembled semantically by city-context instead of masquerading
+// as road vehicles or freestanding buildings. The 186
 // shared urban objects are divided across Levels 2-10 (21 max per level).
 // Other areas retain their existing catalogs until researched city rosters
 // are authored.
@@ -324,16 +326,24 @@ const sharedUrban = CITY_OBJECTS.filter((entry) => entry.scope === 'shared');
 const CHICAGO_AREA_CATALOGS = Object.freeze(Object.fromEntries(Array.from({ length: 10 }, (_, offset) => {
   const district = offset + 1;
   const slice = district === 1
-    ? chicagoSpecific
+    ? chicagoSpecific.filter((entry) => entry.sheet === 'icon')
     // Round-robin the shared sheets so every neighborhood gets a balanced
     // mix of buildings, vehicles, civic modules, people, and street detail;
     // sequential slicing would make the final level almost entirely shops.
     : sharedUrban.filter((entry, index) => index % 9 === 10 - district);
   const base = allCatalogs['harbor-metropolis'][district];
-  const mixes = Object.freeze(Object.fromEntries(GAMEPLAY_KINDS.map((kind) => [
-    kind,
-    Object.freeze([...base.mixes[kind].slice(0, 1), ...slice.filter((entry) => entry.gameplayKind === kind).map((entry) => entry.id)]),
-  ])));
+  const mixes = Object.freeze(Object.fromEntries(GAMEPLAY_KINDS.map((kind) => {
+    // Chicago icons supply the built environment. Non-building tiers retain
+    // the complete seeded legacy mix so cars/buses/bikes stay varied after
+    // train and track modules move to their authored rail context.
+    const baseIds = district === 1 && !kind.startsWith('building')
+      ? base.mixes[kind]
+      : base.mixes[kind].slice(0, 1);
+    return [kind, Object.freeze([
+      ...baseIds,
+      ...slice.filter((entry) => entry.gameplayKind === kind).map((entry) => entry.id),
+    ])];
+  })));
   return [district, Object.freeze({ mixes, introduces: Object.freeze(district === 1 ? [] : slice.map((entry) => entry.id)) })];
 })));
 

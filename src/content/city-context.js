@@ -11,6 +11,7 @@ export function createCityContext(THREE, descriptor) {
   const group = new THREE.Group();
   group.name = `city-context-${descriptor && descriptor.id ? descriptor.id : 'none'}`;
   if (!descriptor || descriptor.id !== 'chicago-loop') return group;
+  group.userData.assetIds = Object.freeze([...(descriptor.assetIds || [])]);
 
   const groundMat = material(THREE, 0x69735f, 0.96);
   if (descriptor.ground) {

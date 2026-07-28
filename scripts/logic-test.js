@@ -909,6 +909,7 @@ async function main() {
     let maxLegacyGroups = 0;
     const areaOneCityObjects = new Set();
     const levelOneCityObjects = new Set();
+    const levelOneContextObjects = new Set();
     const laterChicagoObjects = new Set();
     for (let n = 1; n <= 100; n += 1) {
       const level = generateLevel(n);
@@ -942,6 +943,10 @@ async function main() {
           if (n === 1) levelOneCityObjects.add(p.visualId);
           else if (p.visualId.startsWith('cityobj_chicago_')) laterChicagoObjects.add(p.visualId);
         }
+        if (n === 1) for (const id of a.context.assetIds || []) {
+          areaOneCityObjects.add(id);
+          levelOneContextObjects.add(id);
+        }
       } else {
         maxLegacyGroups = Math.max(maxLegacyGroups, world.groupCount);
       }
@@ -953,8 +958,12 @@ async function main() {
     check('all 234 reference-led object types appear deterministically across Area 1',
       areaOneCityObjects.size === cityObjectsMod.CITY_OBJECTS.length);
     check('both chicago-loop reference sheets belong exclusively to Area 1 Level 1',
-      levelOneCityObjects.size === cityObjectsMod.CHICAGO_CITY_OBJECTS.length
-        && cityObjectsMod.CHICAGO_CITY_OBJECTS.every((entry) => levelOneCityObjects.has(entry.id))
+      levelOneCityObjects.size === cityObjectsMod.CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'icon').length
+        && cityObjectsMod.CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'icon')
+          .every((entry) => levelOneCityObjects.has(entry.id))
+        && levelOneContextObjects.size === cityObjectsMod.CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'rail').length
+        && cityObjectsMod.CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'rail')
+          .every((entry) => levelOneContextObjects.has(entry.id))
         && [...levelOneCityObjects].every((id) => id.startsWith('cityobj_chicago_'))
         && laterChicagoObjects.size === 0);
     check(`city-authored levels stay <=60 opaque groups (observed ${maxChicagoGroups})`, maxChicagoGroups <= 60);

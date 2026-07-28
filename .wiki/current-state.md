@@ -17,8 +17,9 @@
 - Its render-only background now continues the city with 454 buildings, 1,138
   trees, 62 road strips, distance-softened materials, and an eastern lakefront.
 - Area 1 now owns a 234-type reference-led city catalog: all 48 assets from
-  the two `chicago-loop-*` sheets are exclusive to Level 1, while 186 shared
-  urban objects are distributed across Levels 2-10.
+  the two `chicago-loop-*` sheets are exclusive to Level 1. Its 24 icon assets
+  are interactive and its 24 rail assets compose the authored context; 186
+  shared urban objects are distributed across Levels 2-10.
 - Reference-led building profiles include four-sided window bays, storefront
   bases, rooftop plant, and stepped tower crowns; chase heading uses a 0.16s
   critically damped angular spring for continuous left/right follow velocity.

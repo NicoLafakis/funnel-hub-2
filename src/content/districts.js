@@ -21,6 +21,7 @@ import { STREET_PROP_TIERS } from '../data/levels.js';
 import {
   districtCatalog, resolveVisualArchetype, streetPropArchetypeIds,
 } from './archetypes.js';
+import { CHICAGO_CITY_OBJECTS } from './city-object-catalog.js';
 // Placement has to know how big a prop actually DRAWS, not how big it eats.
 // propkit is deliberately THREE-free and DOM-free at module scope (see its
 // header), so importing it here keeps this module a pure-data generator.
@@ -339,6 +340,7 @@ function buildChicagoLoop(world) {
     landmarkPlaza,
     context: {
       id: 'chicago-loop',
+      assetIds: CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'rail').map((entry) => entry.id),
       water: [
         { x: 0, z: half + world * 0.035, w: world * 1.55, d: world * 0.09 },
         { x: -half - world * 0.035, z: 0, w: world * 1.32, d: world * 0.075, rotY: Math.PI / 2 },
