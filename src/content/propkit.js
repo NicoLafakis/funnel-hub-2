@@ -906,14 +906,50 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
     case 'midrise':
     case 'shop': {
       const inset = object.profile === 'tower' ? 0.62 : object.profile === 'shop' ? 0.92 : 0.78;
-      addBox(dim.w * inset, dim.h * (0.82 + phase * 0.12), dim.d * inset, 0, dim.h * 0.44, 0);
-      addBox(dim.w * inset * 1.05, dim.h * 0.08, dim.d * inset * 1.05, 0, dim.h * 0.9, 0, trim);
-      const bands = object.profile === 'shop' ? 2 : 3 + (index % 3);
-      for (let i = 0; i < bands; i += 1) {
-        const y = dim.h * (0.18 + i * 0.16);
-        addBox(dim.w * inset * 1.01, dim.h * 0.025, dim.d * inset * 1.015, 0, y, 0, glass);
+      const bodyW = dim.w * inset;
+      const bodyD = dim.d * inset;
+      const bodyH = dim.h * (object.profile === 'shop' ? 0.68 : 0.78 + phase * 0.08);
+      const bodyY = dim.h * 0.08 + bodyH / 2;
+      addBox(bodyW * 1.08, dim.h * 0.1, bodyD * 1.08, 0, dim.h * 0.05, 0, trim);
+      addBox(bodyW, bodyH, bodyD, 0, bodyY, 0);
+
+      // Tower setbacks create the stepped Chicago skyline instead of one
+      // enormous unarticulated prism.
+      if (object.profile === 'tower') {
+        const crownH = dim.h * (0.24 + phase * 0.08);
+        addBox(bodyW * 0.72, crownH, bodyD * 0.72, 0, dim.h * 0.08 + bodyH + crownH / 2, 0, main);
+        addBox(bodyW * 0.78, dim.h * 0.035, bodyD * 0.78, 0, dim.h * 0.08 + bodyH, 0, trim);
+        addColumn(dim.w * 0.028, dim.h * 0.25, 0, dim.h * 1.1, 0, trim, 6);
       }
-      if (object.profile === 'tower') addColumn(dim.w * 0.035, dim.h * 0.35, 0, dim.h * 1.08, 0, trim, 6);
+
+      // Actual window bays on all four facades. They are shallow boxes with
+      // vertex colors, so they survive merged instancing without a texture
+      // atlas or extra draw call.
+      const rows = object.profile === 'shop' ? 2 : 4 + (index % 3);
+      const cols = object.profile === 'shop' ? 3 : 3 + (index % 2);
+      const winW = bodyW / (cols * 1.75);
+      const winH = bodyH / (rows * 2.4);
+      for (let row = 0; row < rows; row += 1) {
+        const y = dim.h * 0.13 + (row + 0.55) * (bodyH * 0.8 / rows);
+        for (let col = 0; col < cols; col += 1) {
+          const xPos = -bodyW * 0.36 + col * (bodyW * 0.72 / Math.max(1, cols - 1));
+          const zPos = -bodyD * 0.36 + col * (bodyD * 0.72 / Math.max(1, cols - 1));
+          addBox(winW, winH, dim.d * 0.018, xPos, y, bodyD / 2 + dim.d * 0.01, glass);
+          addBox(winW, winH, dim.d * 0.018, xPos, y, -bodyD / 2 - dim.d * 0.01, glass);
+          addBox(dim.w * 0.018, winH, winW, bodyW / 2 + dim.w * 0.01, y, zPos, glass);
+          addBox(dim.w * 0.018, winH, winW, -bodyW / 2 - dim.w * 0.01, y, zPos, glass);
+        }
+      }
+
+      // Storefront awning/entrance and rooftop plant make the base and roof
+      // read at gameplay distance.
+      if (object.profile === 'shop') {
+        addBox(bodyW * 0.72, dim.h * 0.055, bodyD * 0.16, 0, dim.h * 0.3, bodyD * 0.56, trim);
+        addBox(bodyW * 0.2, dim.h * 0.27, dim.d * 0.025, 0, dim.h * 0.18, bodyD * 0.515, glass);
+      } else {
+        addBox(bodyW * 0.22, dim.h * 0.055, bodyD * 0.18, bodyW * 0.22, dim.h * 0.1 + bodyH, -bodyD * 0.18, trim);
+        addBox(bodyW * 0.14, dim.h * 0.045, bodyD * 0.14, -bodyW * 0.22, dim.h * 0.095 + bodyH, bodyD * 0.18, trim);
+      }
       break;
     }
     case 'rail': {

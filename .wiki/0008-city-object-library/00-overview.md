@@ -78,3 +78,14 @@ concept sheets. A later art pass may replace high-value IDs with authored GLB
 meshes through the existing optional model-kit seam without changing IDs,
 placement, saves, or economy. Live review should prioritize Level 1 silhouette
 readability and real-device cost at the new 59-group peak.
+
+## Live fidelity iteration — 2026-07-28
+
+The first deployed 1440×900 capture proved catalog presence but contradicted
+target fidelity: interactive Chicago buildings still read as unarticulated
+prisms. The runtime profiles now author window bays on all four facades,
+storefront awnings and entrances, rooftop plant, and stepped tower crowns.
+These details are merged into each instanced geometry, adding no draw groups;
+all archetypes remain under the 1,500-triangle ceiling. The live-only audit
+script records fixed gameplay frames and a timed heading/camera trace for each
+deployment iteration.

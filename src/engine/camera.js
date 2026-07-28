@@ -26,7 +26,11 @@ const DEG = Math.PI / 180;
 // basis for each continuous steering gesture (main.js), so heading can feed
 // camera presentation without feeding back into the held world direction.
 const BASE_YAW = 0;
-const HEADING_FOLLOW_RATE = 4.5;
+// Critically damped heading follow. A velocity-bearing spring preserves
+// angular continuity through left/right reversals; the old first-order lerp
+// changed angular velocity immediately and remained visibly behind the avatar
+// after a full steering sweep.
+const HEADING_SMOOTH_TIME = 0.2;
 
 // Framing (§2): the reference shows FAR more city than avatar — at spawn the
 // hole is ~23% of the frame width, where the old 40°/FOV 70/4r framing put it
@@ -102,6 +106,7 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
 
   let orbitYaw = 0;
   let followYaw = BASE_YAW;
+  let followYawVelocity = 0;
   let orbitPitchOffset = 0; // relative to PITCH_DEFAULT
   let sinceOrbitInput = Infinity;
   let lastX = avatar.position.x;
@@ -144,8 +149,15 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
     const heading = avatar.object3D && Number.isFinite(avatar.object3D.rotation.y)
       ? avatar.object3D.rotation.y
       : followYaw;
-    const yawK = 1 - Math.exp(-HEADING_FOLLOW_RATE * Math.max(0, dt));
-    followYaw += shortestAngle(followYaw, heading) * yawK;
+    const springDt = Math.min(0.1, Math.max(0, dt));
+    const targetYaw = followYaw + shortestAngle(followYaw, heading);
+    const omega = 2 / HEADING_SMOOTH_TIME;
+    const x = omega * springDt;
+    const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+    const change = followYaw - targetYaw;
+    const temp = (followYawVelocity + omega * change) * springDt;
+    followYawVelocity = (followYawVelocity - omega * temp) * decay;
+    followYaw = targetYaw + (change + temp) * decay;
 
     // Auto-recenter (game-design §1): after 2s of movement with no orbit
     // input, ease the orbit offsets back to zero so the camera settles
@@ -211,7 +223,7 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
     // Size-adaptive lag: bigger avatar -> higher follow rate -> LESS lag.
     const followRate = FOLLOW_RATE_BASE
       + Math.min(FOLLOW_RATE_MAX_BONUS, r * FOLLOW_RATE_RADIUS_GAIN);
-    const damp = Math.min(1, dt * followRate);
+    const damp = 1 - Math.exp(-followRate * Math.max(0, dt));
     camera.position.lerp(desiredPos, damp);
 
     // Edge look-ahead: smooth the provider's cluster centroid (or fall back
@@ -222,7 +234,7 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
       const cluster = lookaheadProvider(px, pz);
       const tx = cluster && typeof cluster.x === 'number' ? cluster.x : px;
       const tz = cluster && typeof cluster.z === 'number' ? cluster.z : pz;
-      const lk = Math.min(1, LOOKAHEAD_SMOOTH_RATE * dt);
+      const lk = 1 - Math.exp(-LOOKAHEAD_SMOOTH_RATE * Math.max(0, dt));
       lookaheadSmoothed.x += (tx - lookaheadSmoothed.x) * lk;
       lookaheadSmoothed.z += (tz - lookaheadSmoothed.z) * lk;
     } else {
@@ -255,6 +267,7 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
     // Input captures this at movement-start instead of rereading it each frame.
     get yaw() { return followYaw + orbitYaw; },
     get followYaw() { return followYaw; },
+    get followYawVelocity() { return followYawVelocity; },
     get baseYaw() { return BASE_YAW; },
     get orbitYaw() { return orbitYaw; },
     get pitch() {

@@ -490,10 +490,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_chicago_art_deco_office_mid_rise": {
     "minX": -5.610000133514404,
-    "minY": -0.7199997305870056,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.700000762939453,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_bascule_bridge_approach": {
@@ -522,10 +522,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_chicago_chicago_board_of_trade_building": {
     "minX": -5.610000133514404,
-    "minY": -0.4319996237754822,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.31599998474121,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_chicago_flag_banner_pole": {
@@ -538,10 +538,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_chicago_chicago_parking_garage": {
     "minX": -5.610000133514404,
-    "minY": -0.28799957036972046,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.124000549316406,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_chicago_river_bridge_module": {
@@ -570,10 +570,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_chicago_chicago_theatre": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.163999557495117,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_cloud_gate_the_bean": {
@@ -586,10 +586,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_chicago_cna_center_big_red": {
     "minX": -7.650000095367432,
-    "minY": -1.2599997520446777,
+    "minY": 1.1175870645585562e-10,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 52.709999084472656,
+    "maxY": 52.91999816894531,
     "maxZ": 7.650000095367432
   },
   "cityobj_chicago_crown_fountain": {
@@ -666,10 +666,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_chicago_elevated_station_stair_entrance": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.356000900268555,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_elevated_switch_junction_track": {
@@ -698,10 +698,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_chicago_harold_washington_library_center": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 21.972000122070312,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_historic_loop_corner_storefront_row": {
@@ -714,26 +714,26 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_chicago_l_station_entrance_pavilion": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 21.780000686645508,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_loop_station_platform_quincy": {
     "minX": -5.610000133514404,
-    "minY": -0.7199997305870056,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.700000762939453,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_loop_station_platform_wabash": {
     "minX": -5.610000133514404,
-    "minY": -0.14400047063827515,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.93199920654297,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_marina_city_tower_pair": {
@@ -741,47 +741,47 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 1.1175870645585562e-10,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 52.709999084472656,
+    "maxY": 51.45000076293945,
     "maxZ": 7.650000095367432
   },
   "cityobj_chicago_merchandise_mart": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.54800033569336,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_michigan_avenue_bridgehouse": {
     "minX": -3.569999933242798,
-    "minY": -0.19800010323524475,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_chicago_monadnock_building": {
     "minX": -5.610000133514404,
-    "minY": -0.5759996771812439,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.507999420166016,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_palmer_house": {
     "minX": -5.610000133514404,
-    "minY": -0.14400047063827515,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.93199920654297,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_rookery_building": {
     "minX": -5.610000133514404,
-    "minY": -4.1961669694501325e-7,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.739999771118164,
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_signal_gantry_module": {
@@ -853,15 +853,15 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 1.1175870645585562e-10,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 52.709999084472656,
+    "maxY": 51.45000076293945,
     "maxZ": 7.650000095367432
   },
   "cityobj_chicago_wrigley_building": {
     "minX": -5.610000133514404,
-    "minY": -0.28799957036972046,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.124000549316406,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_4_way_intersection_tile": {
@@ -890,19 +890,19 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_arcade_game_shop": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_atm_kiosk": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_avenue_median_tile": {
     "minX": -0.7049999833106995,
@@ -914,19 +914,19 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_bakery": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_barber_shop": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_barista_shop_clerk": {
     "minX": -0.7049999833106995,
@@ -962,11 +962,11 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_bike_shop": {
     "minX": -3.569999933242798,
-    "minY": -0.1320001184940338,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_billboard_structure": {
     "minX": -5.610000133514404,
@@ -994,19 +994,19 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_bookstore": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_boutique_clothing_store": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_brick_office_block": {
     "minX": -0.7049999833106995,
@@ -1074,10 +1074,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_car_wash_vacuum_station": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 21.780000686645508,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_cell_tower": {
@@ -1098,10 +1098,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_city_hall": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 21.972000122070312,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_city_park_module": {
@@ -1130,11 +1130,11 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_coffee_shop_cafe": {
     "minX": -3.569999933242798,
-    "minY": -0.19800010323524475,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_compact_car": {
     "minX": -1.1800000667572021,
@@ -1146,11 +1146,11 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_concession_stand_kiosk": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_concrete_barrier": {
     "minX": -0.4950000047683716,
@@ -1178,11 +1178,11 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_corner_shop": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_couple_strolling": {
     "minX": -0.7049999833106995,
@@ -1194,10 +1194,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_courthouse": {
     "minX": -5.610000133514404,
-    "minY": -4.1961669694501325e-7,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.739999771118164,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_crosswalk_tile": {
@@ -1250,11 +1250,11 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_deli_sandwich_shop": {
     "minX": -3.569999933242798,
-    "minY": 1.1175870645585562e-10,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_delivery_courier": {
     "minX": -0.7049999833106995,
@@ -1346,26 +1346,26 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_electrical_substation": {
     "minX": -5.610000133514404,
-    "minY": -0.28799957036972046,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.124000549316406,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_elementary_school": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.54800033569336,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_ev_charging_station": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 21.972000122070312,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_farmers_market_plaza": {
@@ -1394,10 +1394,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_fire_station": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 21.972000122070312,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_firefighter": {
@@ -1418,11 +1418,11 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_florist": {
     "minX": -3.569999933242798,
-    "minY": -1.5258788721439487e-7,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_flower_planter_plaza_piece": {
     "minX": -3.569999933242798,
@@ -1474,35 +1474,35 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_gas_station": {
     "minX": -5.610000133514404,
-    "minY": -0.14400047063827515,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.93199920654297,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_gazebo_pavilion": {
     "minX": -3.569999933242798,
-    "minY": -0.2640000879764557,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_grandstand_small_arena": {
     "minX": -5.610000133514404,
-    "minY": -0.4319996237754822,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.31599998474121,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_hardware_store": {
     "minX": -3.569999933242798,
-    "minY": -0.3300000727176666,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_hedge_module": {
     "minX": -0.4950000047683716,
@@ -1514,27 +1514,27 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_hospital_clinic": {
     "minX": -5.610000133514404,
-    "minY": -0.5759996771812439,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.507999420166016,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_hotel": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 21.780000686645508,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_ice_cream_stand": {
     "minX": -3.569999933242798,
-    "minY": -0.19800010323524475,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_jersey_barrier": {
     "minX": -0.4950000047683716,
@@ -1570,10 +1570,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_low_rise_apartment": {
     "minX": -5.610000133514404,
-    "minY": -4.1961669694501325e-7,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.739999771118164,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_mailbox": {
@@ -1586,11 +1586,11 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_maintenance_shed": {
     "minX": -3.569999933242798,
-    "minY": -0.1320001184940338,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_maintenance_worker": {
     "minX": -0.7049999833106995,
@@ -1610,18 +1610,18 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_mid_rise_apartment": {
     "minX": -5.610000133514404,
-    "minY": -0.5759996771812439,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.507999420166016,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_mixed_use_building": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.54800033569336,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_modern_glass_office_tower": {
@@ -1634,27 +1634,27 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_museum": {
     "minX": -5.610000133514404,
-    "minY": -0.5759996771812439,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.507999420166016,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_newspaper_stand": {
     "minX": -3.569999933242798,
-    "minY": -0.1320001184940338,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_newsstand_kiosk": {
     "minX": -3.569999933242798,
-    "minY": -0.3300000727176666,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_office_worker": {
     "minX": -0.7049999833106995,
@@ -1730,18 +1730,18 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_parking_garage": {
     "minX": -5.610000133514404,
-    "minY": -0.28799957036972046,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.124000549316406,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_parking_garage_storefront": {
     "minX": -5.610000133514404,
-    "minY": -4.1961669694501325e-7,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.739999771118164,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_parking_gate_arm": {
@@ -1778,11 +1778,11 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_pay_kiosk": {
     "minX": -3.569999933242798,
-    "minY": -0.2640000879764557,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_pedestrian_signal": {
     "minX": -0.7049999833106995,
@@ -1794,19 +1794,19 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_pet_shop": {
     "minX": -3.569999933242798,
-    "minY": -0.06600013375282288,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_pharmacy": {
     "minX": -3.569999933242798,
-    "minY": -0.2640000879764557,
+    "minY": -1.1920929132713809e-8,
     "minZ": -3.5799999237060547,
     "maxX": 3.569999933242798,
-    "maxY": 10.34000015258789,
-    "maxZ": 3.5799999237060547
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_pickup_truck": {
     "minX": -1.1800000667572021,
@@ -1890,10 +1890,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_police_station": {
     "minX": -5.610000133514404,
-    "minY": -4.1961669694501325e-7,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.739999771118164,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_portable_sign_board": {
@@ -1906,10 +1906,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_public_library": {
     "minX": -5.610000133514404,
-    "minY": -0.4319996237754822,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.31599998474121,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_public_restroom_module": {
@@ -1970,10 +1970,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_row_retail_building": {
     "minX": -5.610000133514404,
-    "minY": -0.4319996237754822,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.31599998474121,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_sanitation_worker": {
@@ -2082,10 +2082,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_small_church_community_hall": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.163999557495117,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_small_fountain_plaza": {
@@ -2130,10 +2130,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_stadium_arena": {
     "minX": -5.610000133514404,
-    "minY": -0.14400047063827515,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.93199920654297,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_stadium_entrance_gate": {
@@ -2210,10 +2210,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_supermarket": {
     "minX": -5.610000133514404,
-    "minY": 1.1175870645585562e-10,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 22.163999557495117,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_surface_parking_lot": {
@@ -2234,10 +2234,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_tall_purple_skyscraper": {
     "minX": -7.650000095367432,
-    "minY": -1.2599997520446777,
+    "minY": 1.1175870645585562e-10,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 52.709999084472656,
+    "maxY": 52.91999816894531,
     "maxZ": 7.650000095367432
   },
   "cityobj_shared_teal_skyscraper": {
@@ -2245,7 +2245,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 1.1175870645585562e-10,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 52.709999084472656,
+    "maxY": 51.45000076293945,
     "maxZ": 7.650000095367432
   },
   "cityobj_shared_tennis_court_module": {
@@ -2330,10 +2330,10 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
   },
   "cityobj_shared_warehouse_service_building": {
     "minX": -5.610000133514404,
-    "minY": -0.4319996237754822,
+    "minY": -4.7683716530855236e-8,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 22.559999465942383,
+    "maxY": 23.31599998474121,
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_water_tower": {

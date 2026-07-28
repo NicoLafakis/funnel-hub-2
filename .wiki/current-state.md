@@ -19,6 +19,9 @@
 - Area 1 now owns a 234-type reference-led city catalog: all 48 assets from
   the two `chicago-loop-*` sheets are exclusive to Level 1, while 186 shared
   urban objects are distributed across Levels 2-10.
+- Reference-led building profiles include four-sided window bays, storefront
+  bases, rooftop plant, and stepped tower crowns; chase heading uses a 0.2s
+  critically damped angular spring for continuous left/right follow velocity.
 
 ## Verified automated baseline
 

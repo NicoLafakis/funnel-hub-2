@@ -68,7 +68,10 @@ only in a narrow forward cone (D2).
   the avatar's facing direction, keeping its eye behind the player. It never
   changes framing distance, pitch, or FOV merely because the player turns.
   Section 1's gesture-stable movement basis prevents the historical feedback
-  loop between heading and camera-relative input.
+  loop between heading and camera-relative input. The follow is a
+  velocity-bearing critically damped angular spring (0.2s smooth time), so a
+  left/right reversal preserves angular velocity continuity while catching
+  the avatar more promptly than the former first-order exponential lag.
 - **High pitch (55°), long lens (FOV 40), long standoff (12r).** *Amended
   2026-07-27*: the original 40° / FOV 70 / 4r put the hole at ~85% of the
   frame width at spawn against the reference's ~23%, which inverted this
