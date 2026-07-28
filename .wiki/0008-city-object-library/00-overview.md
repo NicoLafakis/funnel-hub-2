@@ -51,7 +51,9 @@ and later areas, but Area 1 is the city-first pilot.
   Level 1 measures 59 opaque groups; the city-authored ceiling is 60. Other
   areas retain their previous ceiling of 24.
 - Level 1 uses all 48 Chicago transit, landmark, and streetscape objects, distributed
-  deterministically across its 473 gameplay placements.
+  deterministically across its downtown-weighted gameplay placements. The
+  authored budget preserves every tier's total mass while increasing buildings
+  from 63 to 114 and reducing road vehicles from 102 to 74.
 - A dedicated regression gate asserts that Level 1 contains every Chicago
   object, contains no shared-sheet city object, and Levels 2-10 contain no
   `cityobj_chicago_*` identity.

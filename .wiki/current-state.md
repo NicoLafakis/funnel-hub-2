@@ -28,6 +28,9 @@
   target's landscaped civic blocks without changing later Area 1 levels.
 - Its elevated rail now includes steel supports, two station decks and
   canopies, and a three-car L train assembled on the authored route.
+- The authored Level 1 budget preserves every tier's global mass product while
+  rebalancing the visible composition from 102 vehicles/63 buildings to 74
+  vehicles/114 buildings; later levels retain the global template.
 
 ## Verified automated baseline
 

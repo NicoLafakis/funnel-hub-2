@@ -124,6 +124,21 @@ const LEVEL_TEMPLATE = [
   { tierIndex: 6, baseRadius: TIER_RADII[6], baseMass: 85, baseCount: 9, kind: 'building-large', isCapstoneCandidate: true },
 ];
 
+// The Loop preserves the exact mass carried by every global tier while
+// redistributing object count toward a downtown composition. This is a visual
+// density contract, not an easier economy: traffic 102 -> 74, buildings
+// 63 -> 114, loose props 184 -> 155, total objects 349 -> 343. Each row's
+// baseMass * baseCount matches LEVEL_TEMPLATE exactly.
+const CHICAGO_LOOP_TEMPLATE = [
+  { tierIndex: 0, baseRadius: TIER_RADII[0], baseMass: 4.7, baseCount: 80, kind: 'trash' },
+  { tierIndex: 1, baseRadius: TIER_RADII[1], baseMass: 6, baseCount: 75, kind: 'bike' },
+  { tierIndex: 2, baseRadius: TIER_RADII[2], baseMass: 10.8, baseCount: 50, kind: 'car' },
+  { tierIndex: 3, baseRadius: TIER_RADII[3], baseMass: 28, baseCount: 24, kind: 'bus' },
+  { tierIndex: 4, baseRadius: TIER_RADII[4], baseMass: 9.45, baseCount: 80, kind: 'building-small' },
+  { tierIndex: 5, baseRadius: TIER_RADII[5], baseMass: 30, baseCount: 24, kind: 'building-medium' },
+  { tierIndex: 6, baseRadius: TIER_RADII[6], baseMass: 76.5, baseCount: 10, kind: 'building-large', isCapstoneCandidate: true },
+];
+
 // Sanity-computed sum(baseMass * baseCount), exported for tests/introspection.
 export const LEVEL_TEMPLATE_MASS_SUM = LEVEL_TEMPLATE.reduce((sum, t) => sum + t.baseMass * t.baseCount, 0);
 
@@ -237,13 +252,17 @@ function cloneTemplate() {
   return LEVEL_TEMPLATE.map((t) => ({ ...t }));
 }
 
+function cloneChicagoLoopTemplate() {
+  return CHICAGO_LOOP_TEMPLATE.map((t) => ({ ...t }));
+}
+
 export function generateLevel(n) {
   const chapter = chapterOf(n);
   const levelInChapter = levelInChapterOf(n);
   const metro = METROS[chapter - 1];
   const isCapstone = levelInChapter === 10;
   const unlock = MECHANIC_UNLOCKS.find((u) => u.level === n) || null;
-  const template = cloneTemplate();
+  const template = n === 1 ? cloneChicagoLoopTemplate() : cloneTemplate();
   return {
     n,
     chapter,

@@ -462,6 +462,19 @@ async function main() {
       generateLevel(1).cityName === 'Chicago'
         && generateLevel(1).districtName === 'The Loop · Chicago'
         && d1.archetype === 'chicago-loop');
+    check('the Loop preserves tier mass while favoring buildings over traffic', (() => {
+      const global = generateLevel(2).propBudget;
+      const loop = generateLevel(1).propBudget;
+      const massPreserved = loop.every((tier, i) => approxEqual(
+        tier.baseMass * tier.baseCount,
+        global[i].baseMass * global[i].baseCount,
+      ));
+      const count = (kinds) => loop.filter((tier) => kinds.includes(tier.kind))
+        .reduce((sum, tier) => sum + tier.baseCount, 0);
+      return massPreserved
+        && count(['car', 'bus']) === 74
+        && count(['building-small', 'building-medium', 'building-large']) === 114;
+    })());
     check('the Loop uses an orthogonal eight-street grid with an eastern park edge',
       d1.streets.length === 8
         && d1.streets.every((street) => street.rotY === 0 || street.rotY === Math.PI / 2)
