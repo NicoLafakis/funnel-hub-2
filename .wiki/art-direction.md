@@ -133,10 +133,13 @@ instead of uniform scatter:**
   and `scene.background` use — so ground→skirt→haze→sky is one continuous
   tone match rather than three independently-authored colours meeting at hard
   boundaries. The skirt itself also shrank: its outer radius dropped from
-  `world/2 + fogFar` to `world/2 + 1.25·HAZE_RUN` (`HAZE_RUN_WORLD = 0.35`),
-  because past `half + HAZE_RUN` every pixel was being lit-shaded and then
-  fully covered by the haze ring anyway — cutting skirt+haze frame fill from
-  25.27% to 15.88%. Measured on the live deploy at minimum pitch: the flat
+  `world/2 + fogFar` to `world/2 + 1.25·HAZE_RUN` (`HAZE_RUN_WORLD = 0.35`) —
+  **the 1.25 was itself a seam bug, superseded 2026-07-28 (`94f5383`, see
+  below)** — because past `half + HAZE_RUN` every pixel was being lit-shaded
+  and then fully covered by the haze ring anyway — cutting skirt+haze frame
+  fill from 25.27% to 15.88% (stale after the fix below: the skirt annulus
+  alone lost a further 24.1% of its area, not re-measured as a single
+  combined figure). Measured on the live deploy at minimum pitch: the flat
   grey slab that used to sit at a constant [123,125,140] and cover 36% of
   frame height is now gone entirely, and the sky-to-world channel step
   dropped 222 → 15 (−93%). Pulling fog in to fix this instead (the obvious
@@ -151,6 +154,51 @@ instead of uniform scatter:**
   a hard wall; `FogExp2` structurally cannot reach 1.0 at any finite distance,
   which is also what keeps art-direction.md §3/§4's "landmark always
   silhouette-visible" constraint true by construction rather than by tuning.
+  **Horizon-seam hairline CLOSED (2026-07-28, `94f5383`).** The world-edge
+  relocation above closed the hard skirt→sky edge but left a 3-4px tan
+  hairline arcing across the sky at low pitch, measured 207 channel-sum
+  against sky [163,203,255]. Cause: the skirt's outer radius
+  (`half + 1.25·HAZE_RUN`, 2264.06u on level 1) and the haze ring's outer
+  radius (`half + 1.20·HAZE_RUN`, 2221.80u) were two independently-chosen
+  constants that were never ordered against each other, so the skirt stuck
+  out 42.26u past the haze GEOMETRY entirely — that annulus had no haze over
+  it at all, not partial haze. At 35° pitch from the play bound it subtends
+  0.37°, which at fov 70 over 900px is 4.2px — the reported line,
+  arithmetically. Fixed by binding rather than by re-matching numbers:
+  `skirtOuter` IS `hazeFull` (`half + HAZE_RUN`), one expression, so there is
+  no second value left to drift. The haze alpha ramp is now keyed on
+  `hazeRun` instead of the geometry extent, so alpha reaches exactly 1 ON a
+  real vertex ring rather than 0.9976 between two, with one ring
+  (`HAZE_MARGIN_RINGS = 1`) of alpha-1 margin kept outside the skirt's rim.
+  Both rims are 64-gons from `RingGeometry` with identical
+  `thetaStart`/`thetaSegments`, so the polygonal inradius the old 1.25 was
+  nominally margin against cancels exactly; haze sits at y=-1 over skirt at
+  y=-2, so the coincident case already fails safe from any eye above both.
+  Hairline 207 → 2; the ground→haze→sky join the atmosphere pass fixed is
+  undamaged at 1-2 (target band 1-3), and the ground→skirt join measures
+  identically across the change. Zero cost: 45 draw calls / 434,926
+  triangles before and after — the alpha ramp was re-split across the same
+  ring count (`HAZE_RAMP_RINGS = 5` plus `HAZE_MARGIN_RINGS = 1`, replacing a
+  flat `HAZE_RINGS = 6`). The skirt annulus itself loses 24.1% of its area,
+  all of it lit fill that was being painted over anyway.
+  **Two corrections to this record.** First, the faint ring visible at
+  avatar r=483 was NOT the sky dome — it is the same skirt rim seen from
+  above as a closed circle, and it goes 60 → 0 under a fix that never
+  touches the dome. The dome cannot seam by construction: `thetaLength
+  0.62π` puts its rim 21.6° below the horizon, and its ramp is keyed on
+  `max(0, y)`, so its entire sub-horizon band is exactly `skyHorizon`, which
+  is `scene.background`. Second, the tempting alternative fix — make the
+  skirt's own vertex colours resolve to `skyHorizon` at its rim so it
+  self-terminates into the sky — is not implementable on a
+  `MeshStandardMaterial`: three multiplies vertex colours into the base
+  colour, so a vertex colour can only pull toward black, never lerp toward a
+  lighter sky. Getting it would cost either a second unlit material (a draw
+  call) or a transparent skirt, which would blend against the sky and
+  discard the lit ground-tone match that sampling the ground bake's outer
+  band exists to provide — vertex colours on a lit material are a multiply,
+  not a paint. `HAZE_RUN_WORLD`'s own source comment ("the lit ground skirt
+  underneath only has to survive this far") was already correct; the 1.25
+  was the drift, not the comment.
 - **Buildings get facades:** the same generated set provides a facade
   per building tier (brick storefront / apartment grid / glass tower) —
   bold, flat-color reads, not photorealism.

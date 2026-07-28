@@ -129,7 +129,15 @@ builds on.
     cull is wrong (it is an update-skip, not a rasterization cull). Full index
     of changes in `0005-ground-rendering-defect/00-findings.md` §10, numbers in
     `tech-architecture.md` §1 and `art-direction.md` §1/§3/§5. Real-device
-    (phone) GPU cost remains unmeasured.
+    (phone) GPU cost remains unmeasured. **Update (2026-07-28, `94f5383`):**
+    the relocated horizon edge above still had a seam — the skirt's outer
+    radius and the haze ring's outer radius were two independently-chosen
+    constants that disagreed by 42.26u, leaving an unhazed annulus that read
+    as a 3-4px hairline. CLOSED by binding the skirt's radius to the haze
+    ring's rather than matching numbers; see `art-direction.md` §1 for the
+    full derivation and two corrections to the record above (the r=483 ring
+    was the skirt, not the sky dome; a vertex-colour self-termination fix is
+    not implementable on `MeshStandardMaterial`).
 
 ## Working agreements (edit as the project evolves)
 

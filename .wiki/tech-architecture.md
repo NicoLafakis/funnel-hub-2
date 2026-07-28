@@ -155,6 +155,17 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
   dead: shadows visibly pop in ~14r ahead of the player at the default
   pitch. Covering it needs `half ≈ 36r` at 16:9 including lateral corners, a
   2.6× shadow-texel cost. Deliberately not spent this pass — Nico's call.
+- **Horizon-seam hairline CLOSED (2026-07-28, `94f5383`).** The skirt's
+  outer radius had been a second, independently-chosen constant
+  (`half + 1.25·HAZE_RUN`) instead of matching the haze ring's own
+  saturation point, so it stuck out 42.26u past the haze geometry and left
+  an unhazed annulus that read as a 207-channel-sum hairline at low pitch.
+  Fixed by binding `skirtOuter` to `hazeFull` as one expression rather than
+  a second number to keep in sync. Zero draw-call/triangle cost (still 45 /
+  434,926). Full derivation, and two corrections to the `4377c82` record
+  above (the r=483 ring was the skirt seen from above, not the sky dome;
+  vertex-colour self-termination into the sky is not implementable on a
+  `MeshStandardMaterial`), are in `art-direction.md` §1.
 
 ## 2. World representation — the spatial hash is the world
 
