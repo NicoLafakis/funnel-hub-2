@@ -32,6 +32,9 @@
   historic crown, and the Chicago Theatre carries a projecting marquee.
 - The approved target frame now owns the ground palette: charcoal asphalt and
   neutral concrete supersede the historical lavender-road reference palette.
+- The Loop day mood uses a dedicated brighter ambient/hemisphere fill while
+  retaining its directional key, keeping masonry readable inside dense street
+  canyons without changing lighting on the other 99 levels.
 - Level 1 uses 3.75× interactive tree density, weighted toward downtown
   sidewalks, to reproduce the target's continuous canopy without changing
   later Area 1 levels.

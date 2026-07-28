@@ -652,7 +652,7 @@ export async function main() {
     engine.scene.fog = new THREE.FogExp2(skyHorizon.getHex(), fogDensity);
     state.baseFog = { density: fogDensity };
     if (typeof engine.setMood === 'function') {
-      engine.setMood({ sky: metro.sky, ground: metro.ground, night });
+      engine.setMood({ sky: metro.sky, ground: metro.ground, night, cityId: level.authoredCity });
     }
 
     const root = new THREE.Group();

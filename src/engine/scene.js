@@ -333,7 +333,7 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
   // variants). Callers pass hex colors for the hemisphere sky/ground bounce
   // and `night: true` to dim every fixture — main.js's night dimming must go
   // through here, never by poking light intensities directly.
-  function setMood({ sky, ground, night } = {}) {
+  function setMood({ sky, ground, night, cityId } = {}) {
     if (sky !== undefined) hemi.color.set(sky);
     if (ground !== undefined) hemi.groundColor.set(ground);
     // Night keeps the SAME day/night ratios it always had (ambient x0.51,
@@ -341,9 +341,10 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
     // so the night levels darken by exactly as much as before rather than
     // inheriting a second, accidental change from the key/fill pass.
     const dim = !!night;
-    ambient.intensity = dim ? 0.06 : 0.12;
-    sun.intensity = dim ? 0.78 : 1.55;
-    hemi.intensity = dim ? 0.37 : 0.85;
+    const chicagoDay = !dim && cityId === 'chicago-loop';
+    ambient.intensity = dim ? 0.06 : chicagoDay ? 0.24 : 0.12;
+    sun.intensity = dim ? 0.78 : chicagoDay ? 1.45 : 1.55;
+    hemi.intensity = dim ? 0.37 : chicagoDay ? 1.05 : 0.85;
   }
 
   const clock = new THREE.Clock();
