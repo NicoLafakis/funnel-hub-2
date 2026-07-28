@@ -1239,7 +1239,11 @@ export function generateDistrict(level, opts = {}) {
   const streetDensity = (flag) => {
     const v = Number(streetFlags[flag]);
     if (!Number.isFinite(v)) return 1;
-    return Math.max(0, v);
+    // The Loop target is defined by formal, tree-heavy civic parks. Keep the
+    // extra canopy specific to the authored first level; later Area 1 levels
+    // retain the metro baseline until their own city sections are authored.
+    const authoredMultiplier = chicagoPilot && flag === 'vegetation' ? 2.25 : 1;
+    return Math.max(0, v) * authoredMultiplier;
   };
   const rngStreet = mulberry32((seed ^ 0x57EE7C0D) >>> 0);
   const STREET_PROP_POOLS = {

@@ -20,10 +20,14 @@
   the two `chicago-loop-*` sheets are exclusive to Level 1, while 186 shared
   urban objects are distributed across Levels 2-10.
 - Reference-led building profiles include four-sided window bays, storefront
-  bases, rooftop plant, and stepped tower crowns; chase heading uses a 0.2s
+  bases, rooftop plant, and stepped tower crowns; chase heading uses a 0.16s
   critically damped angular spring for continuous left/right follow velocity.
 - The approved target frame now owns the ground palette: charcoal asphalt and
   neutral concrete supersede the historical lavender-road reference palette.
+- Level 1 uses 2.25× interactive park-tree density to reproduce the Loop
+  target's landscaped civic blocks without changing later Area 1 levels.
+- Its elevated rail now includes steel supports, two station decks and
+  canopies, and a three-car L train assembled on the authored route.
 
 ## Verified automated baseline
 

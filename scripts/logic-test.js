@@ -480,8 +480,8 @@ async function main() {
     check('Chicago context builds as a finite, low-draw scene group',
       contextGroup.isGroup
         && contextGroup.children.length > 0
-        && contextGroup.children.filter((child) => child.isInstancedMesh).length === 13
-        && contextGroup.children.length === 17);
+        && contextGroup.children.filter((child) => child.isInstancedMesh).length === 14
+        && contextGroup.children.length === 19);
   }
 
   // ---------------------------------------------------------------------
@@ -1276,6 +1276,23 @@ async function main() {
     check('camera smoothly turns behind the avatar heading',
       Math.abs(shortestAngleTo(chase.followYaw, Math.PI / 2)) < 0.03
         && camera.position.x < -100);
+    check('camera follow reverses continuously and catches the player within one second', (() => {
+      cameraAvatar.object3D.rotation.y = -1.2;
+      let previousYaw = chase.followYaw;
+      let previousVelocity = chase.followYawVelocity;
+      let maxYawStep = 0;
+      let maxVelocityStep = 0;
+      for (let i = 0; i < 60; i += 1) {
+        chase.update(DT);
+        maxYawStep = Math.max(maxYawStep, Math.abs(shortestAngleTo(previousYaw, chase.followYaw)));
+        maxVelocityStep = Math.max(maxVelocityStep, Math.abs(chase.followYawVelocity - previousVelocity));
+        previousYaw = chase.followYaw;
+        previousVelocity = chase.followYawVelocity;
+      }
+      return Math.abs(shortestAngleTo(chase.followYaw, -1.2)) < 0.03
+        && maxYawStep < 0.22
+        && maxVelocityStep < 6;
+    })());
     check('manual orbit remains an offset from the followed heading', (() => {
       const before = chase.yaw;
       chase.orbitBy(0.25, 0);

@@ -65,6 +65,7 @@ async function enterLevelOne(page) {
         heading: fw.avatar.object3D.rotation.y,
         cameraX: c.x, cameraZ: c.z,
         followYaw: chase && chase.followYaw,
+        followYawVelocity: chase && chase.followYawVelocity,
         yaw: chase && chase.yaw,
       };
     }));

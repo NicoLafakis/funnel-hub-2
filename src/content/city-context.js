@@ -163,6 +163,93 @@ export function createCityContext(THREE, descriptor) {
   tieMesh.castShadow = false;
   group.add(beamMesh, tieMesh);
 
+  // The Loop is a steel viaduct, not rails hovering over asphalt. Repeated
+  // portal frames, station decks, canopies, and a short L train create the
+  // unmistakable high-angle Chicago silhouette while staying render-only.
+  const supportRecords = [];
+  for (const rec of rail) {
+    const count = Math.max(3, Math.floor(rec.w / 70));
+    const yaw = rec.rotY || 0;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    for (let j = 0; j < count; j += 1) {
+      const localX = ((j + 0.5) / count - 0.5) * rec.w;
+      for (const offset of [-9, 9]) {
+        supportRecords.push({
+          x: rec.x + localX * c + offset * s,
+          z: rec.z - localX * s + offset * c,
+          yaw,
+        });
+      }
+    }
+  }
+  const supportGeo = new THREE.BoxGeometry(1, 1, 1);
+  const supportMesh = new THREE.InstancedMesh(supportGeo, railMat, supportRecords.length);
+  supportMesh.name = 'loop-elevated-support-columns';
+  supportRecords.forEach((rec, i) => {
+    quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rec.yaw);
+    matrix.compose(
+      new THREE.Vector3(rec.x, 14.5, rec.z),
+      quat,
+      new THREE.Vector3(3.2, 29, 3.2),
+    );
+    supportMesh.setMatrixAt(i, matrix);
+  });
+  supportMesh.instanceMatrix.needsUpdate = true;
+  supportMesh.castShadow = false;
+  supportMesh.receiveShadow = false;
+  group.add(supportMesh);
+
+  const stationMat = material(THREE, 0x59636a, 0.78);
+  const canopyMat = material(THREE, 0x71848b, 0.64);
+  const stationGroup = new THREE.Group();
+  stationGroup.name = 'loop-stations-and-train';
+  const stationSegments = [rail[0], rail[1]].filter(Boolean);
+  stationSegments.forEach((rec, i) => {
+    const yaw = rec.rotY || 0;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const along = i === 0 ? -rec.w * 0.23 : rec.w * 0.19;
+    const sx = rec.x + along * c;
+    const sz = rec.z - along * s;
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(92, 3.2, 30), stationMat);
+    deck.position.set(sx, 31, sz);
+    deck.rotation.y = yaw;
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(72, 3, 25), canopyMat);
+    canopy.position.set(sx, 43, sz);
+    canopy.rotation.y = yaw;
+    const canopyPosts = [-28, 28].flatMap((alongPost) => [-10, 10].map((across) => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(2.4, 11, 2.4), railMat);
+      post.position.set(
+        sx + alongPost * c + across * s,
+        36.5,
+        sz - alongPost * s + across * c,
+      );
+      return post;
+    }));
+    stationGroup.add(deck, canopy, ...canopyPosts);
+  });
+
+  if (rail[0]) {
+    const rec = rail[0];
+    const trainMat = material(THREE, 0xb8bcc0, 0.46);
+    const stripeMat = material(THREE, 0x2f6f9b, 0.5);
+    for (let car = 0; car < 3; car += 1) {
+      const along = rec.w * 0.18 + (car - 1) * 46;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(42, 14, 18), trainMat);
+      body.position.set(rec.x + along, 40, rec.z);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(42.4, 3, 18.4), stripeMat);
+      stripe.position.set(rec.x + along, 40, rec.z);
+      stationGroup.add(body, stripe);
+    }
+  }
+  stationGroup.traverse((node) => {
+    if (!node.isMesh) return;
+    node.castShadow = false;
+    node.receiveShadow = false;
+  });
+  group.add(stationGroup);
+
   group.userData.dispose = () => {
     const geometries = new Set();
     const materials = new Set();

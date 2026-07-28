@@ -30,7 +30,7 @@ const BASE_YAW = 0;
 // angular continuity through left/right reversals; the old first-order lerp
 // changed angular velocity immediately and remained visibly behind the avatar
 // after a full steering sweep.
-const HEADING_SMOOTH_TIME = 0.2;
+const HEADING_SMOOTH_TIME = 0.16;
 
 // Framing (§2): the reference shows FAR more city than avatar — at spawn the
 // hole is ~23% of the frame width, where the old 40°/FOV 70/4r framing put it
