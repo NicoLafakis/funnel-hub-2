@@ -78,11 +78,11 @@ instead of uniform scatter:**
   courts, dashed centre lines, lane edges, parking bays, crosswalk zebras,
   manhole covers. The `block` ground class no longer exists as a distinct
   case — formerly-bare block interiors (49% of the map) now default to
-  pavement. Grayscale ladder, monotonic across all ten metros, ~32% luma
-  span: asphalt 0.54 < grass 0.66 < pavement 0.71 < curb 0.83 < plaza 0.87
-  ≈ promenade 0.88 < lane paint 1.00 — the three light paved classes sit
-  within 5% of each other in value by design (all concrete) and are told
-  apart by slab pitch and a coarser course line instead. **Open, needs
+  pavement. The approved city target supersedes the earlier lavender-road
+  palette: asphalt is charcoal, sidewalks and plazas are neutral concrete,
+  grass is moderated green, and lane paint remains the brightest ground
+  element. Paved classes are also told apart by slab pitch and a coarser
+  course line. **Open, needs
   Nico:** the L100 ground texture runs ~16–22MB (`maxSize` in
   `groundTextureSize()` is the trade-off dial); see the findings doc §10
   for the full open-items roll-up.

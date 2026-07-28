@@ -22,6 +22,8 @@
 - Reference-led building profiles include four-sided window bays, storefront
   bases, rooftop plant, and stepped tower crowns; chase heading uses a 0.2s
   critically damped angular spring for continuous left/right follow velocity.
+- The approved target frame now owns the ground palette: charcoal asphalt and
+  neutral concrete supersede the historical lavender-road reference palette.
 
 ## Verified automated baseline
 

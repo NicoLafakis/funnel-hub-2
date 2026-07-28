@@ -92,27 +92,19 @@ export const GROUND_TEX_MAX = 2048;
 export const GROUND_TEX_MIN = 512;
 
 // Zone palette. Each ground class is the metro's ground colour mixed toward a
-// target; `t` is how far. Targets are read off the reference set
-// (assets/references/holeio/): lavender-grey carriageways, cool cream
-// pavements, vivid cartoon grass, warm sand.
+// target; `t` is how far. Targets follow the approved city frame: charcoal
+// carriageways, neutral concrete, moderated grass, and warm sand. The older
+// lavender Hole.io palette remains historical evidence, not current intent.
 //
 // `t` is HIGH on purpose. The old table let the metro ground colour dominate
 // (block sat at t=0.06, i.e. 94% raw metro ground), so warm-grounded metros
 // rendered as brown mud and the whole value ladder collapsed. The metro is now
-// a tint on a designed surface, not the surface itself. Grayscale ladder
-// (relative luma) — the art bible's grayscale test:
-//
-//   asphalt 0.54 < grass 0.66 < pavement 0.71 < curb 0.83
-//                < plaza 0.87 < promenade 0.88 < lane paint 1.00
-//
-// Monotonic in all ten metros (verified by probe), total span 32% luma. The
-// three light paved classes sit within 5% of each other by design — they are
-// all concrete, exactly as in the reference — so they carry a NON-COLOUR
-// distinction as well: different slab pitches, and a second coarser course
-// line on plaza and promenade.
-//
-// asphalt/grass separate by hue more than value, which is true of the
-// reference too; the grass mottle and its darker rim carry the rest.
+// a tint on a designed surface, not the surface itself. The value hierarchy is
+// asphalt < grass < pavement < curb/plaza/promenade < lane paint. Concrete
+// classes also carry a NON-COLOUR distinction through different slab pitches
+// and a second coarser course line on plaza and promenade. Asphalt/grass
+// separate by hue as well as value; grass mottle and its darker rim carry the
+// rest.
 //
 // `wash` applies when opts.textures supplies a photographic surface: the tint
 // is overlaid at that alpha so the baked result stays as bright as the
@@ -152,20 +144,19 @@ export const GROUND_TEX_MIN = 512;
 export const GROUND_ALBEDO_SCALE = 1.0;
 
 export const GROUND_ZONE_MIX = {
-  asphalt: { target: '#8477a8', t: 0.86, wash: 0.62 },
-  curb: { target: '#e0d8ec', t: 0.84, wash: 0.30 },
-  plaza: { target: '#e4ddee', t: 0.86, wash: 0.32 },
-  // Avenue blocks read as a warm CREAM promenade against the cool lilac of
-  // residential pavement — the two biggest block families have to separate by
-  // hue as well as by value or the district goes back to one flat field.
-  promenade: { target: '#f4e9d0', t: 0.84, wash: 0.30 },
-  pavement: { target: '#bdb2d2', t: 0.84, wash: 0.30 },
-  grass: { target: '#5ec945', t: 0.88, wash: 0.25 },
-  sand: { target: '#e4d6a4', t: 0.80, wash: 0.25 },
+  asphalt: { target: '#3f454d', t: 0.92, wash: 0.72 },
+  curb: { target: '#c9c9c4', t: 0.88, wash: 0.34 },
+  plaza: { target: '#b8b9b5', t: 0.90, wash: 0.36 },
+  // Avenue promenades keep a restrained warm cast against neutral residential
+  // pavement so the two large block families do not collapse into one field.
+  promenade: { target: '#c8c3b7', t: 0.88, wash: 0.34 },
+  pavement: { target: '#a7aaa8', t: 0.90, wash: 0.34 },
+  grass: { target: '#62ad4f', t: 0.90, wash: 0.28 },
+  sand: { target: '#c9bd94', t: 0.84, wash: 0.28 },
   // Back-compat alias: `block` was the old name for open/residential ground.
   // describeGround no longer emits it; kept so external readers of this table
   // do not break.
-  block: { target: '#bdb2d2', t: 0.84, wash: 0.30 },
+  block: { target: '#a7aaa8', t: 0.90, wash: 0.34 },
 };
 
 // HORIZON NOTE (0004 defect 4). main.js continues this map past the play

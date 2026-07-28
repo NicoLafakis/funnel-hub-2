@@ -895,6 +895,8 @@ async function main() {
     let maxChicagoGroups = 0;
     let maxLegacyGroups = 0;
     const areaOneCityObjects = new Set();
+    const levelOneCityObjects = new Set();
+    const laterChicagoObjects = new Set();
     for (let n = 1; n <= 100; n += 1) {
       const level = generateLevel(n);
       const a = districtsMod.generateDistrict(level);
@@ -921,7 +923,12 @@ async function main() {
       })));
       if (n <= 10) {
         maxChicagoGroups = Math.max(maxChicagoGroups, world.groupCount);
-        for (const p of a.props) if (p.visualId.startsWith('cityobj_')) areaOneCityObjects.add(p.visualId);
+        for (const p of a.props) {
+          if (!p.visualId.startsWith('cityobj_')) continue;
+          areaOneCityObjects.add(p.visualId);
+          if (n === 1) levelOneCityObjects.add(p.visualId);
+          else if (p.visualId.startsWith('cityobj_chicago_')) laterChicagoObjects.add(p.visualId);
+        }
       } else {
         maxLegacyGroups = Math.max(maxLegacyGroups, world.groupCount);
       }
@@ -932,6 +939,11 @@ async function main() {
     check('all 100 visual-ID selections are byte-identical on duplicate generation', deterministicPass);
     check('all 234 reference-led object types appear deterministically across Area 1',
       areaOneCityObjects.size === cityObjectsMod.CITY_OBJECTS.length);
+    check('both chicago-loop reference sheets belong exclusively to Area 1 Level 1',
+      levelOneCityObjects.size === cityObjectsMod.CHICAGO_CITY_OBJECTS.length
+        && cityObjectsMod.CHICAGO_CITY_OBJECTS.every((entry) => levelOneCityObjects.has(entry.id))
+        && [...levelOneCityObjects].every((id) => id.startsWith('cityobj_chicago_'))
+        && laterChicagoObjects.size === 0);
     check(`city-authored levels stay <=60 opaque groups (observed ${maxChicagoGroups})`, maxChicagoGroups <= 60);
     check(`legacy levels retain the <=24 opaque-group budget (observed ${maxLegacyGroups})`, maxLegacyGroups <= 24);
     check('all 100 layouts keep building tiers out of the initial chase-camera corridor',

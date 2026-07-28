@@ -52,6 +52,9 @@ and later areas, but Area 1 is the city-first pilot.
   areas retain their previous ceiling of 24.
 - Level 1 uses all 48 Chicago transit, landmark, and streetscape objects, distributed
   deterministically across its 473 gameplay placements.
+- A dedicated regression gate asserts that Level 1 contains every Chicago
+  object, contains no shared-sheet city object, and Levels 2-10 contain no
+  `cityobj_chicago_*` identity.
 
 ## Reference inventory
 
