@@ -705,12 +705,12 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "maxZ": 5.610000133514404
   },
   "cityobj_chicago_historic_loop_corner_storefront_row": {
-    "minX": -0.7049999833106995,
-    "minY": 1.1175870645585562e-10,
-    "minZ": -0.7049999833106995,
-    "maxX": 0.7049999833106995,
-    "maxY": 0.5698000192642212,
-    "maxZ": 0.7049999833106995
+    "minX": -3.569999933242798,
+    "minY": -1.1920929132713809e-8,
+    "minZ": -3.5799999237060547,
+    "maxX": 3.569999933242798,
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_chicago_l_station_entrance_pavilion": {
     "minX": -5.610000133514404,
@@ -825,12 +825,12 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "maxZ": 3.5799999237060547
   },
   "cityobj_chicago_tribune_tower": {
-    "minX": -0.7049999833106995,
+    "minX": -7.650000095367432,
     "minY": 1.1175870645585562e-10,
-    "minZ": -0.7049999833106995,
-    "maxX": 0.7049999833106995,
-    "maxY": 0.5698000192642212,
-    "maxZ": 0.7049999833106995
+    "minZ": -7.650000095367432,
+    "maxX": 7.650000095367432,
+    "maxY": 51.45000076293945,
+    "maxZ": 7.650000095367432
   },
   "cityobj_chicago_two_car_l_train_set": {
     "minX": -1.1800000667572021,

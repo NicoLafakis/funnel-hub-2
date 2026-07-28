@@ -47,9 +47,9 @@ function classify(name) {
   if (/worker|officer|firefighter|paramedic|courier|jogger|cyclist|person|student|tourist|vendor|clerk|guard|walker|skateboarder|couple|visitor|queue|crowd|businesswoman/.test(name)) return ['person', 'trash'];
   if (/car|sedan|truck|van|ambulance/.test(name) && !/car wash|parking/.test(name)) return ['vehicle', 'car'];
   if (/bus|train|transit/.test(name)) return ['largeVehicle', 'bus'];
-  if (/willis|skyscraper|tower pair|cna center/.test(name)) return ['tower', 'building-large'];
+  if (/willis|skyscraper|tower pair|cna center|tribune tower/.test(name)) return ['tower', 'building-large'];
   if (/building|mid-rise|apartment|hotel|merchandise mart|palmer house|library center|rookery|monadnock|theatre|garage|school|library|city hall|courthouse|museum|supermarket|station|hospital|warehouse|church|arena/.test(name)) return ['midrise', 'building-medium'];
-  if (/shop|bakery|bookstore|florist|pharmacy|barber|hardware|boutique|arcade|deli|kiosk|stand|shed|bridgehouse|pavilion|fire station|police station/.test(name)) return ['shop', 'building-small'];
+  if (/shop|storefront row|bakery|bookstore|florist|pharmacy|barber|hardware|boutique|arcade|deli|kiosk|stand|shed|bridgehouse|pavilion|fire station|police station/.test(name)) return ['shop', 'building-small'];
   if (/track|rail|platform|under-the-el|catwalk/.test(name)) return ['rail', 'building-small'];
   if (/plaza|park|field|court|diamond|roundabout|road|street|lane|sidewalk|crosswalk|bridge|approach|parking space|loading zone|alley|retaining wall|tunnel|cul-de-sac|construction site|surface parking/.test(name)) return ['module', 'building-small'];
   if (/statue|memorial|monument|fountain|arch|bean|picasso|flamingo|cloud gate|water tower|substation|cell tower|billboard|grandstand/.test(name)) return ['landmark', 'building-medium'];

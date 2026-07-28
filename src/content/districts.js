@@ -1096,11 +1096,26 @@ export function generateDistrict(level, opts = {}) {
   // novelty reservation below, preserving the campaign contract.
   if (districtN === 1) {
     for (const kind of Object.keys(catalog.mixes)) {
-      const ids = catalog.mixes[kind].slice(1);
+      const ids = catalog.mixes[kind];
       if (!ids.length) continue;
       const candidates = shuffle(props.filter((p) => p.kind === kind), rngVisual);
+      const authoredIds = ids.filter((id) => resolveVisualArchetype(id, kind).cityObject);
+      const genericIds = ids.filter((id) => !resolveVisualArchetype(id, kind).cityObject);
+      const architecturalIds = authoredIds.filter((id) => {
+        const profile = resolveVisualArchetype(id, kind).cityObject.profile;
+        return profile === 'tower' || profile === 'midrise' || profile === 'shop';
+      });
+      // Every Chicago identity appears once. Repetition then favors real
+      // architecture; plazas, bridges, fountains, and sculptures stay civic
+      // one-offs instead of tiling ordinary block frontage.
+      const fillerIds = kind.startsWith('building')
+        ? [...genericIds, ...architecturalIds]
+        : genericIds.length ? genericIds : authoredIds;
       for (let i = 0; i < candidates.length; i += 1) {
-        const descriptor = resolveVisualArchetype(ids[i % ids.length], kind);
+        const id = i < authoredIds.length
+          ? authoredIds[i]
+          : fillerIds[(i - authoredIds.length) % fillerIds.length];
+        const descriptor = resolveVisualArchetype(id, kind);
         candidates[i].visualId = descriptor.id;
         candidates[i].collectionKey = descriptor.collectionKey;
       }

@@ -56,6 +56,9 @@ and later areas, but Area 1 is the city-first pilot.
   deterministically across its downtown-weighted gameplay placements. The
   authored budget preserves every tier's total mass while increasing buildings
   from 63 to 114 and reducing road vehicles from 102 to 74.
+- Chicago civic modules are one-off identities; repeated frontage favors the
+  actual tower, mid-rise, storefront, and bridgehouse profiles. Tribune Tower
+  and the historic Loop storefront row are explicitly classified as buildings.
 - A dedicated regression gate asserts that Level 1 contains all 24 interactive
   Chicago icons plus all 24 context rail identities, and Levels 2-10 contain
   no `cityobj_chicago_*` identity.

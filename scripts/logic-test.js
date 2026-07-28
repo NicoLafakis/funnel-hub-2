@@ -898,6 +898,9 @@ async function main() {
       cityObjectsMod.CITY_OBJECTS.every((entry) => entry.id.startsWith('cityobj_')
         && entry.widthM > 0 && entry.heightM > 0 && entry.depthM > 0
         && archetypesMod.VISUAL_ARCHETYPES[entry.id].gameplayKind === entry.gameplayKind));
+    check('Chicago towers and storefront rows resolve as architecture, not clutter',
+      cityObjectsMod.CITY_OBJECT_BY_ID.cityobj_chicago_tribune_tower.gameplayKind === 'building-large'
+        && cityObjectsMod.CITY_OBJECT_BY_ID.cityobj_chicago_historic_loop_corner_storefront_row.gameplayKind === 'building-small');
     check('Skyline-opedia exposes exactly the 30 visible archetypes per metro',
       METROS.every((metro) => Array.isArray(propkit.metroVariants[metro.id])
         && propkit.metroVariants[metro.id].length === 30));

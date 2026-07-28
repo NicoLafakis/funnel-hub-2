@@ -32,6 +32,9 @@
 - The authored Level 1 budget preserves every tier's global mass product while
   rebalancing the visible composition from 102 vehicles/63 buildings to 74
   vehicles/114 buildings; later levels retain the global template.
+- Chicago civic modules appear once each; repeated block frontage draws from
+  architectural profiles, including corrected Tribune Tower and historic
+  storefront classifications.
 
 ## Verified automated baseline
 
