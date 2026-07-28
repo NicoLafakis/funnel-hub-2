@@ -56,17 +56,13 @@ function softDiscTexture(THREE) {
 
 // --- Harbor Metropolis: the bridge on the horizon ---------------------------
 //
-// THE SIDE OF THE MAP THIS SITS ON IS NOT A TASTE CALL. src/engine/camera.js
-// pins `BASE_YAW = 0` — the chase camera's world orientation is a CONSTANT
-// (that constant is what stopped steering fighting the player; see the
-// BASE_YAW comment and scripts/motion-probe.mjs). View direction is therefore
-// always +Z, the camera always stands on the -Z side of the avatar, and the
-// player's only yaw authority is `orbitYaw`, which is clamped to +-120 deg AND
-// decays back to zero after 2s. The first build of this signature stood at
+// THE SIDE OF THE MAP THIS SITS ON IS NOT A TASTE CALL. The chase camera
+// begins at `BASE_YAW = 0`, looking +Z from the -Z side, before following the
+// player's heading. The first build of this signature stood at
 // `z = -world/2 - world*0.15`: measured on the live deploy it was 1570 units
 // DIRECTLY BEHIND THE CAMERA at spawn and stayed there — frustum-culled in
 // every gameplay frame, which is why the metro read as having no signature at
-// all. +Z is the only horizon this camera ever looks at.
+// all. +Z remains the authored spawn horizon and first impression.
 //
 // Standoff: `params.horizonFraction` (0.9) puts it at world*0.95 = 2294u on
 // level 1. That is deliberately just OUTSIDE the horizon haze ring's outer rim

@@ -7,7 +7,7 @@
 
 Phases 1–4 established the playable V2 foundation:
 
-- camera-relative steering, fixed-yaw camera/orbit, minimap, and extruded flywheel hero;
+- gesture-stable camera-relative steering, heading-follow chase camera/orbit, minimap, and extruded flywheel hero;
 - seeded district layouts, zoning, ground surfaces, metro signatures, and visual catalogs;
 - instancing, pooling/reuse, spatial queries, procedural asset fallbacks, and v2 saves;
 - target-normalized progression, objective stars, mutually exclusive builds, metro tokens/perks, daily state, and collection rewards;

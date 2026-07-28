@@ -61,6 +61,7 @@ async function main() {
   const upgradesMod = await import('../src/meta/upgrades.js');
   const progressionMod = await import('../src/meta/progression.js');
   const avatarMod = await import('../src/engine/avatar.js');
+  const cameraMod = await import('../src/engine/camera.js');
   const inputMod = await import('../src/engine/input.js');
   const qualityMod = await import('../src/engine/quality.js');
   const effectsMod = await import('../src/engine/effects.js');
@@ -1185,11 +1186,8 @@ async function main() {
           return d > -Math.PI - 1e-9 && d <= Math.PI + 1e-9;
         })));
 
-    // The loop: replay the production input -> camera -> avatar chain for 3s
-    // of held input and require every direction to travel a STRAIGHT line.
-    // With camera yaw fixed (camera.js BASE_YAW) this holds; if anything ever
-    // reconnects camera yaw to avatar facing, lateral inputs curve and this
-    // fails. Mirrors scripts/motion-probe.mjs.
+    // Replay held movement against a gesture-frozen camera basis. Camera
+    // presentation may follow heading, but a held direction must stay straight.
     const DT = 1 / 60;
     function travel(keys, cameraYaw) {
       const machine = createInputMachine({});
@@ -1225,23 +1223,33 @@ async function main() {
     check('no held direction reverses the avatar heading mid-run (no judder)',
       runs.every((r) => r.reversals === 0));
 
-    // Direction correctness in the fixed frame. With BASE_YAW = 0 the eye sits
+    // Direction correctness at spawn. With BASE_YAW = 0 the eye sits
     // at -Z and looks along +Z, so "away from camera" (W) is world +Z. Screen
     // right is (up x view) = -X, matching input.js's documented mapping.
-    // These are absolute world directions now, and stay absolute for the whole
-    // run — that constancy IS the fix.
+    // The gesture-frozen basis keeps these directions stable for the run.
     const [fw, left, back, right] = runs;
     check('W drives up-screen (world +Z) and S drives down-screen (world -Z)',
       fw.z > ideal * 0.9 && back.z < -ideal * 0.9 && Math.abs(fw.x) < 1 && Math.abs(back.x) < 1);
     check('D strafes screen-right (world -X) and A strafes screen-left (world +X)',
       right.x < -ideal * 0.9 && left.x > ideal * 0.9 && Math.abs(right.z) < 1 && Math.abs(left.z) < 1);
 
-    // Structural guard: the camera must not expose the avatar's heading.
-    const { readFileSync } = await import('node:fs');
-    const cameraSrc = readFileSync(new URL('../src/engine/camera.js', import.meta.url), 'utf8');
-    const yawGetter = cameraSrc.match(/get yaw\(\)\s*\{[^}]*\}/);
-    check('camera.yaw is not derived from avatar.object3D.rotation.y',
-      !!yawGetter && !yawGetter[0].includes('rotation.y'));
+    const camera = new THREE.PerspectiveCamera(70, 1, 20, 12000);
+    const cameraAvatar = {
+      position: new THREE.Vector3(0, 0, 0),
+      object3D: new THREE.Group(),
+      radius: () => 26,
+    };
+    const chase = cameraMod.createChaseCamera(camera, cameraAvatar, THREE);
+    cameraAvatar.object3D.rotation.y = Math.PI / 2;
+    for (let i = 0; i < 60; i += 1) chase.update(DT);
+    check('camera smoothly turns behind the avatar heading',
+      Math.abs(shortestAngleTo(chase.followYaw, Math.PI / 2)) < 0.03
+        && camera.position.x < -100);
+    check('manual orbit remains an offset from the followed heading', (() => {
+      const before = chase.yaw;
+      chase.orbitBy(0.25, 0);
+      return approxEqual(shortestAngleTo(before, chase.yaw), 0.25, 1e-6);
+    })());
   }
 
   // ---------------------------------------------------------------------

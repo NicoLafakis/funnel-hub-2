@@ -20,9 +20,9 @@
 // Camera yaw was a function of the avatar's heading and the avatar's heading
 // a function of camera yaw. Any input with a lateral component drove it.
 //
-// Fixes: camera.js now exposes a fixed BASE_YAW (the loop cannot close), and
-// avatar.js damps through shortestAngleTo() (the atan2 wrap can no longer
-// snap). The logic suite asserts both; this prints the numbers.
+// Fixes: movement now captures a fixed yaw basis per continuous gesture while
+// camera.js follows heading for presentation, and avatar.js damps through
+// shortestAngleTo(). The logic suite asserts both; this prints the numbers.
 //
 // Run: node scripts/motion-probe.mjs
 
@@ -33,6 +33,7 @@ import { shortestAngleTo } from '../src/engine/avatar.js';
 const BASE_SPEED = 340;
 const SPAWN_RADIUS = 26;          // radius() at spawn mass
 const FACING_DAMP_RATE = 6;       // avatar.js: Math.min(1, dt * 6)
+const CAMERA_FOLLOW_RATE = 4.5;   // camera.js exponential heading follow
 const DT = 1 / 60;
 const FRAMES = 180;               // 3 seconds
 
@@ -44,14 +45,14 @@ function growthDrag(r) {
 
 // One simulated run. `coupled = true` reproduces the OLD broken behaviour
 // (camera yaw tracks avatar facing, raw un-normalised angle damp).
-// `coupled = false` is the shipping fixed-world-yaw camera every Hole.io
-// reference screenshot shows (assets/references/holeio/), damped through
-// shortestAngleTo() exactly as avatar.js does.
+// `coupled = false` is shipping: movement uses the gesture-start yaw while the
+// presentation camera follows heading independently.
 function run({ keys, coupled, fixedYaw = 0, frames = FRAMES, trace = 0 }) {
   const machine = createInputMachine({});
   keys.forEach((k) => machine.handleKeyDown(k));
 
   let rotY = coupled ? 0 : fixedYaw;
+  let presentationYaw = fixedYaw;
   let x = 0;
   let z = 0;
   let yawTravel = 0;   // total |camera rotation| — the "fighting" metric
@@ -71,11 +72,15 @@ function run({ keys, coupled, fixedYaw = 0, frames = FRAMES, trace = 0 }) {
       x += nx * speed * DT;
       z += nz * speed * DT;
       const facing = Math.atan2(nx, nz);
-      const before = rotY;
+      const before = coupled ? rotY : presentationYaw;
       // coupled = the old raw difference (wraps); fixed = shortestAngleTo.
       const diff = coupled ? (facing - rotY) : shortestAngleTo(rotY, facing);
       rotY += diff * Math.min(1, DT * FACING_DAMP_RATE);
-      const delta = rotY - before;
+      if (!coupled) {
+        presentationYaw += shortestAngleTo(presentationYaw, rotY)
+          * (1 - Math.exp(-CAMERA_FOLLOW_RATE * DT));
+      }
+      const delta = (coupled ? rotY : presentationYaw) - before;
       yawTravel += Math.abs(delta);
       if (prevDelta !== 0 && Math.sign(delta) !== Math.sign(prevDelta)) reversals += 1;
       prevDelta = delta;
@@ -127,7 +132,7 @@ console.log('travel over the run; "reversals" counts sign flips of camera angula
 console.log('(each one is a visible snap back against the direction you are steering).');
 
 report('BEFORE (the bug) — camera yaw = avatar facing + orbit, raw angle damp:', true);
-report('AFTER (shipping) — camera.js BASE_YAW fixed + shortestAngleTo damp:', false);
+report('AFTER (shipping) — frozen movement basis + smoothed heading-follow camera:', false);
 
 // The wrap: atan2 returns (-PI, PI] but rotation.y is unbounded and the
 // difference is never normalized, so once the loop drives yaw past -180deg

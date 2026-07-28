@@ -1,5 +1,5 @@
-// 3rd-person follow camera (game-design §2): a FIXED world orientation (see
-// BASE_YAW below — this is load-bearing, not a default), high pitch (~55°),
+// 3rd-person follow camera (game-design §2): a heading-following orientation,
+// high pitch (~55°),
 // FOV 40, a long standoff so the city rather than the avatar fills the frame,
 // manual orbit with auto-recenter, size-adaptive lag, and a subtle look-ahead
 // bias toward the nearest edible cluster.
@@ -21,32 +21,12 @@
 
 const DEG = Math.PI / 180;
 
-// FIXED WORLD YAW (§2, and the whole reason steering used to fight you).
-//
-// This camera's base orientation is a CONSTANT world direction. It does NOT
-// track the avatar's heading, and nothing may make it do so again.
-//
-// Why: game-design §1 makes movement camera-relative (screen intent rotated
-// by `yaw`), so if `yaw` were derived from the avatar's heading the two would
-// form a closed loop — heading feeds yaw feeds the world direction feeds
-// heading. Any input with a lateral component then diverges: measured at
-// -540°/s of camera slew plus a 15 Hz snap-back limit cycle once atan2 wraps
-// (2394° of rotation and 85 direction reversals per 3s of held input). That
-// is the "it fights you turning left and right / feels like rolling a ball"
-// report — the world literally rotated under the player. See
-// `.wiki/0003-hole-feel-and-visual-fidelity/00-findings.md` §1 and
-// `scripts/motion-probe.mjs`, which regression-tests this to zero.
-//
-// With a fixed base, camera-relative IS world-relative and the loop cannot
-// close: W is always world -Z, D is always world +X. The player's only yaw
-// authority is `orbitYaw` below, which is explicit input, decays back to zero,
-// and therefore cannot self-excite. The Hole.io reference does the same thing
-// — its road grid holds one screen orientation from Size 1 to Size 16
-// (assets/references/holeio/).
-//
-// Kept at 0 (view direction +Z, camera behind spawn along -Z) so the seeded
-// spawn-framing corridor in districts.js stays valid.
+// Spawn orientation remains +Z so the seeded framing corridor remains valid.
+// During play, base yaw eases toward avatar heading. Input freezes its camera
+// basis for each continuous steering gesture (main.js), so heading can feed
+// camera presentation without feeding back into the held world direction.
 const BASE_YAW = 0;
+const HEADING_FOLLOW_RATE = 4.5;
 
 // Framing (§2): the reference shows FAR more city than avatar — at spawn the
 // hole is ~23% of the frame width, where the old 40°/FOV 70/4r framing put it
@@ -85,6 +65,10 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+function shortestAngle(from, to) {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
 /**
  * @param {THREE.PerspectiveCamera} camera
  * @param {ReturnType<typeof import('./avatar.js').createAvatar>} avatar
@@ -117,6 +101,7 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
   let obstacles = [];
 
   let orbitYaw = 0;
+  let followYaw = BASE_YAW;
   let orbitPitchOffset = 0; // relative to PITCH_DEFAULT
   let sinceOrbitInput = Infinity;
   let lastX = avatar.position.x;
@@ -143,7 +128,6 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
 
   function update(dt) {
     const r = typeof avatar.radius === 'function' ? avatar.radius() : 30;
-    // BASE_YAW, never avatar.object3D.rotation.y — see the BASE_YAW comment.
     const pitch = clamp(PITCH_DEFAULT + orbitPitchOffset, PITCH_MIN, PITCH_MAX);
 
     sinceOrbitInput += dt;
@@ -156,6 +140,13 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
     lastX = px;
     lastZ = pz;
 
+    // Presentation follows heading; movement keeps a gesture-stable basis.
+    const heading = avatar.object3D && Number.isFinite(avatar.object3D.rotation.y)
+      ? avatar.object3D.rotation.y
+      : followYaw;
+    const yawK = 1 - Math.exp(-HEADING_FOLLOW_RATE * Math.max(0, dt));
+    followYaw += shortestAngle(followYaw, heading) * yawK;
+
     // Auto-recenter (game-design §1): after 2s of movement with no orbit
     // input, ease the orbit offsets back to zero so the camera settles
     // behind the avatar on its own.
@@ -167,7 +158,7 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
       if (Math.abs(orbitPitchOffset) < 0.001) orbitPitchOffset = 0;
     }
 
-    const effectiveYaw = BASE_YAW + orbitYaw;
+    const effectiveYaw = followYaw + orbitYaw;
     const dirX = Math.sin(effectiveYaw);
     const dirZ = Math.cos(effectiveYaw);
 
@@ -261,11 +252,9 @@ export function createChaseCamera(camera, avatar, THREE, opts = {}) {
     setObstacles,
     orbitBy,
     stepOrbit,
-    // The camera's view yaw (fixed world base + player orbit offset) — the
-    // input layer rotates its screen-space intent by exactly this
-    // (game-design §1). Deriving this from the avatar's heading is the bug
-    // documented at BASE_YAW; `scripts/motion-probe.mjs` guards it.
-    get yaw() { return BASE_YAW + orbitYaw; },
+    // Input captures this at movement-start instead of rereading it each frame.
+    get yaw() { return followYaw + orbitYaw; },
+    get followYaw() { return followYaw; },
     get baseYaw() { return BASE_YAW; },
     get orbitYaw() { return orbitYaw; },
     get pitch() {

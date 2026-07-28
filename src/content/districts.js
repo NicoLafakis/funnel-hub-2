@@ -1287,8 +1287,8 @@ export function generateDistrict(level, opts = {}) {
         lx *= 0.9;
       }
     }
-    // The initial camera sits behind spawn along -Z at a FIXED world yaw
-    // (camera.js BASE_YAW = 0). Keep building tiers out of that sightline so a
+    // The initial camera sits behind spawn along -Z at BASE_YAW = 0. Keep
+    // building tiers out of that first-frame sightline so a
     // seeded corner/frontage site cannot put the camera inside an instanced
     // facade on frame one. Relocation is deterministic and changes no count,
     // mass, radius, flags, or RNG stream.

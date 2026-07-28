@@ -299,6 +299,10 @@ export async function main() {
     fov: 70,
     lookaheadProvider,
   });
+  // Freeze the view basis for each continuous steering gesture. The camera
+  // can swing behind the avatar without changing a direction already held.
+  let movementBasisYaw = chaseCamera.yaw;
+  let movementWasActive = false;
 
   // Pointer drag-to-move: raycast from the engine camera onto the ground
   // plane (y = 0), per input.js's toGround contract.
@@ -2280,12 +2284,14 @@ export async function main() {
       avatarX: avatar.position.x,
       avatarZ: avatar.position.z,
       avatarRadius: avatar.radius(),
-      cameraYaw: chaseCamera.yaw,
+      cameraYaw: movementWasActive ? movementBasisYaw : chaseCamera.yaw,
     });
     const orb = input.consumeOrbit();
     chaseCamera.orbitBy(orb.yaw, orb.pitch);
     chaseCamera.stepOrbit(orb.steps);
-    const mv = input.moveVector(chaseCamera.yaw);
+    if (input.movementActive && !movementWasActive) movementBasisYaw = chaseCamera.yaw;
+    movementWasActive = input.movementActive;
+    const mv = input.moveVector(movementBasisYaw);
     avatar.setMoveInput(mv.dx, mv.dz);
     updateStickVisual();
 

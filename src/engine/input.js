@@ -7,7 +7,8 @@
 //
 // OUTPUT FRAME CONTRACT: `move` is a normalized SCREEN-space intent vector
 // {x, z}: x > 0 = screen right, z < 0 = "up-screen" = away from the camera
-// (W). Convert to world velocity by rotating by the camera yaw — use the
+// (W). Convert to world velocity using the camera yaw captured when the
+// current movement gesture began — use the
 // exported pure helper cameraRelativeMove(move, cameraYaw) or the bound
 // input.moveVector(cameraYaw). World coordinates follow the B7 contract:
 // origin (0,0) at world center, extents ±worldSize/2, ground plane y = 0.
@@ -418,6 +419,9 @@ export function createInputMachine({ toGround = null } = {}) {
     consumeOrbit,
     get state() { return state; },
     get move() { return smoothed; },
+    get movementActive() {
+      return dragPointerId !== null || stickPointerId !== null || axesFromKeys(keys) !== null;
+    },
     get orbitSteps() { return orbitSteps; },
     get pointerRoles() {
       return [...pointers.values()].map((p) => ({ id: p.id, role: p.role, pointerType: p.pointerType }));
@@ -536,6 +540,7 @@ export function createInput({ screenToGround = null, canvas = null } = {}) {
     consumeOrbit: () => machine.consumeOrbit(),
     get state() { return machine.state; },
     get move() { return machine.move; },
+    get movementActive() { return machine.movementActive; },
     // World-space move vector for the avatar: screen-space intent rotated by
     // the camera yaw (game-design §1).
     moveVector(cameraYaw) { return cameraRelativeMove(machine.move, cameraYaw); },

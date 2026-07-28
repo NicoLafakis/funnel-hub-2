@@ -15,11 +15,13 @@ camera swings, your keys no longer match the screen.
 - **Move input is camera-relative.** W always means "away from camera,"
   A/D strafe relative to the view. The avatar's velocity is input vector
   rotated by camera yaw.
-- **The camera's base yaw is FIXED in world space** (`camera.js` `BASE_YAW`),
-  so camera-relative *is* world-relative unless the player is actively
-  orbiting. This is a hard constraint, not a default.
+- **Movement captures a stable camera basis at gesture start.** W/stick-up is
+  resolved through that yaw until the keys or movement touch are released.
+  The camera may turn behind the avatar without changing a direction the
+  player is already holding.
 
-  *Amended 2026-07-27.* This section previously paired camera-relative
+  *Amended 2026-07-28.* Directly recomputing movement from a heading-following
+  camera every frame remains forbidden. The 2026-07-27 implementation paired camera-relative
   movement with §2's chase camera that yawed to the avatar's heading. Those
   two are jointly unshippable: heading feeds camera yaw feeds the world
   move direction feeds heading, and any lateral input diverges — measured at
@@ -28,14 +30,15 @@ camera swings, your keys no longer match the screen.
   "steering fights you left/right, feels like rolling a ball" report. V1
   avoided it only because, as this doc already noted, "the camera yaw was
   nearly static" — that static yaw was load-bearing and V2 removed it
-  without removing the dependency. Full analysis and the regression probe:
+  without removing the dependency. The replacement freezes the movement basis
+  for each continuous gesture, breaking that dependency while restoring the
+  requested chase-camera turn. Full analysis and the original regression probe:
   `0003-hole-feel-and-visual-fidelity/00-findings.md` §1,
   `scripts/motion-probe.mjs`.
 - **Camera orbit:** right-drag (mouse) or second-finger drag (touch) orbits
   yaw ±120° and pitch 35°–65°. Q/E rotate 45° stepped for keyboard-only
-  players. Auto-recenter to the fixed base yaw after 2s of movement with no
-  orbit input. Orbit is the player's *only* yaw authority, and because it
-  decays back to zero it cannot self-excite.
+  players. Manual orbit temporarily offsets the heading-follow camera and
+  auto-recenters behind the avatar after 2s of movement without orbit input.
 - **Drag-to-move (mouse) stays**, but it sets a *world-space target* (raycast
   the pointer onto the ground plane) rather than a screen-center direction —
   the avatar pathfinds straight to it and stops on arrival. Fixes the
@@ -61,10 +64,11 @@ the live fix — B2). The ball still dominates center-frame; food is visible
 only in a narrow forward cone (D2).
 
 **V2:**
-- **Fixed world yaw.** The camera never rotates to follow the avatar's
-  heading — see §1's amendment for why that is mandatory rather than
-  stylistic. The Hole.io reference holds one screen orientation from Size 1
-  to Size 16 (`assets/references/holeio/`).
+- **Smoothed heading follow.** The camera turns through the shortest arc toward
+  the avatar's facing direction, keeping its eye behind the player. It never
+  changes framing distance, pitch, or FOV merely because the player turns.
+  Section 1's gesture-stable movement basis prevents the historical feedback
+  loop between heading and camera-relative input.
 - **High pitch (55°), long lens (FOV 40), long standoff (12r).** *Amended
   2026-07-27*: the original 40° / FOV 70 / 4r put the hole at ~85% of the
   frame width at spawn against the reference's ~23%, which inverted this
@@ -85,7 +89,8 @@ only in a narrow forward cone (D2).
 
 **Why:** B2, D2, and the repeated live complaint of emptiness.
 **Acceptance:** at spawn on level 1, ≥5 edible props visible in frame;
-minimap shows the landmark at all times.
+minimap shows the landmark at all times; a 90° player turn causes the camera
+to settle behind that heading without curving a continuously held direction.
 
 ## 3. The eat loop — keep, then add texture
 

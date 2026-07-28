@@ -456,10 +456,11 @@ metro, reused across its 10 districts):
 **CORRECTION (2026-07-28, `094d25e`): "bridge silhouette on the horizon" was
 never unbuilt — it was built and wired the whole time, just invisible.**
 `signatures.js` placed it at `z = -world/2 - world*0.15` = −1570u on level 1.
-`camera.js` pins `BASE_YAW = 0` (load-bearing, not a default — the constant
-that stopped steering fighting the player), so the view direction is always
-+Z and the camera always stands on the −Z side of the avatar; the player's
-only yaw authority, `orbitYaw`, clamps to ±120° and decays to zero after 2s.
+At the time, `camera.js` pinned `BASE_YAW = 0`, so the view direction was
+always +Z and the camera stood on the −Z side of the avatar. The 2026-07-28
+heading-follow update retains that spawn orientation but turns behind the
+player thereafter; a gesture-stable movement basis prevents the old steering
+feedback loop. Manual `orbitYaw` still clamps to ±120° and decays after 2s.
 The bridge sat 1570u directly BEHIND the camera at spawn and stayed there,
 frustum-culled every gameplay frame — confirmed in the live scene graph
 before it was touched, not inferred from the diff. That is why the metro
