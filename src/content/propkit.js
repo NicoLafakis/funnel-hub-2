@@ -710,11 +710,102 @@ export function createPropMesh(kind, THREE, accentColorHex, variant, opts = {}) 
   return mesh;
 }
 
+// --- Rooftop deck anchors for the three building tiers ----------------------
+// The recipe cue below is a BUILDING's only per-archetype geometry (five
+// building-small archetypes per metro share ONE mesh; the cue is what tells
+// `row_house` from `warehouse`), so it has to land on the roof — that is what
+// art-direction.md §3 means by "a baked cap, bar, mast, canopy, box, or spire
+// profile cue".
+//
+// It did not. The cue was positioned off `DIMENSIONS[kind].h`, which is the
+// height of the procedural build's BASE BOX and NOT the height of the prop:
+// the tiered kinds carry a setback + antenna above that box, and the Blender
+// models (scripts/blender/build_props.py) are normalised onto the full
+// procedural bounding box including them. Measured on the shipped bake:
+//   building-small  model 11.00 tall / +-3.57 wide -> canopy cue FLOATING at
+//                   y 11.44-12.32, overhanging to +-4.48 (25% proud, rotated
+//                   30 deg off-axis)
+//   building-medium model 35.83 tall / +-5.61 wide -> canopy cue at y 24.96-
+//                   26.88, i.e. 72% up the SHAFT, jutting to +-6.77
+//   building-large  model 62.49 tall            -> 30-unit mast buried in the
+//                   curtain wall from y 27.7 and emerging past the parapet
+// In PALETTE_TRIM_TINT over a pastel instance colour those read as a big dark
+// slab hovering off the side of every mid-rise — the "flat dark roofs" in
+// every gameplay screenshot — while hiding the parapets, water tanks, AC
+// units and stair housings the Blender pack already authors.
+//
+// ONE table serves both bake paths. build_props.py's BUILDING_BOXES are, by
+// construction, the procedural build's own bounding box, so the authored roof
+// deck and the procedural setback top land within ~0.5 units of each other on
+// every tier; these values are the AUTHORED deck (the surface the model's own
+// roof plant stands on) because that is the path that ships. On the procedural
+// fallback the cue sits a fraction of a unit lower, inside the setback.
+//   y    — top of the roof deck, in DIMENSIONS space
+//   half — half-extent INSIDE the parapet ring, so a cue never breaks the rim
+const BUILDING_ROOF = {
+  'building-small': { y: 10.16, half: 3.05 },  // deck 9.96+-0.20, parapet 6.90 outer / 0.40 thick
+  'building-medium': { y: 28.88, half: 3.49 }, // deck 28.70+-0.18, parapet 7.70 outer / 0.36 thick
+  'building-large': { y: 50.82, half: 4.05 },  // deck 50.62+-0.20, parapet 8.90 outer / 0.40 thick
+};
+
+// The (+x, -z) roof quadrant is empty on all three authored models (their
+// plant sits at (+x,+z), (-x,-z) and (-x,+z)), so compact cues claim it and
+// cannot bury an authored water tank.
+const ROOF_CUE_CORNER = [0.55, -0.52];
+
+// Rooftop cue for a building tier — real roof plant on the real roof deck,
+// sized off the deck rather than the building, so it reads as a mast/vent/
+// housing at every tier instead of as an overhang. Returns [geometry, position].
+function buildingRoofCue(THREE, recipe, kind, phase) {
+  const deck = BUILDING_ROOF[kind];
+  const half = deck.half;
+  const h = DIMENSIONS[kind].h; // vertical scale reference — cue height only
+  const cx = half * ROOF_CUE_CORNER[0];
+  const cz = half * ROOF_CUE_CORNER[1];
+  switch (recipe) {
+    case 'cap': {
+      const capH = h * (0.075 + phase * 0.03);
+      return [new THREE.ConeGeometry(half * (0.30 + phase * 0.06), capH, 6),
+        [cx, deck.y + capH / 2, cz]];
+    }
+    case 'bar': {
+      const barH = Math.max(0.2, h * 0.030);
+      // Sign gantry across the deck: raised clear of it, never past the rim.
+      return [new THREE.BoxGeometry(half * 1.50, barH, half * 0.20),
+        [0, deck.y + h * 0.055 + barH / 2, -half * 0.42]];
+    }
+    case 'mast': {
+      // Kept just under the large tier's own crown antenna (62.49) so the
+      // archetype mast reads as secondary plant, not a second spire.
+      const mastH = h * (0.22 + phase * 0.05);
+      return [new THREE.CylinderGeometry(half * 0.055, half * 0.085, mastH, 6),
+        [cx, deck.y + mastH / 2, cz]];
+    }
+    case 'canopy': {
+      const slabH = Math.max(0.16, h * 0.022);
+      return [new THREE.BoxGeometry(half * 1.30, slabH, half * 0.82),
+        [0, deck.y + h * 0.055 + slabH / 2, -half * 0.42]];
+    }
+    case 'spire': {
+      const spireH = h * (0.26 + phase * 0.10);
+      return [new THREE.ConeGeometry(half * 0.26, spireH, 7),
+        [cx, deck.y + spireH / 2, cz]];
+    }
+    case 'box':
+    default: {
+      const boxH = h * (0.055 + phase * 0.025);
+      return [new THREE.BoxGeometry(half * (0.55 + phase * 0.14), boxH, half * 0.52),
+        [cx, deck.y + boxH / 2, cz]];
+    }
+  }
+}
+
 // Adds one strong, low-poly silhouette cue to the sacred gameplay-tier base.
 // The cue is baked into merged geometry, so it remains visible when instanced.
 function applyVisualRecipe(group, THREE, descriptor, accent, opts = {}) {
   if (!descriptor || descriptor.recipe === 'base' || descriptor.family === 'legacy_fallback') return;
-  const dim = DIMENSIONS[descriptor.gameplayKind] || DIMENSIONS.trash;
+  const kind = descriptor.gameplayKind;
+  const dim = DIMENSIONS[kind] || DIMENSIONS.trash;
   const index = descriptor.recipeIndex || 0;
   const phase = (index % 5) / 5;
   const material = standardMat(THREE, opts.paletteBase
@@ -725,36 +816,40 @@ function applyVisualRecipe(group, THREE, descriptor, accent, opts = {}) {
   });
   let geometry;
   let position;
-  switch (descriptor.recipe) {
-    case 'cap':
-      geometry = new THREE.ConeGeometry(dim.w * (0.24 + phase * 0.08), dim.h * 0.24, 6);
-      position = [dim.w * 0.2, dim.h * 1.04, -dim.d * 0.12];
-      break;
-    case 'bar':
-      geometry = new THREE.BoxGeometry(dim.w * 1.08, Math.max(0.12, dim.h * 0.09), dim.d * 0.2);
-      position = [0, dim.h * 0.82, dim.d * 0.28];
-      break;
-    case 'mast':
-      geometry = new THREE.CylinderGeometry(dim.w * 0.055, dim.w * 0.08, dim.h * 0.72, 6);
-      position = [dim.w * 0.3, dim.h * 1.02, -dim.d * 0.22];
-      break;
-    case 'canopy':
-      geometry = new THREE.BoxGeometry(dim.w * 1.12, Math.max(0.12, dim.h * 0.08), dim.d * 0.62);
-      position = [0, dim.h * 1.08, -dim.d * 0.08];
-      break;
-    case 'spire':
-      geometry = new THREE.ConeGeometry(dim.w * 0.2, dim.h * (0.3 + phase * 0.12), 7);
-      position = [-dim.w * 0.18, dim.h * 1.12, dim.d * 0.08];
-      break;
-    case 'box':
-    default:
-      geometry = new THREE.BoxGeometry(
-        dim.w * (0.24 + phase * 0.1),
-        dim.h * (0.18 + phase * 0.08),
-        dim.d * 0.28,
-      );
-      position = [dim.w * 0.24, dim.h * 0.88, -dim.d * 0.22];
-      break;
+  if (BUILDING_ROOF[kind]) {
+    [geometry, position] = buildingRoofCue(THREE, descriptor.recipe, kind, phase);
+  } else {
+    switch (descriptor.recipe) {
+      case 'cap':
+        geometry = new THREE.ConeGeometry(dim.w * (0.24 + phase * 0.08), dim.h * 0.24, 6);
+        position = [dim.w * 0.2, dim.h * 1.04, -dim.d * 0.12];
+        break;
+      case 'bar':
+        geometry = new THREE.BoxGeometry(dim.w * 1.08, Math.max(0.12, dim.h * 0.09), dim.d * 0.2);
+        position = [0, dim.h * 0.82, dim.d * 0.28];
+        break;
+      case 'mast':
+        geometry = new THREE.CylinderGeometry(dim.w * 0.055, dim.w * 0.08, dim.h * 0.72, 6);
+        position = [dim.w * 0.3, dim.h * 1.02, -dim.d * 0.22];
+        break;
+      case 'canopy':
+        geometry = new THREE.BoxGeometry(dim.w * 1.12, Math.max(0.12, dim.h * 0.08), dim.d * 0.62);
+        position = [0, dim.h * 1.08, -dim.d * 0.08];
+        break;
+      case 'spire':
+        geometry = new THREE.ConeGeometry(dim.w * 0.2, dim.h * (0.3 + phase * 0.12), 7);
+        position = [-dim.w * 0.18, dim.h * 1.12, dim.d * 0.08];
+        break;
+      case 'box':
+      default:
+        geometry = new THREE.BoxGeometry(
+          dim.w * (0.24 + phase * 0.1),
+          dim.h * (0.18 + phase * 0.08),
+          dim.d * 0.28,
+        );
+        position = [dim.w * 0.24, dim.h * 0.88, -dim.d * 0.22];
+        break;
+    }
   }
   const cue = new THREE.Mesh(geometry, material);
   cue.position.set(position[0], position[1], position[2]);
