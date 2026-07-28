@@ -110,7 +110,10 @@ camera, spawn, and footprint contracts.
 ## Acceptance evidence
 
 - Level 1 remains deterministic and preserves every prop count and mass budget.
-- Chicago context has three water planes, four rail segments, 454 instanced
-  buildings, 1,138 trees, and 62 background road strips.
+- Chicago context has three water planes, four rail segments, 392 instanced
+  buildings, 984 trees, and 62 background road strips. Its first skyline ring
+  begins two context blocks beyond the play boundary and uses a compressed
+  height range so edge-of-map camera views retain distant scenery rather than
+  foreground occluders.
 - Level 2 and all later levels receive no Chicago context.
 - Full invariant and placement audits must remain green before deployment.

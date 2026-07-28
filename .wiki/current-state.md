@@ -14,8 +14,10 @@
 - Level 1 is an authored Chicago Loop pilot: a fixed orthogonal block plan,
   eastern park edge, elevated rail cue, river edges, and instanced perimeter
   skyline replace the generic layout and dead horizon for that level only.
-- Its render-only background now continues the city with 454 buildings, 1,138
+- Its render-only background now continues the city with 392 buildings, 984
   trees, 62 road strips, distance-softened materials, and an eastern lakefront.
+  A two-context-block setback keeps those simplified masses behind the playable
+  edge instead of letting them become giant foreground occluders.
 - Area 1 now owns a 234-type reference-led city catalog: all 48 assets from
   the two `chicago-loop-*` sheets are exclusive to Level 1. Its 24 icon assets
   are interactive and its 24 rail assets compose the authored context; 186
