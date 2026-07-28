@@ -475,6 +475,14 @@ async function main() {
         && count(['car', 'bus']) === 74
         && count(['building-small', 'building-medium', 'building-large']) === 114;
     })());
+    check('the Loop steps from low-rise park frontage to an outer tall skyline', (() => {
+      const meanDistance = (kind) => {
+        const placed = d1.props.filter((prop) => prop.kind === kind);
+        return placed.reduce((sum, prop) => sum + Math.hypot(prop.x, prop.z), 0) / placed.length;
+      };
+      return meanDistance('building-small') < meanDistance('building-medium')
+        && meanDistance('building-medium') < meanDistance('building-large');
+    })());
     check('the Loop uses an orthogonal eight-street grid with an eastern park edge',
       d1.streets.length === 8
         && d1.streets.every((street) => street.rotY === 0 || street.rotY === Math.PI / 2)

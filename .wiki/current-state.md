@@ -47,6 +47,10 @@
 - The authored Level 1 budget preserves every tier's global mass product while
   rebalancing the visible composition from 102 vehicles/63 buildings to 74
   vehicles/114 buildings; later levels retain the global template.
+- Level 1 orders those building sites by civic hierarchy: low-rise storefront
+  runs frame the opening park, medium buildings step behind them, and large
+  towers occupy the outer commercial skyline. Stable block sorting preserves
+  contiguous frontage runs and seeded output.
 - Chicago civic modules appear once each; repeated block frontage draws from
   architectural profiles, including corrected Tribune Tower and historic
   storefront classifications.

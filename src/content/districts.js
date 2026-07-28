@@ -983,6 +983,19 @@ export function generateDistrict(level, opts = {}) {
   const plazas = shuffle(plazaSites(blocks, rngProps, landmarkPlaza), rngProps);
   const roads = shuffle(roadSites(streets, rngProps), rngProps);
   const { corners, largeCorners, frontage } = buildingSites(blocks, rngProps, world, buildingPitch(budget));
+  // Chicago's civic park is framed by low-rise street walls, with the taller
+  // commercial skyline stepping up behind them. Site arrays are consumed from
+  // the end, so far-first sorts ascending and near-first sorts descending.
+  // JavaScript's stable sort preserves each frontage run's adjacency within a
+  // block; this changes hierarchy without scattering the party-wall sequence.
+  const chicagoBuildingSites = (sites, farFirst) => {
+    if (!chicagoPilot) return sites;
+    return [...sites].sort((a, b) => {
+      const da = Math.hypot(a.block ? a.block.x : a.x, a.block ? a.block.z : a.z);
+      const db = Math.hypot(b.block ? b.block.x : b.x, b.block ? b.block.z : b.z);
+      return farFirst ? da - db : db - da;
+    });
+  };
 
   const props = [];
   const perTier = {};
@@ -1032,9 +1045,9 @@ export function generateDistrict(level, opts = {}) {
     // edges between them. Smalls now overwhelmingly build out the street wall;
     // mediums split; larges still anchor corners, because a landmark wants the
     // open sightline a corner gives it.
-    'building-small': [{ sites: corners, share: 0.25, zone: 'corner' }, { sites: frontage, share: 0.75, zone: 'frontage' }],
-    'building-medium': [{ sites: corners, share: 0.45, zone: 'corner' }, { sites: frontage, share: 0.55, zone: 'frontage' }],
-    'building-large': [{ sites: largeCorners.length ? largeCorners : corners, share: 1.0, zone: 'corner' }],
+    'building-small': [{ sites: chicagoBuildingSites(corners, false), share: 0.25, zone: 'corner' }, { sites: chicagoBuildingSites(frontage, false), share: 0.75, zone: 'frontage' }],
+    'building-medium': [{ sites: chicagoBuildingSites(corners, true), share: 0.45, zone: 'corner' }, { sites: chicagoBuildingSites(frontage, true), share: 0.55, zone: 'frontage' }],
+    'building-large': [{ sites: chicagoBuildingSites(chicagoPilot ? corners : (largeCorners.length ? largeCorners : corners), true), share: 1.0, zone: 'corner' }],
   };
 
   // LARGEST FIRST. Placement used to run tier 0 upward, so bins and bikes
