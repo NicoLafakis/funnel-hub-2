@@ -97,6 +97,26 @@ import {
 import { createMinimap } from './ui/minimap.js';
 
 // ---------------------------------------------------------------------------
+// ATMOSPHERE CONSTANTS (0005 atmosphere pass). All world-relative, so a value
+// here means the same thing on level 1 (world 2415) and level 100 (world 4800)
+// instead of being a number that happens to look right on the level someone was
+// staring at. Derivations live at their use sites in buildLevelWorld().
+// ---------------------------------------------------------------------------
+// FogExp2 density, expressed per world-width: density = this / level.world.
+// 0.55 puts the fog factor at the map diagonal (1.414*world) at 54% on every
+// level — hazy enough to read as air, far enough from 1.0 that the landmark
+// keeps ~46% of its contrast from the worst corner on the map (art §4).
+const FOG_DENSITY_PER_WORLD = 0.55;
+// How far past the map edge the unlit haze band takes to reach full sky colour,
+// as a fraction of world width. The lit ground skirt underneath only has to
+// survive this far; past it every pixel is exactly the horizon colour.
+const HAZE_RUN_WORLD = 0.35;
+// Radius of the sky dome. It is depth-test-exempt and re-centred on the camera
+// every frame, so this is not an occlusion distance — it only has to stay
+// inside camera.far (12000, scene.js) with room for the camera's own height.
+const SKY_DOME_RADIUS = 5000;
+
+// ---------------------------------------------------------------------------
 // Pure helpers (no DOM/THREE-instance-specific state) — safe at module scope.
 // ---------------------------------------------------------------------------
 
@@ -325,7 +345,11 @@ export async function main() {
     // Wave-4: night variants, capstone twists, metro signatures, elite goldens.
     signature: null,
     night: false,
-    baseFog: { near: 0, far: 0 },
+    // FogExp2 density (0005 atmosphere pass) — was { near, far } for the old
+    // linear THREE.Fog. The two capstone twists that mutate fog scale this.
+    baseFog: { density: 0 },
+    // The sky dome, kept centred on the camera every frame (see the frame loop).
+    sky: null,
     twist: null,
     twistState: null,
     valueMultiplier: 1,
@@ -533,6 +557,9 @@ export async function main() {
     disposeObject3D(state.levelRoot);
     if (state.world) { state.world.dispose(); state.world = null; }
     if (state.signature) { state.signature.dispose(); state.signature = null; }
+    // The dome lives under levelRoot, which disposeObject3D() just tore down —
+    // drop the handle with it so the frame loop can never chase a freed mesh.
+    state.sky = null;
     setFrostVignette(false);
     state.propObjects = [];
     state.worldIndex = new Map();
@@ -553,18 +580,47 @@ export async function main() {
     state.night = night;
     const skyColor = new THREE.Color(metro.sky);
     if (night) skyColor.multiplyScalar(0.28);
-    engine.scene.background = skyColor;
-    // Fog is a HORIZON fade, not an atmosphere: the reference keeps the whole
-    // district crisp to the edge of the map (assets/references/holeio/). The
-    // old 0.18x/0.95x-of-world band started washing geometry toward the sky
-    // colour well inside the play area — and it got worse with the longer
-    // camera standoff, which sees further. Pushed out so it only softens the
-    // far map edge. Night keeps a tighter band; that one is deliberate mood,
-    // and the fog-closes-in twist scales off these same base values.
-    const fogNear = level.world * (night ? 0.35 : 0.85);
-    const fogFar = level.world * (night ? 1.1 : 2.0);
-    engine.scene.fog = new THREE.Fog(skyColor.getHex(), fogNear, fogFar);
-    state.baseFog = { near: fogNear, far: fogFar };
+    // THE HORIZON PALETTE (0005 atmosphere pass). Three colours, one family:
+    //   zenith   — the metro sky, pushed deeper. What is overhead.
+    //   horizon  — the metro sky, lifted and desaturated. What the air looks
+    //              like edge-on through a lot of it, and therefore ALSO the fog
+    //              colour, the clear colour, and the colour the ground skirt has
+    //              to resolve into. One value in three places is what makes the
+    //              "world ends here" step disappear rather than move.
+    // A real sky is brightest and least saturated at the horizon because you are
+    // looking through the most air; that is the whole reason a flat clear colour
+    // reads as a painted wall.
+    const skyZenith = skyColor.clone().multiplyScalar(0.82);
+    const skyHorizon = skyColor.clone().lerp(new THREE.Color(0xffffff), night ? 0.16 : 0.34);
+    engine.scene.background = skyHorizon;
+    // FOG: EXPONENTIAL-SQUARED, NOT LINEAR (0005 atmosphere pass).
+    //
+    // What was here: THREE.Fog with near = world*0.85 and far = world*2.0, i.e.
+    // 2053u..4830u on level 1. Two problems, both visible.
+    //   * A linear fog has an ONSET. Nothing is hazed at all until 2053u and
+    //     then haze ramps linearly, which puts a soft ring on the ground at a
+    //     fixed distance from the camera that slides as the camera moves. Air
+    //     does not do that; it attenuates from the first metre.
+    //   * far = world*2.0 is past the map's own diagonal (1.414*world), so
+    //     nothing in the play area ever reached fog colour and the fade the
+    //     horizon needed had to be faked by the skirt instead.
+    // FogExp2 has no onset and no far plane: 1 - exp(-(d*z)^2). It also cannot
+    // reach 1.0, which is not a rounding detail — it is a STRUCTURAL guarantee
+    // of art-direction.md §4's hard constraint that the landmark is always
+    // silhouette-visible. A linear fog can erase the goal by construction; this
+    // one cannot, at any density, ever.
+    //
+    // Density is per-world, not absolute, so the ladder reads the same at both
+    // ends: at d = FOG_DENSITY_PER_WORLD / world the fog factor at the map
+    // diagonal is 1 - exp(-(0.55*1.414)^2) = 54% on EVERY level. Measured
+    // against the constraint: the landmark viewed from the opposite corner of
+    // the map — the worst case that exists — keeps 46% of its own contrast
+    // against the sky. Inside the district it is nearly absent (4.6% at 1000u
+    // on level 1), which is the "keeps the whole district crisp" decision from
+    // 0003 preserved rather than traded away.
+    const fogDensity = (night ? 2.2 : 1.0) * FOG_DENSITY_PER_WORLD / level.world;
+    engine.scene.fog = new THREE.FogExp2(skyHorizon.getHex(), fogDensity);
+    state.baseFog = { density: fogDensity };
     if (typeof engine.setMood === 'function') {
       engine.setMood({ sky: metro.sky, ground: metro.ground, night });
     }
@@ -886,15 +942,12 @@ export async function main() {
     //     is 0.48*world*cos(pi/64) = 0.4794*world, still inside the square's
     //     0.5*world inscribed circle — no gap can open at the axis mid-points
     //     where the square's edge comes closest to the centre, and the corners
-    //     at 0.707*world are covered with room to spare. Outer is
-    //     half + fogFar, which puts the rim at or past FULL fog from any camera
-    //     position, so the rim itself is never a visible edge.
-    //   * No vertex-colour ramp and no second material: scene.fog already fades
-    //     it to fogColor over [fogNear, fogFar], and engine.scene.background is
-    //     set to that SAME colour a few lines up. So the ring reaches sky
-    //     colour on its own, and anything past fog far is already exactly the
-    //     clear colour — which is why scene.js's far = 12000 can clip the outer
-    //     rim on the largest levels with no visible seam at all.
+    //     at 0.707*world are covered with room to spare. The OUTER radius used
+    //     to be half + fogFar (6037u on level 1); it is now
+    //     half + 1.25*HAZE_RUN (2264u), because the haze band below reaches full
+    //     opacity at half + HAZE_RUN and everything past that was lit-shaded and
+    //     then painted over. The 1.25 is margin against the ring's polygonal
+    //     inradius at the rim.
     //   * y = -2, i.e. UNDER the opaque ground plane, so the overlap is
     //     occluded by depth rather than by ordering. 2 units is 29x the depth
     //     increment at the far ground corner under the new near/far, so it
@@ -903,32 +956,47 @@ export async function main() {
     //   * receiveShadow/castShadow off: the shadow camera never covers it and
     //     it has nothing to occlude.
     //
-    // COST, measured live: +1 draw call (42 -> 43, inside the ~40s budget
-    // art-direction.md §3 sets), +1 shader program, +0 textures, 128 triangles.
-    // It fills only the band of sky the ground edge used to occupy — zero
-    // pixels at the default 55-degree pitch, a strip at the top of frame at
-    // minimum pitch — so this is not a full-screen fill and does not threaten
-    // the mobile frame budget.
+    // THE RESIDUAL THAT IS NOW FIXED, and what the measurement said. The first
+    // pass shipped this skirt out to `world/2 + fogFar` and left a note that
+    // between the map edge and fog near it "reads as a stretched continuation
+    // of the ground's border rather than as haze". An adversarial verification
+    // pass on the live build put numbers on how bad that was: the ground->skirt
+    // join improved from a 271.6 channel step to 49.0, but the skirt->sky
+    // boundary became a NEW hard step of 202.9 ([58,167,254] against
+    // [117,129,151]), and near the map edge the skirt filled 40-50% of the frame
+    // as flat grey. The hard edge had been relocated, not removed — a blue void
+    // traded for a grey one, ~25% better on the thing a player actually reads as
+    // "the world ends here".
     //
-    // KNOWN RESIDUAL, deliberately left: between the map edge and fog near
-    // (2053u on level 1) the skirt reads as a stretched continuation of the
-    // ground's border rather than as haze, because fog was deliberately pushed
-    // out to keep the district crisp to the edge (see the fog comment above,
-    // and 0003's "the reference keeps the whole district crisp"). Pulling fog
-    // back in would fix the stretch and undo that decision; that trade belongs
-    // to the lighting/atmosphere pass, not here.
+    // Why fog could never have fixed it, which is worth writing down because it
+    // is the trap: standing at the play bound the player is ~26 world units from
+    // the map edge, so the skirt starts AT THEIR FEET. No fog curve reaches a
+    // surface at zero distance. The skirt has to resolve into the sky by its own
+    // colour, and fog is only what handles the part that is genuinely far away.
     //
-    // NOT a gameplay change: nothing reads this mesh. It is not in
-    // state.propObjects, not in either spatial hash, not a camera obstacle, and
-    // the play bounds (layout.world) are untouched.
+    // So the horizon is now three cooperating pieces, all sharing one colour:
+    //   1. this skirt        — LIT, continues the ground's tone past the edge
+    //   2. the haze band     — UNLIT, alpha 0 -> 1 in skyHorizon over HAZE_RUN
+    //   3. the sky dome      — UNLIT, skyHorizon at and below the horizon line,
+    //                          ramping to skyZenith overhead
+    // Because (2) saturates at exactly the colour (3) paints at the horizon,
+    // and scene.fog is that same colour, there is no step anywhere: ground to
+    // skirt is a tone match, skirt to haze is an alpha ramp from that tone, haze
+    // to sky is the identical colour on both sides.
     //
-    // Deliberately NOT done here, and surfaced instead: a vertical two-tone
-    // GRADIENT SKY. It would draw a real horizon line, but it replaces a free
-    // glClear with a full-screen textured background pass — a genuine bandwidth
-    // cost on a tiled mobile GPU for an atmosphere decision that belongs to the
-    // sky/lighting pass, not to fixing a hard geometry edge.
+    // The skirt also gets SHORTER as a direct consequence: it used to run to
+    // world/2 + fogFar (6037u on level 1) and now stops just past where the haze
+    // band is fully opaque, because every pixel beyond that was being shaded by
+    // a full MeshStandardMaterial and then completely covered. That is the one
+    // part of this change that is a straight performance win on the surface the
+    // verification pass measured at 40-50% of frame.
+    //
+    // NOT a gameplay change: nothing reads any of these three meshes. None is in
+    // state.propObjects, none is in either spatial hash, none is a camera
+    // obstacle, and the play bounds (layout.world) are untouched.
+    const hazeRun = level.world * HAZE_RUN_WORLD;
     const skirtGeo = new THREE.RingGeometry(
-      level.world * 0.48, level.world / 2 + fogFar, 64, 1,
+      level.world * 0.48, level.world / 2 + hazeRun * 1.25, 64, 1,
     );
     const skirtMat = new THREE.MeshStandardMaterial({
       // Fallback is the raw metro ground colour, which is exactly what
@@ -945,6 +1013,123 @@ export async function main() {
     skirt.castShadow = false;
     skirt.name = 'horizon-skirt';
     root.add(skirt);
+
+    // HAZE BAND — the piece that turns the skirt from a slab into distance.
+    //
+    // An UNLIT ring lying just above the skirt, coloured skyHorizon throughout,
+    // whose vertex ALPHA runs 0 at the map edge to 1 by the end of HAZE_RUN.
+    // Alpha, not a colour lerp, is what makes this robust: it blends from
+    // whatever the lit skirt beneath it actually renders as, so it stays correct
+    // under any future change to the light rig, to GROUND_ALBEDO_SCALE, or to
+    // the metro palette, with no constant to re-match. That is exactly the trap
+    // the first pass's own comment recorded from its two failed attempts at a
+    // hand-picked skirt tint.
+    //
+    // It sits at y = -1, i.e. between the skirt (-2) and the ground plane (0),
+    // so the opaque ground occludes it by depth over the play area and it only
+    // exists past the edge. renderOrder 1 puts it after the blob decals (-1) and
+    // the grain plane (-2) in the transparent pass, which it is nowhere near
+    // geometrically but which costs nothing to state.
+    //
+    // fog:false on purpose. Fogging the haze would apply the horizon colour
+    // twice to the same pixels, and it is already exactly that colour.
+    const HAZE_RINGS = 6;
+    const hazeInner = level.world / 2;
+    const hazeOuter = level.world / 2 + hazeRun * 1.2;
+    const hazeGeo = new THREE.RingGeometry(hazeInner, hazeOuter, 64, HAZE_RINGS);
+    {
+      const pos = hazeGeo.attributes.position;
+      const col = new Float32Array(pos.count * 4);
+      for (let i = 0; i < pos.count; i += 1) {
+        const rad = Math.hypot(pos.getX(i), pos.getY(i)); // pre-rotation, XY plane
+        // Normalised position across the band, then smoothstep so the onset is
+        // gradual rather than a visible start line, and reaching 1 at 5/6 of the
+        // band so the outer rim is fully saturated well before it ends.
+        const k = Math.max(0, Math.min(1, ((rad - hazeInner) / (hazeRun)) * 1.2));
+        const a = k * k * (3 - 2 * k);
+        col[i * 4] = skyHorizon.r;
+        col[i * 4 + 1] = skyHorizon.g;
+        col[i * 4 + 2] = skyHorizon.b;
+        col[i * 4 + 3] = a;
+      }
+      hazeGeo.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    }
+    const hazeMat = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false,
+    });
+    const haze = new THREE.Mesh(hazeGeo, hazeMat);
+    haze.rotation.x = -Math.PI / 2;
+    haze.position.y = -1;
+    haze.renderOrder = 1;
+    haze.receiveShadow = false;
+    haze.castShadow = false;
+    haze.name = 'horizon-haze';
+    root.add(haze);
+
+    // SKY DOME — the horizon line, and the reason the sky stops reading as a
+    // painted wall.
+    //
+    // The first pass costed a full-screen gradient background pass and rejected
+    // it as "replacing a free glClear with real mobile bandwidth". That costing
+    // was right about a full-screen textured pass and wrong about the cheapest
+    // way to get the read. This is geometry, not a post pass: an open-bottomed
+    // sphere with a two-stop VERTEX-COLOUR ramp on a MeshBasicMaterial — the
+    // cheapest fragment shader three can emit, one interpolated colour, no
+    // lighting, no texture fetch, no fog. It draws only where sky is actually
+    // visible, which at the default 55-degree camera pitch is close to zero
+    // pixels and at the 35-degree minimum pitch is a band across the top.
+    //
+    // Construction notes, each load-bearing:
+    //   * thetaLength 0.62*PI takes the dome from the zenith to 21.6 degrees
+    //     BELOW the horizon, so there is no rim to see over even when the
+    //     camera pitches to its 35-degree minimum.
+    //   * The ramp is keyed on max(0, y)/radius, so EVERYTHING at or below the
+    //     horizon line is exactly skyHorizon — the same value the haze band
+    //     saturates to and the same value scene.fog uses. The gradient only
+    //     exists above the horizon, which is both physically right and what
+    //     makes the horizon a clean line instead of a smudge.
+    //   * depthTest AND depthWrite off with renderOrder -1000: it is a
+    //     background, painted first, overwritten by everything. This also means
+    //     SKY_DOME_RADIUS is not an occlusion budget — nothing can ever be
+    //     hidden by it — so it only has to stay inside camera.far.
+    //   * It is re-centred on the camera every frame (see the frame loop), so
+    //     the gradient never skews as the camera climbs with the hole. A dome
+    //     pinned to the world would tip its horizon as the camera rose 200 ->
+    //     1800 units.
+    //   * fog:false — fogging the sky toward the fog colour, which IS the sky
+    //     colour, is a no-op that costs a per-fragment mix.
+    const skyGeo = new THREE.SphereGeometry(SKY_DOME_RADIUS, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.62);
+    {
+      const pos = skyGeo.attributes.position;
+      const col = new Float32Array(pos.count * 3);
+      const c = new THREE.Color();
+      for (let i = 0; i < pos.count; i += 1) {
+        const t = Math.max(0, pos.getY(i)) / SKY_DOME_RADIUS;
+        // sqrt bias: most of the visible sky in a 35-55 degree chase view sits
+        // in the bottom third of the dome, so a linear ramp spends its gradient
+        // where nobody is looking.
+        c.copy(skyHorizon).lerp(skyZenith, Math.sqrt(t));
+        col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+      }
+      skyGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
+    const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: false,
+      fog: false,
+      toneMapped: false,
+    }));
+    sky.renderOrder = -1000;
+    sky.frustumCulled = false;
+    sky.name = 'sky-dome';
+    root.add(sky);
+    state.sky = sky;
 
     // Props: the district layout's seeded placements, turned into the runtime
     // prop-object contract (live fields the instanced world reads per frame:
@@ -1866,14 +2051,23 @@ export async function main() {
       const tw = state.twist;
       const ts = state.twistState;
       if (tw.id === 'fog-closes-in') {
-        // The fog closes in as you grow: near plane pulls toward
-        // fogNearFactor of its base as mass approaches target.
+        // The fog closes in as you grow, as mass approaches target.
+        //
+        // FOG IS FogExp2 NOW (0005 atmosphere pass), so this scales DENSITY
+        // rather than pulling a near plane in. `fogNearFactor` is kept as the
+        // twist's authored parameter — it is level data, and rewriting content
+        // to match a rendering change is how content and code drift apart — and
+        // is reinterpreted here: the old rule multiplied the near distance by
+        // `nearFactor` at full progress, so the equivalent is to DIVIDE the
+        // density's length scale by the same factor. Default 0.6 => x1.67
+        // density at target, which is very close to the old effect's strength.
         const f = Math.min(1, avatar.mass / level.target);
         const nearFactor = typeof tw.params.fogNearFactor === 'number' ? tw.params.fogNearFactor : 0.6;
-        engine.scene.fog.near = state.baseFog.near * (1 - (1 - nearFactor) * f);
-        engine.scene.fog.far = state.baseFog.far * (1 - 0.15 * f);
+        engine.scene.fog.density = state.baseFog.density / (1 - (1 - nearFactor) * f);
       } else if (tw.id === 'sandstorm') {
         // A sandstorm sweeps the plaza at half-time: dense fog for ~10s.
+        // The old linear form pulled near to 0.35x and far to 0.55x, an ~2.6x
+        // effective tightening; matched here as a straight density multiplier.
         if (!ts.fired && progress >= (tw.params.atTimeFraction || 0.5)) {
           ts.fired = true;
           ts.stormT = 10;
@@ -1882,11 +2076,9 @@ export async function main() {
         }
         if (ts.stormT > 0) {
           ts.stormT -= gdt;
-          engine.scene.fog.near = state.baseFog.near * 0.35;
-          engine.scene.fog.far = state.baseFog.far * 0.55;
+          engine.scene.fog.density = state.baseFog.density * 2.6;
           if (ts.stormT <= 0) {
-            engine.scene.fog.near = state.baseFog.near;
-            engine.scene.fog.far = state.baseFog.far;
+            engine.scene.fog.density = state.baseFog.density;
           }
         }
       } else if (tw.id === 'cafe-rush') {
@@ -1971,6 +2163,12 @@ export async function main() {
     // A single box spanning the whole 2400-4800u world would quantise the
     // shadows to mush; following the avatar keeps them crisp as the hole grows.
     engine.followShadow(avatar.position.x, avatar.position.z, r * 14);
+    // Keep the sky dome centred on the eye — it is a background, not scenery.
+    // The camera climbs from ~180u of height at spawn to ~1800u at the largest
+    // radius the game reaches, which is 36% of the dome's radius: a world-pinned
+    // dome would visibly tip its horizon over a run. Copying the camera position
+    // costs three float writes and makes the gradient invariant.
+    if (state.sky) state.sky.position.copy(engine.camera.position);
     // Tide twists shrink the playable water-line as the clock runs down:
     // rising-tide floods every edge; high-tide only advances from the south.
     let half = level.world / 2;

@@ -12,6 +12,32 @@
 //
 // No browser-only API (document/window) is touched at module top level — only
 // inside createEngine(), so a bare `import` of this file never throws in Node.
+
+// --- Sun shadow geometry (0005 RC-1). See followShadow() for the derivations.
+// Every one of these is load-bearing; none is a taste value.
+export const SHADOW_MAP_SIZE = 2048;
+// Floor for the box half-extent ladder. Must itself be a power of two, or the
+// floor lands the ladder on a rung whose texel size is not a power of two and
+// the texel snap stops being exact. Never binds in practice (minimum avatar
+// radius is 26 and main.js passes 14r = 364), it exists so the function is
+// total for any caller.
+export const SHADOW_HALF_MIN = 128;
+// Tallest thing that may cast into the box, world units. Sets how far the light
+// stands off so nothing is clipped by the near plane. Measured worst case is
+// the L75 building-large at 671u; 900 leaves room for landmark capstones.
+const SHADOW_CASTER_HEIGHT = 900;
+// Shadow-camera near plane. Only has to be > 0; it is a pad, not a budget —
+// the ortho depth buffer is linear so near costs nothing here (unlike the view
+// camera above, where near sets the whole precision budget).
+const SHADOW_NEAR = 1;
+// Depth bias, expressed in shadow texels of ground slope. 1.0 covers the depth
+// change across one texel on flat ground; the PCF kernel's wider reach is
+// covered by normalBias instead, which offsets the lookup rather than the depth
+// and therefore does not scale with the kernel's own error.
+const SHADOW_BIAS_TEXELS = 1.0;
+// Normal-offset bias, in shadow texels. Sized against the 3-texel PCF radius.
+const SHADOW_NORMAL_BIAS_TEXELS = 3.0;
+
 export function createEngine(canvasEl, THREE) {
   const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true });
   renderer.setClearColor(0x0b0f14, 1);
@@ -74,17 +100,47 @@ export function createEngine(canvasEl, THREE) {
   const camera = new THREE.PerspectiveCamera(60, 1, 20, 12000);
   camera.position.set(0, 6, 12);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+  // KEY / FILL BALANCE (0005 atmosphere pass, art-direction.md §5 "one-point
+  // lighting"). This rig shipped as ambient 0.55 + hemisphere 0.7 + sun 0.9,
+  // and 0.55 of FLAT ambient is the single reason flat-shaded geometry read
+  // cheap: ambient adds the same irradiance to every normal, so it is pure
+  // form-destroying lift. Measured on the live build with a 0.5-grey probe
+  // sphere parked in front of the chase camera (every normal visible at once,
+  // read back with gl.readPixels):
+  //
+  //   rig                       key:fill   sphere max:min   frame sd   frame mean
+  //   0.55 / 0.70 / 0.90        1.31       1.371            25.6       106.6
+  //   0.12 / 0.85 / 1.55        1.812      1.977            30.2       107.1  <- this
+  //   0.20 / 0.80 / 1.35        1.672      1.788            28.3       105.1
+  //   0.06 / 0.90 / 1.75        1.945      2.146            32.2       109.9
+  //
+  // "key" is the sphere texel whose world normal points at the sun's horizontal
+  // bearing, "fill" the one pointing directly away. 1.31 is barely a light — a
+  // sunlit face and a shaded face differed by 31%. 1.81 is a real key light.
+  //
+  // Chosen for the middle column, not the last: exposure has to survive the
+  // change or every metro's authored palette shifts under it. Frame mean luma
+  // moves 106.6 -> 107.1 (+0.5%) and mean saturation 0.289 -> 0.298, while the
+  // tonal spread that carries FORM goes up 18%. The 1.75 variant reads better
+  // still on the probe but drifts frame mean +3% and starts blowing the tops of
+  // pale facades.
+  //
+  // The ambient is not deleted outright: 0.12 is what keeps a north-facing wall
+  // in a street canyon off the hemisphere's floor value, and the hemisphere's
+  // warm ground bounce (0xc9b28a) is doing the real fill work.
+  const ambient = new THREE.AmbientLight(0xffffff, 0.12);
   scene.add(ambient);
 
   // Hemisphere fill (Hole.io-style bright world): cool sky-blue from above,
   // warm ground bounce from below — kills the flat monochrome look the bare
-  // ambient+directional pair gave. Colors/intensity are per-mood adjustable
-  // via setMood() below.
-  const hemi = new THREE.HemisphereLight(0xbfe3ff, 0xc9b28a, 0.7);
+  // ambient+directional pair gave. Unlike ambient this one is NORMAL-DEPENDENT
+  // (three bakes it into an SH probe), so it fills without flattening: it is
+  // the right place to spend the intensity the ambient gave up. Colors and
+  // intensity are per-mood adjustable via setMood() below.
+  const hemi = new THREE.HemisphereLight(0xbfe3ff, 0xc9b28a, 0.85);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff2dd, 0.9); // warm-tinted midday sun
+  const sun = new THREE.DirectionalLight(0xfff2dd, 1.55); // warm-tinted midday sun
   sun.position.set(120, 220, 80);
   scene.add(sun);
   scene.add(sun.target);
@@ -101,40 +157,171 @@ export function createEngine(canvasEl, THREE) {
   // map size. followShadow() below keeps it centred on the avatar and sized to
   // the current view, which is what keeps the shadows sharp as the hole grows.
   renderer.shadowMap.enabled = true;
-  // NOTE (0004, left for the lighting pass — deliberately NOT fixed here):
-  // PCFSoftShadowMap is deprecated in r185 and WebGLShadowMap silently swaps it
-  // for PCFShadowMap with a console warning (node_modules/three/src/renderers/
-  // webgl/WebGLShadowMap.js:99). renderer.shadowMap.type reads back as 1
-  // (PCFShadowMap), not 2, on the live build — so the "soft" in this line has
-  // been a no-op for a while. Related and also unfixed here: the shadow frustum
-  // below is re-aimed every frame without texel snapping, which is why the
-  // shadow edges crawl (2048px over a 2*410u box = 0.42 world units per shadow
-  // texel, measured live).
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // SHADOW FILTER — PCFShadowMap is a DELIBERATE choice here, not a fallback.
+  //
+  // This line used to say PCFSoftShadowMap with a note that r185 silently
+  // downgrades it. The note was right about the mechanism (WebGLShadowMap.js:99
+  // warns "PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead."
+  // and overwrites this.type; renderer.shadowMap.type reads back as 1 on the
+  // live build) and wrong about the consequence. In r185 PCFShadowMap is no
+  // longer the old 9-tap box filter that PCFSoft existed to improve on — read
+  // shadowmap_pars_fragment.glsl.js:114-148: it is FIVE Vogel-disk samples,
+  // rotated per pixel by interleaved gradient noise, each one a hardware 2x2
+  // sampler2DShadow fetch, i.e. ~20 filtered taps. PCFSoft's only remaining
+  // effect in r185 is a console warning on every render.
+  //
+  // The actual soft-edge dial is shadow.radius, which scales that Vogel disk in
+  // SHADOW TEXELS. It shipped at the default 1 (a one-texel penumbra = hard).
+  // It costs nothing to widen — same five taps at a wider spread — and that is
+  // measured, not assumed: GPU-timed on the live build with
+  // EXT_disjoint_timer_query_webgl2, 45 renders per sample, four interleaved
+  // reps, radius 1 -> 1.848 ms/frame, radius 4 -> 1.795 ms/frame (identical
+  // inside run-to-run spread).
+  //
+  // radius 3 is chosen because a shadow texel here is ~1 DEVICE PIXEL at every
+  // radius, by construction: the box half-extent tracks 14x the avatar radius
+  // and the chase camera stands off 12x the avatar radius, so texel size and
+  // camera distance scale together. Measured 0.5u/texel at r=26 against 2.06
+  // device px per world unit (1.03 px), and 8u/texel at r=483 against 0.111
+  // px/u (0.89 px). So radius 3 is a ~3-pixel penumbra at every hole size —
+  // soft enough to read as a real light, tight enough not to smear a lamp post
+  // into a stain. The IGN rotation is a function of gl_FragCoord only, so the
+  // dither pattern is pinned to the SCREEN and does not crawl with the world.
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.bias = -0.0012;      // acne suppression on large flat ground quads
-  sun.shadow.normalBias = 1.2;    // world units — props are big, so this is too
+  sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+  sun.shadow.radius = 3;
+  // bias / normalBias are NOT constants any more — followShadow() derives both
+  // from the box geometry on every rebuild. See the block comment there.
   const SUN_DIR = new THREE.Vector3(120, 220, 80).normalize();
+  // Sun elevation, from SUN_DIR. sin is the +Y component; cot = cos/sin is the
+  // depth-per-lateral-unit slope on flat ground, which is what sets both the
+  // shadow camera's depth range and the minimum honest depth bias.
+  const SIN_ELEV = SUN_DIR.y;                                    // 0.836327
+  const COT_ELEV = Math.sqrt(1 - SIN_ELEV * SIN_ELEV) / SIN_ELEV; // 0.655574
+  // The shadow camera's own basis, precomputed because SUN_DIR is a constant.
+  // These are EXACTLY the axes Object3D.lookAt() builds for the shadow camera
+  // (Matrix4.lookAt: z = eye-target normalized, x = normalize(up x z),
+  // y = z x x, with the camera's default up of +Y), which is what makes the
+  // texel snap below correct rather than approximate.
+  const LS_Z = SUN_DIR.clone();
+  const LS_X = new THREE.Vector3(0, 1, 0).cross(LS_Z).normalize();
+  const LS_Y = LS_Z.clone().cross(LS_X);
+
+  let shadowHalf = 0; // current quantised box half-extent; 0 = not built yet
 
   // Re-centre the sun and its shadow box on a world point, covering `extent`
   // world units around it. main.js calls this each frame with the avatar
   // position and a radius-derived extent.
+  //
+  // SHADOW CRAWL (0005 RC-1) — what this function used to do, and why all three
+  // of its per-frame perturbations are gone.
+  //
+  // It shipped as: half = max(120, extent); dist = half*2.5; sun and target set
+  // from the raw avatar floats; and a guard `if (cam.left !== -half)` around the
+  // projection rebuild. Measured on the live deploy (Playwright + window.__fw,
+  // followShadow called 8 times with the avatar displaced by 1/8 of a shadow
+  // texel each time):
+  //
+  //   1. TRANSLATION. 8 of 8 calls produced 8 DISTINCT sun.target positions, at
+  //      both r=26 and r=483. Nothing rounded the centre to the shadow map's
+  //      texel grid, so every sub-texel move re-rasterised the whole map into a
+  //      new texel phase and every shadow edge jittered by up to one texel:
+  //      0.355 world units at spawn, 6.60 at the level-1 radius cap.
+  //   2. RESCALE. `half` tracked a continuous float, so the guard compared two
+  //      floats that differ on essentially every frame of active play. Measured
+  //      directly: a 1% radius change moved cam.left -364 -> -367.64 and cam.far
+  //      2002 -> 2022, i.e. the guard suppressed nothing and the projection was
+  //      rebuilt ~60x/second.
+  //   3. BIAS RESCALE. cam.far was dist*2.2 = 77r and shadow.bias is normalised
+  //      against (far - near), so the constant -0.0012 meant 2.40 world units of
+  //      depth bias at spawn and 44.63 at the cap — 29 world units of lateral
+  //      shadow detachment, growing every frame the hole grew.
+  //
+  // The three fixes, in the same order:
+  //
+  //   1. The box centre is snapped to the texel grid IN LIGHT SPACE (not world
+  //      XZ, which is the cheap approximation the 0005 findings doc offered as
+  //      good enough — light space is exact and costs three extra dot products,
+  //      so there is no reason to take the approximation). `half` is a power of
+  //      two and mapSize is 2048, so `texel` is an exact power of two and
+  //      Math.round(v/texel)*texel is exact in binary floating point: the snap
+  //      cannot drift. The depth axis is deliberately NOT snapped — it does not
+  //      affect which texel a world point lands in.
+  //   2. `half` snaps UP to a power of two, so the guard finally guards: the
+  //      projection is rebuilt a handful of times per level instead of every
+  //      frame. Powers of two, not the 1.4x ladder the findings doc allowed,
+  //      precisely so `texel` stays a power of two for point 1. The cost is that
+  //      the box can be up to 2x larger than needed, i.e. the texel up to 2x
+  //      coarser (0.355 -> 0.5 at spawn) — which is free here, because the texel
+  //      is ~1 device pixel and 2 device pixels is still under the 3-texel PCF
+  //      radius above.
+  //   3. cam.near/cam.far now bracket the ACTUAL scene along the light axis, and
+  //      the bias is derived from the box instead of being a constant. Both
+  //      derivations are below.
+  //
+  // A constant WORLD-space bias would also have been wrong, so this deliberately
+  // does not do what the findings doc suggested ("makes shadow.bias mean roughly
+  // the same thing at every radius"). The self-shadowing error a depth bias has
+  // to cover is the depth change across ONE SHADOW TEXEL on the receiving
+  // surface, which on flat ground is texel * cot(elevation) — it is proportional
+  // to texel size, so the correct bias is proportional to texel size too, and
+  // texel size is proportional to the hole radius. What was wrong before was the
+  // CONSTANT OF PROPORTIONALITY: the shipped bias worked out to 0.0924r world
+  // units against a requirement of ~0.0090r, i.e. over-biased by 10.3x at every
+  // radius. That is why the failure mode was peter-panning and never acne.
   function followShadow(x, z, extent) {
-    const half = Math.max(120, extent);
-    const dist = half * 2.5;
-    sun.position.set(x + SUN_DIR.x * dist, SUN_DIR.y * dist, z + SUN_DIR.z * dist);
-    sun.target.position.set(x, 0, z);
+    // Quantise the box size. SHADOW_HALF_MIN is itself a power of two so the
+    // floor cannot land the ladder on a non-power-of-two rung.
+    const want = Math.max(SHADOW_HALF_MIN, extent);
+    const half = 2 ** Math.ceil(Math.log2(want));
+    const texel = (2 * half) / SHADOW_MAP_SIZE;
+
+    // Snap the box centre to the texel grid in light space. The input point is
+    // (x, 0, z); LS_X has no Y component by construction (up x z always does),
+    // so only LS_Y and LS_Z need the zero Y carried through.
+    const s = Math.round((x * LS_X.x + z * LS_X.z) / texel) * texel;
+    const t = Math.round((x * LS_Y.x + z * LS_Y.z) / texel) * texel;
+    const d = x * LS_Z.x + z * LS_Z.z; // depth axis — not snapped, does not alias
+    const cx = LS_X.x * s + LS_Y.x * t + LS_Z.x * d;
+    const cy = LS_X.y * s + LS_Y.y * t + LS_Z.y * d;
+    const cz = LS_X.z * s + LS_Y.z * t + LS_Z.z * d;
+
+    // Light standoff. Derivation: a ground point at light-space offset `t` from
+    // the centre sits at depth (dist - COT_ELEV*t), and a caster of height H
+    // sits SIN_ELEV*H nearer the light. So the nearest thing in the box is at
+    // dist - COT_ELEV*half - SIN_ELEV*SHADOW_CASTER_HEIGHT, and putting that on
+    // the near plane fixes `dist`. Note this only moves the shadow CAMERA — a
+    // directional light's shading direction is position-minus-target, and both
+    // move together, so nothing about the lighting changes.
+    const dist = SHADOW_NEAR + COT_ELEV * half + SIN_ELEV * SHADOW_CASTER_HEIGHT;
+    sun.position.set(cx + SUN_DIR.x * dist, cy + SUN_DIR.y * dist, cz + SUN_DIR.z * dist);
+    sun.target.position.set(cx, cy, cz);
     sun.target.updateMatrixWorld();
-    const cam = sun.shadow.camera;
-    if (cam.left !== -half) {
+
+    if (half !== shadowHalf) {
+      shadowHalf = half;
+      const cam = sun.shadow.camera;
       cam.left = -half;
       cam.right = half;
       cam.top = half;
       cam.bottom = -half;
-      cam.near = 1;
-      cam.far = dist * 2.2;
+      cam.near = SHADOW_NEAR;
+      // Far plane: the far side of the same box. The ground spans
+      // +-COT_ELEV*half in depth about the centre, so the range is
+      // 2*COT_ELEV*half plus the caster height that pushed `dist` out.
+      cam.far = SHADOW_NEAR + 2 * COT_ELEV * half + SIN_ELEV * SHADOW_CASTER_HEIGHT;
       cam.updateProjectionMatrix();
+      // shadow.bias is in NORMALISED shadow-camera depth (shadowCoord.z is 0..1
+      // across [near, far] for an orthographic camera), so a world-unit
+      // requirement has to be divided by the range to become a bias value.
+      sun.shadow.bias = -(SHADOW_BIAS_TEXELS * texel * COT_ELEV) / (cam.far - cam.near);
+      // normalBias IS in world units (shadowmap_vertex.glsl.js offsets the
+      // lookup position along the surface normal), and its job is to cover the
+      // PCF kernel's reach rather than a single texel — hence the wider
+      // multiplier. Scaling it with texel size keeps the detach it causes at a
+      // constant ~2 shadow texels, i.e. ~2 device pixels, at every hole size.
+      sun.shadow.normalBias = SHADOW_NORMAL_BIAS_TEXELS * texel;
     }
   }
 
@@ -145,10 +332,14 @@ export function createEngine(canvasEl, THREE) {
   function setMood({ sky, ground, night } = {}) {
     if (sky !== undefined) hemi.color.set(sky);
     if (ground !== undefined) hemi.groundColor.set(ground);
+    // Night keeps the SAME day/night ratios it always had (ambient x0.51,
+    // sun x0.50, hemisphere x0.43) applied to the rebalanced day values above,
+    // so the night levels darken by exactly as much as before rather than
+    // inheriting a second, accidental change from the key/fill pass.
     const dim = !!night;
-    ambient.intensity = dim ? 0.28 : 0.55;
-    sun.intensity = dim ? 0.45 : 0.9;
-    hemi.intensity = dim ? 0.3 : 0.7;
+    ambient.intensity = dim ? 0.06 : 0.12;
+    sun.intensity = dim ? 0.78 : 1.55;
+    hemi.intensity = dim ? 0.37 : 0.85;
   }
 
   const clock = new THREE.Clock();

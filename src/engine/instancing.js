@@ -52,8 +52,44 @@ const FOG_CULL_MARGIN = 1.2;  // props beyond 1.2x fog distance skip updates
 // cool surfaces (asphalt, pavement — most of the map), -0.021 on the warm
 // cream promenade, where violet opposes the base hue. That trade is accepted:
 // a warm surface going cool in shade is the correct read.
+//
+// RE-DERIVED AGAIN (0005 atmosphere pass): OPACITY 0.18 -> 0.12, COLOUR KEPT.
+// The 0.18 above was fitted to a light rig that no longer exists — scene.js
+// moved ambient 0.55 -> 0.12 and the sun 0.9 -> 1.55, which roughly doubles how
+// dark a real cast shadow lands. Leaving 0.18 in place would have re-created
+// the exact double-darkening the 0.26 -> 0.18 change existed to remove, which
+// is why this is a re-derivation and not a re-tune.
+//
+// Measured on the live deploy by toggling each contributor and reading back the
+// framebuffer: mean luma delta (0..1) over the pixels that actually changed,
+// and what fraction of the frame those were. The product of the two is the
+// honest "how much light does this remove from the frame" figure, because the
+// mean alone moves when a change only shifts how many pixels clear the
+// detection threshold:
+//
+//                     mean delta   frame coverage   light removed
+//   cast, old rig       -0.0961        5.47%           0.526
+//   cast, new rig       -0.1739        8.34%           1.450   (x2.8)
+//   blob @0.18, old     -0.0362        1.18%           0.043
+//   blob @0.12, new     -0.0271        0.57%           0.015   (x0.36)
+//
+// The cast shadow map now removes 2.8x the light it used to, on its own. The
+// decal is no longer needed for darkening at all. What it is still needed for
+// is the job the comment above names and nothing more: the grazing-angle case
+// where the shadow map's texel footprint is unreliable, and the contact edge
+// right under a prop where normalBias pushes the cast shadow off the footprint.
+// 0.12 is sized to that residual job. Contact darkening overall is still well
+// up on the old look, which is the POINT of the key/fill pass — shadows should
+// have weight — without the decal stacking a second shadow on a much stronger
+// first one.
+//
+// The violet is kept, and the justification is stronger than before rather than
+// merely surviving: shade is lit by ambient plus the hemisphere fill, and the
+// rebalance moved that mix hard toward the hemisphere (ambient is now 12% of a
+// light rig where it used to be 55%). Shadowed ground is therefore MORE sky-lit
+// than it was, so a cool shadow is more correct now, not less.
 const SHADOW_COLOR = 0x241d3a;
-const SHADOW_OPACITY = 0.18;
+const SHADOW_OPACITY = 0.12;
 // Fraction of a prop's footprint half-diagonal used for its contact decal.
 // Below 1/sqrt(2) (~0.707) so the disc sits INSIDE a square footprint rather
 // than ringing it. See writeInstanceMatrix for why this matters.
@@ -103,6 +139,9 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
 
   // Blob shadows: one InstancedMesh covering every prop, slot === propIndex.
   let shadowMesh = null;
+  // Dirty flag for the blob-shadow instance matrix buffer (0005 §4.3). Mirrors
+  // group.matrixDirty on the prop meshes; see update() for what it fixes.
+  let shadowMatrixDirty = false;
   const shadowGeo = new THREE.CircleGeometry(1, 20);
   shadowGeo.rotateX(-Math.PI / 2);
   const shadowMat = new THREE.MeshBasicMaterial({
@@ -292,7 +331,11 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       if (group.mesh.instanceColor) group.mesh.instanceColor.needsUpdate = true;
       group.matrixDirty = false;
     }
+    // The initial full write above went through writeInstanceMatrix(), which
+    // raised shadowMatrixDirty; flush it here so the first frame lands and the
+    // guard in update() starts from a clean slate.
     if (shadowMesh) shadowMesh.instanceMatrix.needsUpdate = true;
+    shadowMatrixDirty = false;
   }
 
   /**
@@ -349,6 +392,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       tmpScale.set(sr, 1, sr);
       tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
       shadowMesh.setMatrixAt(i, tmpMatrix);
+      shadowMatrixDirty = true;
     }
   }
 
@@ -362,7 +406,20 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
     if (!props.length) return;
 
     const camPos = camera.position;
-    const fogFar = scene.fog && typeof scene.fog.far === 'number' ? scene.fog.far : Infinity;
+    // Distance-cull horizon. scene.fog is FogExp2 now (main.js, 0005 atmosphere
+    // pass) and has no `.far`, so read both shapes: for exponential-squared fog
+    // the equivalent "everything past here is sky" distance is where the fog
+    // factor saturates, 1 - exp(-(d*z)^2) > 0.9999 at d*z = 3.
+    // Worth knowing before anyone tunes this: on every level the resulting cull
+    // distance already exceeds the ground's own diagonal (1.414*world), so this
+    // test has never rejected a prop and is not load-bearing. It is kept because
+    // a future twist that collapses fog hard would make it bind again.
+    const fog = scene.fog;
+    let fogFar = Infinity;
+    if (fog) {
+      if (typeof fog.far === 'number') fogFar = fog.far;
+      else if (typeof fog.density === 'number' && fog.density > 0) fogFar = 3 / fog.density;
+    }
     const cullDist = fogFar * FOG_CULL_MARGIN;
     const cullDistSq = cullDist * cullDist;
 
@@ -393,7 +450,18 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
         group.colorDirty = false;
       }
     }
-    if (shadowMesh) shadowMesh.instanceMatrix.needsUpdate = true;
+    // BLOB-SHADOW UPLOAD GUARD (0005 §4.3). This line used to be an
+    // unconditional `shadowMesh.instanceMatrix.needsUpdate = true`, two lines
+    // below the correctly guarded prop meshes — a single omission, not a
+    // pattern. It re-uploaded the whole N*64-byte matrix buffer on every frame
+    // whether or not a prop had moved: ~30 KB/frame at level 1's 474 props,
+    // scaling with the roster. writeInstanceMatrix() now sets the flag, exactly
+    // like it sets group.matrixDirty, and set()/setVisible() set it directly for
+    // the paths that write the buffer without going through it.
+    if (shadowMesh && shadowMatrixDirty) {
+      shadowMesh.instanceMatrix.needsUpdate = true;
+      shadowMatrixDirty = false;
+    }
   }
 
   /**
@@ -505,6 +573,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       if (shadowMesh) {
         shadowMesh.setMatrixAt(propIndex, tmpMatrix);
         shadowMesh.instanceMatrix.needsUpdate = true;
+        shadowMatrixDirty = false; // just flushed
       }
       propGroup[propIndex] = null;
     } else if (!propGroup[propIndex]) {

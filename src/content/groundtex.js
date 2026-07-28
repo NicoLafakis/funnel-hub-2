@@ -278,6 +278,64 @@ const MIN_STREET_FOR_PARKING = 52;  // bays only on genuinely wide carriageways
 //   grain it replaces was never visible as grain — only as aliasing.
 // Reverting is one constant. If the ground reads too plain, go back to 32 and
 // instead drop the lattice-128 octave from groundDetailPixels().
+//
+// --- THE HALF OF THE MOIRE FIX THAT WENT TOO FAR ---------------------------
+// Doubling TILE_WORLD halved every octave's spatial frequency, and an
+// adversarial verification pass on the shipped build measured the cost: at
+// CLOSE range the ground came back with LESS high-frequency energy than the
+// broken build it replaced (vertical HF 1.95 against 3.31, horizontal 0.71
+// against 1.51). The crawl was partly gone because the surface was gone. Under
+// "premium stylized" that is not an acceptable trade — asphalt that reads
+// plasticky at contact range is the exact failure the direction exists to
+// avoid.
+//
+// TWO FIXES WERE TRIED AND ONE WAS MEASURED DEAD. Recorded so nobody spends the
+// memory on it again:
+//
+//   REJECTED — 1024px tile plus a lattice-256 octave (0.250 u/cycle) at weight
+//   0.12. The reasoning was that at 512px that octave would be 2 texels/cycle,
+//   aliased in the TILE itself, whereas at 1024px it is a properly band-limited
+//   4 texels/cycle. That reasoning is correct and it does not matter, because
+//   at the gameplay camera the ground is MINIFIED against a 16 texel/unit tile
+//   (0.124 world units per device pixel = 8.06 px/u, so ~2 texels per device
+//   pixel): the sampler sits on mip 1 and averages that octave away before it
+//   ever reaches the screen. Measured both ways and they agree — offline, an
+//   on-screen gradient model scored it 3.91 against the shipped tile's 3.39
+//   (+15%); live on the deploy, injecting the rebuilt 1024px tile and nothing
+//   else moved close-range vHF 1.181 -> 1.176, i.e. no change at all. 4x the
+//   texture memory for nothing.
+//
+//   SHIPPED — reweight the SURVIVING octaves toward the finest SAFE one, which
+//   costs no memory and adds no new frequency. Detail on screen is amplitude at
+//   a resolvable frequency, and the finest resolvable rung (lattice 128, 4.03
+//   device px/cycle) was carrying only 0.18 of the tile while the coarsest rung
+//   (lattice 32, 16.1 px/cycle, which reads as broad tonal drift rather than
+//   surface) carried 0.50. Moving the weight there recovers the surface without
+//   putting a single cycle back below 4 device pixels.
+//
+// The model this was tuned against, and its validation. Bake the tile, box-
+// downsample it by the texels-per-device-pixel ratio for that config, and take
+// the mean absolute gradient per output pixel — every config then lands at the
+// same 0.125 world units per output pixel and the numbers are comparable:
+//
+//   config                        texels/u  k   on-screen gradient (x1000)
+//   pre-fix   512px @ 32u          16.0     2   6.30
+//   shipped   512px @ 64u           8.0     1   3.39
+//   1024px @ 64u + lattice 256     16.0     2   3.91   (rejected, above)
+//   THIS      512px @ 64u reweighted 8.0    1   5.66
+//
+// The model predicts a pre-fix:shipped ratio of 1.86; the independent live
+// measurement of the same pair was 1.70 (3.31 against 1.95). That agreement is
+// why the 5.66 number is trusted: it is 90% of the pre-fix build's surface
+// energy, reached without reintroducing any of the frequency that caused the
+// crawl.
+//
+// The cost, stated plainly: the tile now puts 44% of its weight on the 4.03
+// px/cycle rung instead of 18%. That rung has 2x margin over the device-pixel
+// Nyquist and is safe under trilinear minification, but it is the rung that
+// runs out of taps first at extreme grazing angles, so the anisotropic
+// sampler's failure mode is now louder in amplitude even though it has not
+// moved in frequency. Verified live under sustained motion before shipping.
 export const DETAIL_TILE_WORLD = 64;
 export const DETAIL_TEX_SIZE = 512;
 
@@ -379,10 +437,30 @@ export function groundDetailPixels(size = DETAIL_TEX_SIZE, seed = 1) {
   // Weights are re-balanced onto the surviving octaves so the tile's MEAN is
   // unchanged — GROUND_ALBEDO_SCALE above is calibrated against that mean, and
   // shifting it here would silently re-expose the whole ground.
+  //
+  // THE OCTAVE LIST IS UNCHANGED; THE WEIGHTS ARE NOT. Re-derived for the 64u
+  // tile (the table above is written against the old 32u one, so every
+  // world-unit figure in it is half of what ships):
+  //
+  //   lattice 256  ->  2 texels -> 0.250 u/cycle -> 2.02 device px  ABSENT
+  //   lattice 128  ->  4 texels -> 0.500 u/cycle -> 4.03 device px  w 0.44
+  //   lattice  64  ->  8 texels -> 1.000 u/cycle -> 8.06 device px  w 0.30
+  //   lattice  32  -> 16 texels -> 2.000 u/cycle -> 16.1 device px  w 0.26
+  //
+  // Weights were 0.50/0.32/0.18 and are now 0.26/0.30/0.44 — the same three
+  // octaves, the same frequencies, the energy moved from the rung that reads as
+  // broad tonal drift to the rung that reads as SURFACE. See DETAIL_TEX_SIZE
+  // above for the measurement that chose these and for the 1024px + lattice-256
+  // alternative that was measured and rejected.
+  //
+  // They still sum to 1, and every octave's mean is 0.5, so the tile's mean is
+  // untouched by construction and by measurement (x0.9304 before, x0.9300
+  // after — 0.04%). That is what GROUND_ALBEDO_SCALE is calibrated against;
+  // moving it would silently re-expose the whole ground.
   const oct = [
-    { a: latticeNoise(rng, 32), n: 32, w: 0.50 },
-    { a: latticeNoise(rng, 64), n: 64, w: 0.32 },
-    { a: latticeNoise(rng, 128), n: 128, w: 0.18 },
+    { a: latticeNoise(rng, 32), n: 32, w: 0.26 },
+    { a: latticeNoise(rng, 64), n: 64, w: 0.30 },
+    { a: latticeNoise(rng, 128), n: 128, w: 0.44 },
   ];
   const out = new Uint8ClampedArray(size * size);
   for (let j = 0; j < size; j += 1) {
