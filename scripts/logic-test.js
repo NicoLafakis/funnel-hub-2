@@ -915,6 +915,11 @@ async function main() {
         && vehicles.every((color) => color.isColor)
         && buildings[0].getHex() !== vehicles[0].getHex();
     })());
+    check('Chicago signature buildings keep deterministic identity colors', (() => {
+      const willis = propkit.cityPalette(THREE, 'chicago-loop', 'building-large', null, 'cityobj_chicago_willis_tower');
+      const cna = propkit.cityPalette(THREE, 'chicago-loop', 'building-large', null, 'cityobj_chicago_cna_center_big_red');
+      return willis.length === 1 && cna.length === 1 && cna[0].r > cna[0].b;
+    })());
     check('Skyline-opedia exposes exactly the 30 visible archetypes per metro',
       METROS.every((metro) => Array.isArray(propkit.metroVariants[metro.id])
         && propkit.metroVariants[metro.id].length === 30));

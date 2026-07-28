@@ -300,7 +300,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       // base is what setEdibility()/pulseInstance() modulate on top of.
       if (palette && !group.golden && paletteKinds.has(group.kind)) {
         const authoredPalette = typeof propkit.cityPalette === 'function'
-          ? propkit.cityPalette(THREE, cityId, group.kind, palette)
+          ? propkit.cityPalette(THREE, cityId, group.kind, palette, group.visualId)
           : palette;
         const pick = authoredPalette[Math.floor(paletteRng() * authoredPalette.length)];
         const j = base.r; // propkit's neutral grey brightness jitter

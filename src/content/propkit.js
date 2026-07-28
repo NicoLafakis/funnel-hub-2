@@ -215,8 +215,20 @@ const CHICAGO_VEHICLE_PALETTE = Object.freeze([
 
 // City identity may replace the generic accent-derived candy palette without
 // changing geometry, draw grouping, or deterministic instance assignment.
-export function cityPalette(THREE, cityId, kind, fallback = null) {
+const CHICAGO_IDENTITY_COLORS = Object.freeze({
+  cityobj_chicago_willis_tower: '#56616a',
+  cityobj_chicago_cna_center_big_red: '#b9473c',
+  cityobj_chicago_marina_city_tower_pair: '#918b75',
+  cityobj_chicago_wrigley_building: '#d6cdb9',
+  cityobj_chicago_tribune_tower: '#bbb19b',
+  cityobj_chicago_chicago_theatre: '#b87861',
+});
+
+export function cityPalette(THREE, cityId, kind, fallback = null, visualId = null) {
   if (cityId !== 'chicago-loop') return fallback;
+  if (CHICAGO_IDENTITY_COLORS[visualId]) {
+    return [new THREE.Color(CHICAGO_IDENTITY_COLORS[visualId])];
+  }
   const source = kind && kind.startsWith('building')
     ? CHICAGO_BUILDING_PALETTE
     : kind === 'car' || kind === 'bus'
@@ -930,21 +942,50 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
     case 'tower':
     case 'midrise':
     case 'shop': {
+      const identity = object.id || '';
+      const isWillis = identity === 'cityobj_chicago_willis_tower';
+      const isMarina = identity === 'cityobj_chicago_marina_city_tower_pair';
+      const isCna = identity === 'cityobj_chicago_cna_center_big_red';
+      const isTribune = identity === 'cityobj_chicago_tribune_tower';
+      const isTheatre = identity === 'cityobj_chicago_chicago_theatre';
       const inset = object.profile === 'tower' ? 0.62 : object.profile === 'shop' ? 0.92 : 0.78;
       const bodyW = dim.w * inset;
       const bodyD = dim.d * inset;
       const bodyH = dim.h * (object.profile === 'shop' ? 0.68 : 0.78 + phase * 0.08);
       const bodyY = dim.h * 0.08 + bodyH / 2;
       addBox(bodyW * 1.08, dim.h * 0.1, bodyD * 1.08, 0, dim.h * 0.05, 0, trim);
-      addBox(bodyW, bodyH, bodyD, 0, bodyY, 0);
+      if (isWillis) {
+        // Bundled-tube massing: nine shafts rise to three distinct heights,
+        // giving the tower its unmistakable stepped Chicago silhouette.
+        const shaft = bodyW * 0.31;
+        const heights = [0.72, 0.9, 0.72, 0.9, 1, 0.9, 0.58, 0.72, 0.58];
+        let shaftIndex = 0;
+        for (const z of [-shaft, 0, shaft]) for (const x of [-shaft, 0, shaft]) {
+          const h = bodyH * heights[shaftIndex];
+          addBox(shaft * 0.94, h, shaft * 0.94, x, dim.h * 0.08 + h / 2, z);
+          shaftIndex += 1;
+        }
+        addColumn(dim.w * 0.018, dim.h * 0.3, -shaft * 0.48, dim.h * 1.09, 0, trim, 6);
+        addColumn(dim.w * 0.018, dim.h * 0.3, shaft * 0.48, dim.h * 1.09, 0, trim, 6);
+      } else if (isMarina) {
+        // Twin cylindrical corncob towers with repeated balcony drums.
+        for (const x of [-bodyW * 0.27, bodyW * 0.27]) {
+          addColumn(bodyW * 0.24, bodyH * 0.92, x, dim.h * 0.08 + bodyH * 0.46, 0, main, 12);
+          for (let floor = 1; floor <= 7; floor += 1) {
+            addColumn(bodyW * 0.285, dim.h * 0.022, x, dim.h * 0.1 + floor * bodyH * 0.105, 0, trim, 12);
+          }
+        }
+      } else {
+        addBox(bodyW, bodyH, bodyD, 0, bodyY, 0);
+      }
 
       // Tower setbacks create the stepped Chicago skyline instead of one
       // enormous unarticulated prism.
-      if (object.profile === 'tower') {
+      if (object.profile === 'tower' && !isWillis && !isMarina) {
         const crownH = dim.h * (0.24 + phase * 0.08);
         addBox(bodyW * 0.72, crownH, bodyD * 0.72, 0, dim.h * 0.08 + bodyH + crownH / 2, 0, main);
         addBox(bodyW * 0.78, dim.h * 0.035, bodyD * 0.78, 0, dim.h * 0.08 + bodyH, 0, trim);
-        addColumn(dim.w * 0.028, dim.h * 0.25, 0, dim.h * 1.1, 0, trim, 6);
+        if (!isCna) addColumn(dim.w * 0.028, dim.h * (isTribune ? 0.36 : 0.25), 0, dim.h * 1.1, 0, trim, isTribune ? 8 : 6);
       }
 
       // Actual window bays on all four facades. They are shallow boxes with
@@ -954,15 +995,17 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
       const cols = object.profile === 'shop' ? 3 : 3 + (index % 2);
       const winW = bodyW / (cols * 1.75);
       const winH = bodyH / (rows * 2.4);
-      for (let row = 0; row < rows; row += 1) {
-        const y = dim.h * 0.13 + (row + 0.55) * (bodyH * 0.8 / rows);
-        for (let col = 0; col < cols; col += 1) {
-          const xPos = -bodyW * 0.36 + col * (bodyW * 0.72 / Math.max(1, cols - 1));
-          const zPos = -bodyD * 0.36 + col * (bodyD * 0.72 / Math.max(1, cols - 1));
-          addBox(winW, winH, dim.d * 0.018, xPos, y, bodyD / 2 + dim.d * 0.01, glass);
-          addBox(winW, winH, dim.d * 0.018, xPos, y, -bodyD / 2 - dim.d * 0.01, glass);
-          addBox(dim.w * 0.018, winH, winW, bodyW / 2 + dim.w * 0.01, y, zPos, glass);
-          addBox(dim.w * 0.018, winH, winW, -bodyW / 2 - dim.w * 0.01, y, zPos, glass);
+      if (!isWillis && !isMarina) {
+        for (let row = 0; row < rows; row += 1) {
+          const y = dim.h * 0.13 + (row + 0.55) * (bodyH * 0.8 / rows);
+          for (let col = 0; col < cols; col += 1) {
+            const xPos = -bodyW * 0.36 + col * (bodyW * 0.72 / Math.max(1, cols - 1));
+            const zPos = -bodyD * 0.36 + col * (bodyD * 0.72 / Math.max(1, cols - 1));
+            addBox(winW, winH, dim.d * 0.018, xPos, y, bodyD / 2 + dim.d * 0.01, glass);
+            addBox(winW, winH, dim.d * 0.018, xPos, y, -bodyD / 2 - dim.d * 0.01, glass);
+            addBox(dim.w * 0.018, winH, winW, bodyW / 2 + dim.w * 0.01, y, zPos, glass);
+            addBox(dim.w * 0.018, winH, winW, -bodyW / 2 - dim.w * 0.01, y, zPos, glass);
+          }
         }
       }
 
@@ -971,7 +1014,11 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
       if (object.profile === 'shop') {
         addBox(bodyW * 0.72, dim.h * 0.055, bodyD * 0.16, 0, dim.h * 0.3, bodyD * 0.56, trim);
         addBox(bodyW * 0.2, dim.h * 0.27, dim.d * 0.025, 0, dim.h * 0.18, bodyD * 0.515, glass);
-      } else {
+        if (isTheatre) {
+          addBox(bodyW * 0.52, dim.h * 0.3, dim.d * 0.08, 0, dim.h * 0.48, bodyD * 0.58, trim);
+          addBox(bodyW * 0.68, dim.h * 0.08, bodyD * 0.22, 0, dim.h * 0.34, bodyD * 0.61, glass);
+        }
+      } else if (!isWillis && !isMarina) {
         // A darker ground-floor band, entrance canopy, and roof parapet keep
         // the building readable as architecture from the high chase view.
         addBox(bodyW * 0.94, dim.h * 0.12, dim.d * 0.035, 0, dim.h * 0.16, bodyD * 0.515, glass);

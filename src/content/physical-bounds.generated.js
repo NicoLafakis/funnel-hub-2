@@ -741,7 +741,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 1.1175870645585562e-10,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 51.45000076293945,
+    "maxY": 34.42655944824219,
     "maxZ": 7.650000095367432
   },
   "cityobj_chicago_merchandise_mart": {
@@ -829,7 +829,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 1.1175870645585562e-10,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 51.45000076293945,
+    "maxY": 53.7599983215332,
     "maxZ": 7.650000095367432
   },
   "cityobj_chicago_two_car_l_train_set": {
@@ -853,7 +853,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 1.1175870645585562e-10,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 51.45000076293945,
+    "maxY": 52.08000183105469,
     "maxZ": 7.650000095367432
   },
   "cityobj_chicago_wrigley_building": {

@@ -23,6 +23,10 @@
 - Reference-led building profiles include four-sided window bays, storefront
   bases, rooftop plant, and stepped tower crowns; chase heading uses a 0.16s
   critically damped angular spring for continuous left/right follow velocity.
+- Signature Chicago profiles override that shared recipe where identity
+  matters: Willis uses bundled-tube setbacks and twin antennas, Marina City
+  uses paired balcony drums, CNA keeps its red slab, Tribune gets a taller
+  historic crown, and the Chicago Theatre carries a projecting marquee.
 - The approved target frame now owns the ground palette: charcoal asphalt and
   neutral concrete supersede the historical lavender-road reference palette.
 - Level 1 uses 3.75× interactive tree density, weighted toward downtown
