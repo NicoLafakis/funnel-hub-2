@@ -127,7 +127,7 @@ const EDIBILITY_TOO_BIG = 2;
  *     gold read now comes from propkit's opts.golden instance colors
  * }} opts
  */
-export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textures = null, seed } = {}) {
+export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textures = null, seed, cityId = null } = {}) {
   // groups: key `${kind}|${golden ? 1 : 0}` ->
   //   { kind, golden, mesh, slots: [propIndex per slot], baseColors: [Color] }
   const groups = new Map();
@@ -299,7 +299,10 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       // the body color — palette pick x propkit's brightness jitter. This
       // base is what setEdibility()/pulseInstance() modulate on top of.
       if (palette && !group.golden && paletteKinds.has(group.kind)) {
-        const pick = palette[Math.floor(paletteRng() * palette.length)];
+        const authoredPalette = typeof propkit.cityPalette === 'function'
+          ? propkit.cityPalette(THREE, cityId, group.kind, palette)
+          : palette;
+        const pick = authoredPalette[Math.floor(paletteRng() * authoredPalette.length)];
         const j = base.r; // propkit's neutral grey brightness jitter
         base.setRGB(pick.r * j, pick.g * j, pick.b * j);
         group.mesh.setColorAt(slot, base);

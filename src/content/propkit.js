@@ -197,8 +197,33 @@ export const PALETTE_BASE_KINDS = new Set([
 // non-white or a pastel instance hue x white detail renders as a flat slab
 // with zero window contrast. Chosen so (any pastel pick) x (fixed tint)
 // still reads as cool glass / dark trim against the body hue.
-const PALETTE_GLASS_TINT = '#a8c4d4'; // cool light blue-grey "window glass"
-const PALETTE_TRIM_TINT = '#5f6b7a'; // darker neutral — rooftop cues / trim
+const PALETTE_GLASS_TINT = '#587386'; // dark blue-grey window glass
+const PALETTE_TRIM_TINT = '#4f565e'; // neutral rooftop / facade trim
+
+const CHICAGO_BUILDING_PALETTE = Object.freeze([
+  '#9b5e48', // red Chicago brick
+  '#b77855', // warm masonry
+  '#c2a472', // buff limestone
+  '#b9b3a5', // pale stone/concrete
+  '#527985', // blue-green curtain wall
+  '#697a82', // steel-grey glass
+  '#766987', // restrained purple landmark accent
+]);
+const CHICAGO_VEHICLE_PALETTE = Object.freeze([
+  '#d9d9d3', '#d2a229', '#b94337', '#3f7398', '#4f765c', '#756585',
+]);
+
+// City identity may replace the generic accent-derived candy palette without
+// changing geometry, draw grouping, or deterministic instance assignment.
+export function cityPalette(THREE, cityId, kind, fallback = null) {
+  if (cityId !== 'chicago-loop') return fallback;
+  const source = kind && kind.startsWith('building')
+    ? CHICAGO_BUILDING_PALETTE
+    : kind === 'car' || kind === 'bus'
+      ? CHICAGO_VEHICLE_PALETTE
+      : null;
+  return source ? source.map((hex) => new THREE.Color(hex)) : fallback;
+}
 
 export function metroPalette(THREE, accentColorHex, seed, count = 6) {
   const base = resolveColor(THREE, accentColorHex);
@@ -947,8 +972,18 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
         addBox(bodyW * 0.72, dim.h * 0.055, bodyD * 0.16, 0, dim.h * 0.3, bodyD * 0.56, trim);
         addBox(bodyW * 0.2, dim.h * 0.27, dim.d * 0.025, 0, dim.h * 0.18, bodyD * 0.515, glass);
       } else {
+        // A darker ground-floor band, entrance canopy, and roof parapet keep
+        // the building readable as architecture from the high chase view.
+        addBox(bodyW * 0.94, dim.h * 0.12, dim.d * 0.035, 0, dim.h * 0.16, bodyD * 0.515, glass);
+        addBox(bodyW * 0.3, dim.h * 0.035, bodyD * 0.16, 0, dim.h * 0.25, bodyD * 0.56, trim);
+        const roofY = dim.h * 0.08 + bodyH + dim.h * 0.025;
+        addBox(bodyW, dim.h * 0.05, dim.d * 0.035, 0, roofY, bodyD * 0.48, trim);
+        addBox(bodyW, dim.h * 0.05, dim.d * 0.035, 0, roofY, -bodyD * 0.48, trim);
+        addBox(dim.w * 0.035, dim.h * 0.05, bodyD, bodyW * 0.48, roofY, 0, trim);
+        addBox(dim.w * 0.035, dim.h * 0.05, bodyD, -bodyW * 0.48, roofY, 0, trim);
         addBox(bodyW * 0.22, dim.h * 0.055, bodyD * 0.18, bodyW * 0.22, dim.h * 0.1 + bodyH, -bodyD * 0.18, trim);
         addBox(bodyW * 0.14, dim.h * 0.045, bodyD * 0.14, -bodyW * 0.22, dim.h * 0.095 + bodyH, bodyD * 0.18, trim);
+        if (index % 2 === 0) addColumn(dim.w * 0.055, dim.h * 0.12, -bodyW * 0.25, dim.h * 0.14 + bodyH, bodyD * 0.24, trim, 8);
       }
       break;
     }

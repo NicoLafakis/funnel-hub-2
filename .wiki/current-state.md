@@ -40,6 +40,10 @@
 - The Loop's civic plaza is a compact landmark court inside a developed host
   block; neither it nor the former duplicate plaza consumes a full block of
   dead concrete.
+- Level 1 uses an authored Chicago material palette: brick, buff limestone,
+  concrete, blue-green glass, and restrained landmark purple for buildings,
+  with a separate realistic traffic palette. Building profiles add dark
+  ground-floor glazing, entrance canopies, roof parapets, plant, and vents.
 
 ## Verified automated baseline
 

@@ -1286,7 +1286,7 @@ export async function main() {
 
     state.world = createInstancedWorld({
       scene: engine.scene, propkit, accent: metro.accent, textures: cityTextures,
-      seed: layout.seed,
+      seed: layout.seed, cityId: level.authoredCity,
     });
     state.world.set(worldProps);
     state.world.setQuality(engine.getPerformanceSnapshot().profile);

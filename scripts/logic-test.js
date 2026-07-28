@@ -907,6 +907,14 @@ async function main() {
     check('Chicago towers and storefront rows resolve as architecture, not clutter',
       cityObjectsMod.CITY_OBJECT_BY_ID.cityobj_chicago_tribune_tower.gameplayKind === 'building-large'
         && cityObjectsMod.CITY_OBJECT_BY_ID.cityobj_chicago_historic_loop_corner_storefront_row.gameplayKind === 'building-small');
+    check('Chicago uses distinct masonry/glass and traffic palettes', (() => {
+      const buildings = propkit.cityPalette(THREE, 'chicago-loop', 'building-medium');
+      const vehicles = propkit.cityPalette(THREE, 'chicago-loop', 'car');
+      return buildings.length === 7 && vehicles.length === 6
+        && buildings.every((color) => color.isColor)
+        && vehicles.every((color) => color.isColor)
+        && buildings[0].getHex() !== vehicles[0].getHex();
+    })());
     check('Skyline-opedia exposes exactly the 30 visible archetypes per metro',
       METROS.every((metro) => Array.isArray(propkit.metroVariants[metro.id])
         && propkit.metroVariants[metro.id].length === 30));
