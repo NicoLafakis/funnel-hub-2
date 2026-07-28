@@ -30,6 +30,10 @@
   matters: Willis uses bundled-tube setbacks and twin antennas, Marina City
   uses paired balcony drums, CNA keeps its red slab, Tribune gets a taller
   historic crown, and the Chicago Theatre carries a projecting marquee.
+- Chicago city-object bodies now participate in the existing procedural facade
+  atlas (4×5, 6×10, or 8×18 bays by tier). Oversized geometry windows remain
+  only as the missing-texture fallback, so live buildings gain finer facade
+  rhythm while reducing triangles and retaining one instanced draw per ID.
 - The approved target frame now owns the ground palette: charcoal asphalt and
   neutral concrete supersede the historical lavender-road reference palette.
 - The Loop day mood uses a dedicated brighter ambient/hemisphere fill while

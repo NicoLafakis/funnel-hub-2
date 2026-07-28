@@ -908,6 +908,7 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
   const trim = standardMat(THREE, opts.paletteBase ? resolveColor(THREE, PALETTE_TRIM_TINT) : shade(THREE, accent, -0.2), { roughness: 0.58, metalness: 0.18 });
   const glass = standardMat(THREE, opts.paletteBase ? resolveColor(THREE, PALETTE_GLASS_TINT) : shade(THREE, accent, 0.24), { roughness: 0.3, metalness: 0.16 });
   const group = new THREE.Group();
+  const facadeTextured = !!opts.facadeTextured;
   const addBox = (w, h, d, x, y, z, mat = main, ry = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y, z); mesh.rotation.y = ry; group.add(mesh); return mesh;
@@ -962,7 +963,8 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
         let shaftIndex = 0;
         for (const z of [-shaft, 0, shaft]) for (const x of [-shaft, 0, shaft]) {
           const h = bodyH * heights[shaftIndex];
-          addBox(shaft * 0.94, h, shaft * 0.94, x, dim.h * 0.08 + h / 2, z);
+          const shaftMesh = addBox(shaft * 0.94, h, shaft * 0.94, x, dim.h * 0.08 + h / 2, z);
+          shaftMesh.userData.facade = true;
           shaftIndex += 1;
         }
         addColumn(dim.w * 0.018, dim.h * 0.3, -shaft * 0.48, dim.h * 1.09, 0, trim, 6);
@@ -970,20 +972,23 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
       } else if (isMarina) {
         // Twin cylindrical corncob towers with repeated balcony drums.
         for (const x of [-bodyW * 0.27, bodyW * 0.27]) {
-          addColumn(bodyW * 0.24, bodyH * 0.92, x, dim.h * 0.08 + bodyH * 0.46, 0, main, 12);
+          const tower = addColumn(bodyW * 0.24, bodyH * 0.92, x, dim.h * 0.08 + bodyH * 0.46, 0, main, 12);
+          tower.userData.facade = true;
           for (let floor = 1; floor <= 7; floor += 1) {
             addColumn(bodyW * 0.285, dim.h * 0.022, x, dim.h * 0.1 + floor * bodyH * 0.105, 0, trim, 12);
           }
         }
       } else {
-        addBox(bodyW, bodyH, bodyD, 0, bodyY, 0);
+        const body = addBox(bodyW, bodyH, bodyD, 0, bodyY, 0);
+        body.userData.facade = true;
       }
 
       // Tower setbacks create the stepped Chicago skyline instead of one
       // enormous unarticulated prism.
       if (object.profile === 'tower' && !isWillis && !isMarina) {
         const crownH = dim.h * (0.24 + phase * 0.08);
-        addBox(bodyW * 0.72, crownH, bodyD * 0.72, 0, dim.h * 0.08 + bodyH + crownH / 2, 0, main);
+        const crown = addBox(bodyW * 0.72, crownH, bodyD * 0.72, 0, dim.h * 0.08 + bodyH + crownH / 2, 0, main);
+        crown.userData.facade = true;
         addBox(bodyW * 0.78, dim.h * 0.035, bodyD * 0.78, 0, dim.h * 0.08 + bodyH, 0, trim);
         if (!isCna) addColumn(dim.w * 0.028, dim.h * (isTribune ? 0.36 : 0.25), 0, dim.h * 1.1, 0, trim, isTribune ? 8 : 6);
       }
@@ -995,7 +1000,7 @@ function buildCityObject(THREE, descriptor, accent, opts = {}) {
       const cols = object.profile === 'shop' ? 3 : 3 + (index % 2);
       const winW = bodyW / (cols * 1.75);
       const winH = bodyH / (rows * 2.4);
-      if (!isWillis && !isMarina) {
+      if (!facadeTextured && !isWillis && !isMarina) {
         for (let row = 0; row < rows; row += 1) {
           const y = dim.h * 0.13 + (row + 0.55) * (bodyH * 0.8 / rows);
           for (let col = 0; col < cols; col += 1) {
@@ -1222,6 +1227,7 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
   } else {
     group = createVisualPropMesh(descriptor.id, kind, THREE, accentColorHex, {
       paletteBase: !!opts.paletteBase,
+      facadeTextured: !!opts.facadeTextured,
     });
   }
   group.updateMatrixWorld(true);

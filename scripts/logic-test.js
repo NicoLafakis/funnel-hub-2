@@ -1055,6 +1055,18 @@ async function main() {
       if (!Number.isFinite(fingerprint.checksum) || fingerprint.triangles > 1500) geometryBudgetsPass = false;
     }
     check('all merged geometries (543 catalog entries) are finite and remain <=1500 triangles', geometryBudgetsPass);
+    {
+      const visualId = 'cityobj_chicago_rookery_building';
+      const facade = new THREE.Texture();
+      const plain = propkit.createInstancedPropField('building-medium', 1, THREE, '#ffffff', { visualId });
+      const textured = propkit.createInstancedPropField('building-medium', 1, THREE, '#ffffff', { visualId, map: facade });
+      const uv = textured.geometry.attributes.uv;
+      const uvPairs = new Set(Array.from({ length: uv.count }, (_, i) => `${uv.getX(i).toFixed(3)},${uv.getY(i).toFixed(3)}`));
+      check('Chicago city-object bodies consume the procedural facade grid',
+        uvPairs.size > 4 && textured.geometry.index.count < plain.geometry.index.count);
+      plain.geometry.dispose(); plain.material.dispose();
+      textured.geometry.dispose(); textured.material.dispose(); facade.dispose();
+    }
 
     const collectionKeysMod = await import('../src/meta/collection.js');
     check('legacy display names normalize to permanent visual collection IDs',
