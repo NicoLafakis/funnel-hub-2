@@ -342,9 +342,13 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
     // inheriting a second, accidental change from the key/fill pass.
     const dim = !!night;
     const chicagoDay = !dim && cityId === 'chicago-loop';
-    ambient.intensity = dim ? 0.06 : chicagoDay ? 0.24 : 0.12;
-    sun.intensity = dim ? 0.78 : chicagoDay ? 1.45 : 1.55;
-    hemi.intensity = dim ? 0.37 : chicagoDay ? 1.05 : 0.85;
+    ambient.intensity = dim ? 0.06 : chicagoDay ? 0.26 : 0.12;
+    sun.intensity = dim ? 0.78 : chicagoDay ? 1.6 : 1.55;
+    hemi.intensity = dim ? 0.37 : chicagoDay ? 1.12 : 0.85;
+    // Chicago day: soften the hemisphere sky toward neutral — the default
+    // blue fill reads cold against the photoreal masonry. Other levels keep
+    // their metro sky (set above on every call).
+    if (chicagoDay) hemi.color.set('#d9e7f2');
   }
 
   const clock = new THREE.Clock();

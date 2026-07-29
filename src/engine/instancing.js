@@ -100,6 +100,10 @@ const SHADOW_FOOTPRINT_SCALE = 0.55;
 // the whole district collapses to the metro accent.
 const EDIBLE_LIFT = 1.06;
 const TOO_BIG_DIM = 0.62;
+// Photoreal facades (Level 1) stay closer to true colour when too big: the
+// art is the level's read, and the rim-size cue + "Too big" popup still
+// carry the signal. Untextured props keep the full dim.
+const TOO_BIG_DIM_TEXTURED = 0.78;
 
 // Kinds that get Hole.io-style per-instance pastel hue variety (propkit's
 // metroPalette). These kinds bake their instanced geometry with a neutral
@@ -528,7 +532,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       // too-big without touching hue.
       tmpColor.multiplyScalar(EDIBLE_LIFT);
     } else {
-      tmpColor.multiplyScalar(TOO_BIG_DIM);
+      tmpColor.multiplyScalar(photorealFacades && group.facadeMap ? TOO_BIG_DIM_TEXTURED : TOO_BIG_DIM);
     }
     group.mesh.setColorAt(slot, tmpColor);
     group.colorDirty = true;

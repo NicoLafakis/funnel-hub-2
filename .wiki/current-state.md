@@ -38,7 +38,12 @@
   neutral concrete supersede the historical lavender-road reference palette.
 - The Loop day mood uses a dedicated brighter ambient/hemisphere fill while
   retaining its directional key, keeping masonry readable inside dense street
-  canyons without changing lighting on the other 99 levels.
+  canyons without changing lighting on the other 99 levels. With the
+  photoreal set the fill warms further (neutral hemisphere sky, sun 1.6) and
+  too-big photoreal buildings dim to 0.78 instead of 0.62 so the facade art
+  survives the edibility pass; the pale blue-gray buildings at the edge of
+  frame are the intentionally distance-softened render-only context, not an
+  edibility tint.
 - Level 1 uses 3.75× interactive tree density, weighted toward downtown
   sidewalks, to reproduce the target's continuous canopy without changing
   later Area 1 levels.
