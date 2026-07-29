@@ -8,7 +8,9 @@
 // OUTPUT FRAME CONTRACT: `move` is a normalized SCREEN-space intent vector
 // {x, z}: x > 0 = screen right, z < 0 = "up-screen" = away from the camera
 // (W). Convert to world velocity using the camera yaw captured when the
-// current movement gesture began — use the
+// current movement gesture began — and RE-captured whenever the held WASD
+// chord changes (steerEpoch bumps; a fresh chord is always screen-true,
+// a held chord never re-anchors under the rotating chase camera). Use the
 // exported pure helper cameraRelativeMove(move, cameraYaw) or the bound
 // input.moveVector(cameraYaw). World coordinates follow the B7 contract:
 // origin (0,0) at world center, extents ±worldSize/2, ground plane y = 0.
@@ -147,6 +149,15 @@ export function createInputMachine({ toGround = null } = {}) {
 
   // Smoothed output — the object identity is stable (zero-alloc reads).
   const smoothed = { x: 0, z: 0 };
+  // Key-steer epoch: increments every time the RAW key-chord direction
+  // changes (a key goes down or up mid-gesture). main.js recaptures the
+  // camera-yaw movement basis on each bump, so a fresh WASD chord is always
+  // screen-true while a HELD chord keeps its frozen basis (the anti-feedback
+  // property — a continuous hold never re-anchors under the rotating chase
+  // camera). Touch-stick gestures deliberately do NOT bump: analog drifts
+  // would re-anchor every frame and reopen the steering feedback loop.
+  let steerEpoch = 0;
+  let lastKeySignature = null;
 
   function anyMoveKeyDown() {
     return MOVE_KEYS.some((k) => keys[k]);
@@ -332,8 +343,13 @@ export function createInputMachine({ toGround = null } = {}) {
   function computeIntent(ctx) {
     // Keys first (keys beat pointer), then the virtual stick.
     if (anyMoveKeyDown()) {
-      return axesFromKeys(keys);
+      const axes = axesFromKeys(keys);
+      const signature = axes ? `${axes.x.toFixed(4)},${axes.z.toFixed(4)}` : null;
+      if (signature !== null && signature !== lastKeySignature) steerEpoch += 1;
+      lastKeySignature = signature;
+      return axes;
     }
+    lastKeySignature = null;
     if (stickPointerId !== null) {
       const rec = pointers.get(stickPointerId);
       if (rec) {
@@ -419,6 +435,7 @@ export function createInputMachine({ toGround = null } = {}) {
     consumeOrbit,
     get state() { return state; },
     get move() { return smoothed; },
+    get steerEpoch() { return steerEpoch; },
     get movementActive() {
       return dragPointerId !== null || stickPointerId !== null || axesFromKeys(keys) !== null;
     },
@@ -540,6 +557,7 @@ export function createInput({ screenToGround = null, canvas = null } = {}) {
     consumeOrbit: () => machine.consumeOrbit(),
     get state() { return machine.state; },
     get move() { return machine.move; },
+    get steerEpoch() { return machine.steerEpoch; },
     get movementActive() { return machine.movementActive; },
     // World-space move vector for the avatar: screen-space intent rotated by
     // the camera yaw (game-design §1).

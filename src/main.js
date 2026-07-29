@@ -301,8 +301,14 @@ export async function main() {
   });
   // Freeze the view basis for each continuous steering gesture. The camera
   // can swing behind the avatar without changing a direction already held.
+  // Exception: a NEW WASD chord (key down/up mid-gesture, signalled by
+  // input.steerEpoch) re-anchors the basis to the live camera yaw — a held
+  // chord never drifts, but a fresh key press is always screen-true. Touch
+  // stick and drag-target keep the gesture-long freeze (their intents are
+  // world/analog-anchored and feel right already).
   let movementBasisYaw = chaseCamera.yaw;
   let movementWasActive = false;
+  let lastSteerEpoch = -1;
 
   // Pointer drag-to-move: raycast from the engine camera onto the ground
   // plane (y = 0), per input.js's toGround contract.
@@ -2301,7 +2307,13 @@ export async function main() {
     const orb = input.consumeOrbit();
     chaseCamera.orbitBy(orb.yaw, orb.pitch);
     chaseCamera.stepOrbit(orb.steps);
-    if (input.movementActive && !movementWasActive) movementBasisYaw = chaseCamera.yaw;
+    // A deliberate Q/E yaw step re-anchors a held key-chord too: after the
+    // camera jumps 45°, W must mean the NEW up-screen, not the stale basis.
+    if (orb.steps !== 0 && input.state === 'key-steer') movementBasisYaw = chaseCamera.yaw;
+    if (input.movementActive && (!movementWasActive || input.steerEpoch !== lastSteerEpoch)) {
+      movementBasisYaw = chaseCamera.yaw;
+      lastSteerEpoch = input.steerEpoch;
+    }
     movementWasActive = input.movementActive;
     const mv = input.moveVector(movementBasisYaw);
     avatar.setMoveInput(mv.dx, mv.dz);

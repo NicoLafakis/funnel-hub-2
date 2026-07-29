@@ -113,6 +113,40 @@ async function main() {
         && machine.move.x === 0 && machine.move.z === 0);
   }
 
+  {
+    // steerEpoch: a NEW WASD chord bumps the epoch (main.js re-anchors the
+    // camera basis so the fresh chord is screen-true); a HELD chord never
+    // bumps (the anti-feedback freeze), and touch-stick movement never bumps.
+    const m2 = inputMod.createInputMachine();
+    check('steer epoch starts at zero', m2.steerEpoch === 0);
+    m2.handleKeyDown('w');
+    m2.update(0.016, {});
+    check('first key chord bumps the steer epoch once', m2.steerEpoch === 1);
+    for (let i = 0; i < 30; i += 1) m2.update(0.016, {});
+    check('a held chord never re-bumps the epoch', m2.steerEpoch === 1);
+    m2.handleKeyDown('a');
+    m2.update(0.016, {});
+    check('adding a key mid-gesture bumps the epoch (new chord)', m2.steerEpoch === 2);
+    m2.handleKeyUp('w');
+    m2.update(0.016, {});
+    check('releasing a key mid-gesture bumps the epoch (new chord)', m2.steerEpoch === 3);
+    m2.handleKeyUp('a');
+    m2.update(0.016, {});
+    m2.handleKeyDown('w');
+    m2.update(0.016, {});
+    check('a fresh gesture after full release bumps again', m2.steerEpoch === 4);
+    m2.handleKeyUp('w');
+    m2.update(0.016, {});
+    m2.pointerDown({ id: 9, x: 100, y: 100, pointerType: 'touch', viewportW: 800, viewportH: 600 });
+    m2.pointerMove({ id: 9, x: 130, y: 60, viewportW: 800, viewportH: 600 });
+    const before = m2.steerEpoch;
+    for (let i = 0; i < 10; i += 1) {
+      m2.pointerMove({ id: 9, x: 130 + i, y: 60 - i, viewportW: 800, viewportH: 600 });
+      m2.update(0.016, {});
+    }
+    check('touch-stick drift never bumps the epoch', m2.steerEpoch === before);
+  }
+
   console.log('ADAPTIVE QUALITY:');
   check('automatic initial quality is conservative on mobile and high on desktop',
     qualityMod.selectInitialQuality({ mobile: true }) === 'medium'
