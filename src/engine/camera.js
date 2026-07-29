@@ -14,14 +14,17 @@ export function createChaseCamera(camera, avatar, THREE) {
   // lower third with plenty of city in view — earlier values (1.9r/1.05r)
   // still let the ball fill most of the screen, and with a featureless
   // ground players reported "a ball sliding around in nothing".
-  const BACK_DIST_BASE = 8;
-  const HEIGHT_BASE = 4;
+  // Camera framing scales smoothly with avatar growth: starting closer at initial
+  // radius (r=26) and pulling back gradually as mass increases, preventing the
+  // camera from zooming out too far too quickly on early prop swallows.
+  const BASE_R = 26;
 
   function update(dt) {
     const r = typeof avatar.radius === 'function' ? avatar.radius() : 30;
     const yaw = avatar.object3D.rotation.y;
-    const backDist = BACK_DIST_BASE + r * 2.6;
-    const height = HEIGHT_BASE + r * 1.5;
+    const growth = Math.max(0, r - BASE_R);
+    const backDist = 52 + growth * 1.4 + Math.sqrt(growth) * 3.5;
+    const height = 28 + growth * 0.8 + Math.sqrt(growth) * 1.8;
 
     // Avatar faces along (sin(yaw), 0, cos(yaw)) — see avatar.js facingAngle
     // (Math.atan2(nx, nz)). "Behind" is the negative of that direction.
