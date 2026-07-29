@@ -20,6 +20,39 @@
 
 const DEFAULT_ACCENT = '#9aa3ad';
 
+// Optional facade-texture registry. main.js loads PixelLab-generated PNGs
+// (assets/textures/) at bootstrap and registers them here via
+// setPropTextures(); builders then map them onto the big box surfaces that
+// otherwise read as flat untextured slabs (the "background looks terrible"
+// complaint). Headless tests never call setPropTextures, so TEXTURES stays
+// null and every builder falls back to its original flat-color behavior —
+// byte-identical to before this registry existed.
+let TEXTURES = null;
+export function setPropTextures(textures) {
+  TEXTURES = textures || null;
+}
+
+// Six-material array for a building box (BoxGeometry face order: +x,-x,+y,
+// -y,+z,-z): the four sides get the facade texture with repeat scaled so a
+// window reads ~3 world units regardless of building size; top/bottom get a
+// plain darker cap so the roof doesn't smear the facade. With no texture,
+// returns the flat wall material on every face (original behavior).
+function buildingBoxMaterials(THREE, baseColor, texture, dim, opts = {}) {
+  const cap = standardMat(THREE, shade(THREE, baseColor, -0.12), opts);
+  if (!texture) {
+    const flat = standardMat(THREE, baseColor, opts);
+    return [flat, flat, cap, cap, flat, flat];
+  }
+  const map = texture.clone();
+  map.needsUpdate = true;
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(Math.max(0.25, dim.w / 26), Math.max(0.25, dim.h / 30));
+  const side = standardMat(THREE, baseColor, opts);
+  side.map = map;
+  return [side, side, cap, cap, side, side];
+}
+
 function resolveColor(THREE, hex) {
   const color = new THREE.Color();
   if (typeof hex === 'string' || typeof hex === 'number') {
@@ -206,7 +239,7 @@ function buildBus(THREE, accent) {
 function buildBuilding(THREE, accent, dim, opts = {}) {
   const group = new THREE.Group();
 
-  const wallMat = standardMat(THREE, accent, { roughness: 0.85, metalness: 0.05 });
+  const wallOpts = { roughness: 0.85, metalness: 0.05 };
   const windowColor = shade(THREE, accent, 0.35);
   const windowMat = standardMat(THREE, windowColor, {
     roughness: 0.3,
@@ -215,13 +248,19 @@ function buildBuilding(THREE, accent, dim, opts = {}) {
     emissiveIntensity: 0.15,
   });
 
-  const base = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d), wallMat);
+  // Template buildings stay accent-tinted per metro; the neutral concrete
+  // facade texture (when registered) multiplies with that tint, so each
+  // metro keeps its palette but gains real windows instead of a flat slab.
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(dim.w, dim.h, dim.d),
+    buildingBoxMaterials(THREE, accent, TEXTURES && TEXTURES.concrete, dim, wallOpts)
+  );
   base.position.set(0, dim.h / 2, 0);
   group.add(base);
 
-  // Window band(s): thin, slightly larger boxes tinted lighter/emissive so
-  // the facade reads as glazed rather than a flat block.
-  const bandCount = opts.tiers ? 3 : 1;
+  // Window band(s) only when no facade texture is present — with a texture
+  // the facade already carries windows and the emissive bands double up.
+  const bandCount = TEXTURES && TEXTURES.concrete ? 0 : (opts.tiers ? 3 : 1);
   for (let i = 0; i < bandCount; i += 1) {
     const t = (i + 1) / (bandCount + 1);
     const band = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 1.02, dim.h * 0.08, dim.d * 1.02), windowMat);
@@ -231,7 +270,13 @@ function buildBuilding(THREE, accent, dim, opts = {}) {
 
   if (opts.tiers) {
     const setbackH = dim.h * 0.22;
-    const setback = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.6, setbackH, dim.d * 0.6), wallMat);
+    const setback = new THREE.Mesh(
+      new THREE.BoxGeometry(dim.w * 0.6, setbackH, dim.d * 0.6),
+      buildingBoxMaterials(
+        THREE, accent, TEXTURES && TEXTURES.concrete,
+        { w: dim.w * 0.6, h: setbackH, d: dim.d * 0.6 }, wallOpts
+      )
+    );
     setback.position.set(0, dim.h + setbackH / 2, 0);
     group.add(setback);
 
@@ -426,7 +471,7 @@ function buildApartment(THREE) {
   const group = new THREE.Group();
   const dim = DIMENSIONS.apartment;
 
-  const wallMat = standardMat(THREE, 0x9a6b52, { roughness: 0.9, metalness: 0.02 });
+  const brick = new THREE.Color(0x9a6b52);
   const trimMat = standardMat(THREE, 0x7d5340, { roughness: 0.9 });
   const windowColor = new THREE.Color(0xffe2b0);
   const windowMat = standardMat(THREE, windowColor, {
@@ -435,19 +480,28 @@ function buildApartment(THREE) {
     emissiveIntensity: 0.25,
   });
 
-  const base = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d), wallMat);
+  // Brick facade texture when registered (near-white tint so the texture's
+  // own palette shows through); flat brick color otherwise.
+  const facadeTex = TEXTURES && TEXTURES.apartment;
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(dim.w, dim.h, dim.d),
+    buildingBoxMaterials(THREE, facadeTex ? new THREE.Color(0xf2e8e0) : brick, facadeTex, dim, { roughness: 0.9, metalness: 0.02 })
+  );
   base.position.set(0, dim.h / 2, 0);
   group.add(base);
 
-  // One window strip every ~3.4 units of height reads as "one floor each".
-  const floors = Math.max(3, Math.floor(dim.h / 3.4));
-  for (let i = 0; i < floors; i += 1) {
-    const y = dim.h * ((i + 0.7) / (floors + 0.4));
-    for (const rot of [0, Math.PI / 2]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.9, dim.h * 0.045, dim.d * 1.015), windowMat);
-      strip.rotation.y = rot;
-      strip.position.set(0, y, 0);
-      group.add(strip);
+  // One window strip every ~3.4 units of height reads as "one floor each" —
+  // only without a facade texture, which already carries the window grid.
+  if (!facadeTex) {
+    const floors = Math.max(3, Math.floor(dim.h / 3.4));
+    for (let i = 0; i < floors; i += 1) {
+      const y = dim.h * ((i + 0.7) / (floors + 0.4));
+      for (const rot of [0, Math.PI / 2]) {
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.9, dim.h * 0.045, dim.d * 1.015), windowMat);
+        strip.rotation.y = rot;
+        strip.position.set(0, y, 0);
+        group.add(strip);
+      }
     }
   }
 
@@ -481,17 +535,30 @@ function buildOffice(THREE) {
   });
   const coreMat = standardMat(THREE, 0x4c5a66, { roughness: 0.7, metalness: 0.2 });
 
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h, dim.d), glassMat);
+  // Glass-curtain facade texture when registered; flat glass slab otherwise.
+  const facadeTex = TEXTURES && TEXTURES.office;
+  const slab = new THREE.Mesh(
+    new THREE.BoxGeometry(dim.w, dim.h, dim.d),
+    buildingBoxMaterials(THREE, facadeTex ? new THREE.Color(0xffffff) : glassColor, facadeTex, dim, {
+      roughness: 0.25,
+      metalness: 0.35,
+      emissive: glassColor,
+      emissiveIntensity: 0.12,
+    })
+  );
   slab.position.set(0, dim.h / 2, 0);
   group.add(slab);
 
-  // Horizontal floor bands so the curtain wall reads as stories, not a monolith.
-  const bandMat = standardMat(THREE, 0x33414c, { roughness: 0.5, metalness: 0.4 });
-  const bands = Math.max(4, Math.floor(dim.h / 4.5));
-  for (let i = 1; i < bands; i += 1) {
-    const band = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 1.015, dim.h * 0.02, dim.d * 1.015), bandMat);
-    band.position.set(0, dim.h * (i / bands), 0);
-    group.add(band);
+  // Horizontal floor bands so the curtain wall reads as stories, not a
+  // monolith — only without a facade texture, which carries them already.
+  if (!facadeTex) {
+    const bandMat = standardMat(THREE, 0x33414c, { roughness: 0.5, metalness: 0.4 });
+    const bands = Math.max(4, Math.floor(dim.h / 4.5));
+    for (let i = 1; i < bands; i += 1) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 1.015, dim.h * 0.02, dim.d * 1.015), bandMat);
+      band.position.set(0, dim.h * (i / bands), 0);
+      group.add(band);
+    }
   }
 
   const setbackH = dim.h * 0.18;

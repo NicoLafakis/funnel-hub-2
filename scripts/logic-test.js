@@ -56,6 +56,7 @@ async function main() {
   const saveMod = await import('../src/meta/save.js');
   const upgradesMod = await import('../src/meta/upgrades.js');
   const avatarMod = await import('../src/engine/avatar.js');
+  const mainMod = await import('../src/main.js');
   const THREE = await import('three');
 
   const {
@@ -456,6 +457,23 @@ async function main() {
       'doubling speedMultiplier roughly doubles per-frame displacement at equal mass',
       approxEqual(a2.object3D.position.x / a1.object3D.position.x, 2, 0.05)
     );
+  }
+
+  // ---------------------------------------------------------------------
+  console.log('STEERING (camera-relative input rotation):');
+  {
+    const { rotateAxesByYaw } = mainMod;
+    const wAt0 = rotateAxesByYaw(0, -1, 0); // W key when camera looking +Z
+    const dAt0 = rotateAxesByYaw(1, 0, 0);  // D key when camera looking +Z
+    const aAt0 = rotateAxesByYaw(-1, 0, 0); // A key when camera looking +Z
+    const sAt0 = rotateAxesByYaw(0, 1, 0);  // S key when camera looking +Z
+    check('W key at yaw 0 maps to forward (+Z direction)', approxEqual(wAt0.dx, 0) && approxEqual(wAt0.dz, 1));
+    check('D key at yaw 0 maps to right (+X direction)', approxEqual(dAt0.dx, 1) && approxEqual(dAt0.dz, 0));
+    check('A key at yaw 0 maps to left (-X direction)', approxEqual(aAt0.dx, -1) && approxEqual(aAt0.dz, 0));
+    check('S key at yaw 0 maps to backward (-Z direction)', approxEqual(sAt0.dx, 0) && approxEqual(sAt0.dz, -1));
+
+    const wAt90 = rotateAxesByYaw(0, -1, Math.PI / 2); // W key when camera looking +X
+    check('W key at 90deg yaw maps to forward (+X direction)', approxEqual(wAt90.dx, 1) && approxEqual(wAt90.dz, 0));
   }
 
   // ---------------------------------------------------------------------

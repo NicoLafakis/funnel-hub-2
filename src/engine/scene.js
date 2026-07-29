@@ -12,6 +12,13 @@
 //
 // No browser-only API (document/window) is touched at module top level — only
 // inside createEngine(), so a bare `import` of this file never throws in Node.
+// The postprocessing addons are version-matched copies from
+// node_modules/three@0.185.1/examples/jsm (vendored under assets/vendor/) —
+// they define classes only, so importing them headlessly is safe too.
+import { EffectComposer } from '../../assets/vendor/postprocessing/EffectComposer.js';
+import { RenderPass } from '../../assets/vendor/postprocessing/RenderPass.js';
+import { BokehPass } from '../../assets/vendor/postprocessing/BokehPass.js';
+
 export function createEngine(canvasEl, THREE) {
   const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true });
   renderer.setClearColor(0x0b0f14, 1);
@@ -30,6 +37,28 @@ export function createEngine(canvasEl, THREE) {
 
   const clock = new THREE.Clock();
 
+  // Postprocessing chain: render -> depth-of-field bokeh. The BokehPass's
+  // `focus` is updated every frame from main.js (setFocus) to the
+  // camera->avatar distance, so the avatar and its immediate surroundings
+  // stay tack-sharp while background city and near foreground fall into
+  // blur. BokehShader math: blur = clamp((focus - viewDist) * aperture,
+  // +-maxblur), so with aperture 0.0001 defocus beyond ~70 world units
+  // reaches full blur — a portrait-style DOF tuned to this game's scale.
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bokehPass = new BokehPass(scene, camera, {
+    focus: 60,
+    aperture: 0.0001,
+    maxblur: 0.007,
+  });
+  composer.addPass(bokehPass);
+
+  function setFocus(distance) {
+    if (Number.isFinite(distance) && distance > 0) {
+      bokehPass.uniforms.focus.value = distance;
+    }
+  }
+
   // Device-pixel-ratio aware resize, capped at 2 — same spirit as the old
   // game's `resize()` (index.html git history: `DPR = Math.min(window.devicePixelRatio||1, 2)`).
   function resize() {
@@ -39,8 +68,10 @@ export function createEngine(canvasEl, THREE) {
     const dpr = Math.min((hasWindow ? window.devicePixelRatio : 1) || 1, 2);
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, true);
+    composer.setSize(w, h);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
+    bokehPass.uniforms.aspect.value = camera.aspect;
   }
 
   if (typeof window !== 'undefined') {
@@ -49,8 +80,8 @@ export function createEngine(canvasEl, THREE) {
   resize();
 
   function render() {
-    renderer.render(scene, camera);
+    composer.render();
   }
 
-  return { scene, camera, renderer, clock, resize, render };
+  return { scene, camera, renderer, clock, resize, render, setFocus };
 }

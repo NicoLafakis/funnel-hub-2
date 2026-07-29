@@ -26,7 +26,7 @@ import { createInput } from './engine/input.js';
 import { METROS } from './data/metros.js';
 import { generateLevel, LEVEL_COUNT } from './data/levels.js';
 
-import { createPropMesh, scaleForRadius } from './content/propkit.js';
+import { createPropMesh, scaleForRadius, setPropTextures } from './content/propkit.js';
 import { createLandmark } from './content/landmarks.js';
 import { generateCityLayout } from './content/citylayout.js';
 
@@ -70,6 +70,27 @@ function randomGroundPos(worldSize, margin) {
   return {
     x: (Math.random() * 2 - 1) * safeHalf,
     z: (Math.random() * 2 - 1) * safeHalf,
+  };
+}
+
+// Camera-relative steering: input.js produces screen-space axes (W = up),
+// but the chase camera swings around behind the avatar's facing direction,
+// so feeding those axes straight into avatar movement makes keys "drift"
+// away from what they mean on screen (reported as sticky/friction-y
+// diagonal movement). Rotate the input vector by the camera's current yaw
+// so W is always "away from camera" and A/D are always screen-left/right.
+// Pure math on a passed-in yaw so it stays headlessly testable.
+export function rotateAxesByYaw(dx, dz, yaw) {
+  if (dx === 0 && dz === 0) return { dx: 0, dz: 0 };
+  const sin = Math.sin(yaw);
+  const cos = Math.cos(yaw);
+  // camera-forward on the XZ plane is (sin yaw, cos yaw); screen-right is
+  // (cos yaw, -sin yaw).
+  // screen-up vector is -dz (since W gives dz = -1).
+  // world movement = dx * screen-right + (-dz) * camera-forward
+  return {
+    dx: dx * cos - dz * sin,
+    dz: -dx * sin - dz * cos,
   };
 }
 
@@ -133,6 +154,28 @@ export function main() {
   const avatar = createAvatar(engine.scene, THREE);
   const chaseCamera = createChaseCamera(engine.camera, avatar, THREE);
   const input = createInput();
+  // Scratch vector for the camera-relative steering math (see
+  // rotateAxesByYaw) — allocated once, never per-frame.
+  const camDirScratch = new THREE.Vector3();
+
+  // PixelLab-generated texture maps (assets/textures/, see propkit.js's
+  // setPropTextures contract). Registered once at bootstrap; every prop
+  // built afterwards picks them up. sRGB so colors survive the renderer's
+  // linear workflow; repeat wrapping so builders can tile them.
+  const texLoader = new THREE.TextureLoader();
+  function loadTexture(url) {
+    const tex = texLoader.load(url);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+  const asphaltTexture = loadTexture('assets/textures/asphalt.png');
+  setPropTextures({
+    apartment: loadTexture('assets/textures/facade-apartment.png'),
+    office: loadTexture('assets/textures/facade-office.png'),
+    concrete: loadTexture('assets/textures/facade-concrete.png'),
+  });
 
   const state = {
     mode: 'start', // start | worldmap | intro | play | done | fail | win | shop
@@ -233,9 +276,16 @@ export function main() {
     engine.scene.background = new THREE.Color(metro.sky);
     engine.scene.fog = new THREE.Fog(new THREE.Color(metro.sky).getHex(), level.world * 0.18, level.world * 0.95);
 
-    // Ground plane, sized to this level's world() footprint.
+    // Ground plane, sized to this level's world() footprint. The asphalt
+    // texture (tiled ~every 28 world units so its grain matches prop scale)
+    // multiplies with the metro's ground tint — a flat-colored plane read as
+    // "nothing was there" at distance; the grain gives the eye surface to
+    // hold onto, especially in the DOF-blurred background.
     const groundGeo = new THREE.PlaneGeometry(level.world, level.world);
-    const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, roughness: 0.95, metalness: 0.02 });
+    const groundMap = asphaltTexture.clone();
+    groundMap.needsUpdate = true;
+    groundMap.repeat.set(level.world / 28, level.world / 28);
+    const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, map: groundMap, roughness: 0.95, metalness: 0.02 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     root.add(ground);
@@ -836,8 +886,14 @@ export function main() {
       }
     }
 
-    // Movement.
-    avatar.setMoveInput(input.dx, input.dz);
+    // Movement — camera-relative (see rotateAxesByYaw): keys mean what they
+    // show on screen no matter which way the chase cam has swung. Also fixes
+    // pointer-drag steering, which was previously applied as raw world axes
+    // and drifted off-screen-direction once the camera rotated.
+    engine.camera.getWorldDirection(camDirScratch);
+    const camYaw = Math.atan2(camDirScratch.x, camDirScratch.z);
+    const steer = rotateAxesByYaw(input.dx, input.dz, camYaw);
+    avatar.setMoveInput(steer.dx, steer.dz);
     avatar.update(dt);
     const r = avatar.radius();
     const half = level.world / 2;
@@ -972,6 +1028,9 @@ export function main() {
     if (state.mode === 'play') {
       updatePlay(dt);
     }
+    // DOF focus rides the camera->avatar distance every frame (also outside
+    // play mode, so menus over the scene keep a sensible focal plane).
+    engine.setFocus(engine.camera.position.distanceTo(avatar.position));
     engine.render();
     requestAnimationFrame(frame);
   }
