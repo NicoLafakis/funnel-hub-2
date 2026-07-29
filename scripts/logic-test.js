@@ -494,6 +494,9 @@ async function main() {
         && d1.landmarkPlaza.w < d1.world * 0.1
         && d1.blocks.find((block) => block.chicago.column === 1 && block.chicago.row === 3).zone === 'residential'
         && d1.blocks.find((block) => block.chicago.column === 3 && block.chicago.row === 1).zone === 'residential');
+    check('the Loop keeps two unbuilt stall-lined surface parking lots',
+      d1.blocks.find((block) => block.chicago.column === 1 && block.chicago.row === 1).zone === 'parking'
+        && d1.blocks.find((block) => block.chicago.column === 3 && block.chicago.row === 3).zone === 'parking');
     check('the Loop carries river, elevated rail, and surrounding skyline context',
       d1.context && d1.context.id === 'chicago-loop'
         && d1.context.water.length === 3

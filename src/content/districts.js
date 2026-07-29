@@ -258,6 +258,10 @@ function buildChicagoLoop(world) {
       // remains the opening feast park for immediate-playability.
       let zone = ix === edges.length - 2 ? 'park' : 'residential';
       if (ix === 2 && iz === 2) zone = 'park';
+      // Surface parking lots, straight off the target frame: two mid-grid
+      // blocks stay unbuilt (buildingSites skips them) and get stall-lined
+      // asphalt from groundtex.
+      if ((ix === 1 && iz === 1) || (ix === 3 && iz === 3)) zone = 'parking';
       blocks.push({
         x: (left + right) / 2,
         z: (bottom + top) / 2,
@@ -647,7 +651,7 @@ function buildingSites(blocks, rng, world, pitch) {
   const largeCorners = [];
   const frontage = [];
   for (const b of blocks) {
-    if (b.zone === 'park' || b.zone === 'plaza') continue;
+    if (b.zone === 'park' || b.zone === 'plaza' || b.zone === 'parking') continue;
     const inset = 26;
     const cornerLocal = [
       [b.w / 2 - inset, b.d / 2 - inset],
@@ -912,7 +916,40 @@ function rectOverlapDepth(a, b) {
   return min;
 }
 
-function fillFromPools(count, pools, rng, fallbackWorld, accept) {
+// Stall-centre sites on Chicago's surface lots: a share of the car budget
+// parks IN the stalls instead of every vehicle clogging the carriageway.
+// Counts and mass are untouched — only positions change.
+function buildParkingStallSites(blocks) {
+  const sites = [];
+  for (const b of blocks) {
+    if (b.zone !== 'parking') continue;
+    const hd = b.d / 2;
+    const stallW = 10;
+    const stallD = Math.min(24, hd * 0.4);
+    const count = Math.floor(b.w / stallW);
+    for (let s = 0; s < count; s += 1) {
+      const sx = b.x - b.w / 2 + (s + 0.5) * stallW;
+      sites.push({ x: sx, z: b.z - hd + stallD / 2, rotY: 0 });
+      sites.push({ x: sx, z: b.z + hd - stallD / 2, rotY: Math.PI });
+    }
+  }
+  return sites;
+}
+
+// Random 'loose' fallback site, resampled a few times when it lands inside
+// an `avoid` rect (Chicago's unbuilt parking-lot blocks stay clear).
+function looseSite(rng, half, avoid) {
+  let site = null;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const x = (rng() * 2 - 1) * half;
+    const z = (rng() * 2 - 1) * half;
+    site = { x, z, rotY: rng() * Math.PI * 2 };
+    if (!avoid || !avoid.some((r) => Math.abs(x - r.x) < r.w / 2 && Math.abs(z - r.z) < r.d / 2)) break;
+  }
+  return site;
+}
+
+function fillFromPools(count, pools, rng, fallbackWorld, accept, avoid) {
   const quotas = pools.map((p) => Math.round(count * p.share));
   // Fix rounding drift on the largest pool.
   const drift = count - quotas.reduce((a, b) => a + b, 0);
@@ -940,7 +977,7 @@ function fillFromPools(count, pools, rng, fallbackWorld, accept) {
       // this path should never run — but never drop budgeted props (D2).
       const half = fallbackWorld / 2 - 60;
       out.push({
-        site: { x: (rng() * 2 - 1) * half, z: (rng() * 2 - 1) * half, rotY: rng() * Math.PI * 2 },
+        site: looseSite(rng, half, avoid),
         zone: 'loose',
       });
       q -= 1;
@@ -982,6 +1019,7 @@ export function generateDistrict(level, opts = {}) {
   const parks = shuffle(parkSites(blocks, rngProps), rngProps);
   const plazas = shuffle(plazaSites(blocks, rngProps, landmarkPlaza), rngProps);
   const roads = shuffle(roadSites(streets, rngProps), rngProps);
+  const parkingStalls = chicagoPilot ? shuffle(buildParkingStallSites(blocks), rngProps) : [];
   // The generic generator sizes every frontage slot from the widest possible
   // tier so any building can occupy any slot. Chicago instead builds its street
   // wall from the shop module: large/medium tiers still place first and the
@@ -991,6 +1029,19 @@ export function generateDistrict(level, opts = {}) {
     ? budget.filter((tier) => tier.kind === 'building-small')
     : budget;
   const { corners, largeCorners, frontage } = buildingSites(blocks, rngProps, world, buildingPitch(frontageBudget));
+  // Chicago's parking-lot blocks stay clear of buildings entirely: sites
+  // inside the lot OR within one building-length of its edge are removed
+  // from the pools outright — merely rejecting them in accept() lets
+  // takeSite's overlapped-fallback KEEP them and plant towers on the stalls.
+  if (chicagoPilot) {
+    const lotMargin = 100;
+    const clearOfLots = (site) => !blocks.some((b) => b.zone === 'parking'
+      && Math.abs(site.x - b.x) < b.w / 2 + lotMargin
+      && Math.abs(site.z - b.z) < b.d / 2 + lotMargin);
+    for (let i = corners.length - 1; i >= 0; i -= 1) if (!clearOfLots(corners[i])) corners.splice(i, 1);
+    for (let i = largeCorners.length - 1; i >= 0; i -= 1) if (!clearOfLots(largeCorners[i])) largeCorners.splice(i, 1);
+    for (let i = frontage.length - 1; i >= 0; i -= 1) if (!clearOfLots(frontage[i])) frontage.splice(i, 1);
+  }
   // Chicago's civic park is framed by low-rise street walls, with the taller
   // commercial skyline stepping up behind them. Site arrays are consumed from
   // the end, so far-first sorts ascending and near-first sorts descending.
@@ -1045,7 +1096,9 @@ export function generateDistrict(level, opts = {}) {
   const PLACEMENT = {
     trash: [{ sites: parks, share: 0.45, zone: 'park' }, { sites: sidewalks, share: 0.45, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }],
     bike: [{ sites: parks, share: 0.35, zone: 'park' }, { sites: sidewalks, share: 0.55, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }],
-    car: [{ sites: roads, share: 0.75, zone: 'road' }, { sites: sidewalks, share: 0.25, zone: 'sidewalk' }],
+    car: chicagoPilot
+      ? [{ sites: roads, share: 0.55, zone: 'road' }, { sites: parkingStalls, share: 0.30, zone: 'parking' }, { sites: sidewalks, share: 0.15, zone: 'sidewalk' }]
+      : [{ sites: roads, share: 0.75, zone: 'road' }, { sites: sidewalks, share: 0.25, zone: 'sidewalk' }],
     bus: [{ sites: roads, share: 1.0, zone: 'road' }],
     // Shares moved toward FRONTAGE with the built-out blocks change (§18).
     // Corner-heavy shares were correct when frontage meant one lonely midpoint,
@@ -1073,7 +1126,8 @@ export function generateDistrict(level, opts = {}) {
     const accept = (site) => !occupancy.blocked(
       occupancyRect(tier.kind, tier.baseRadius, site.x, site.z, site.rotY, unrotated),
     );
-    const picks = fillFromPools(count, plan, rngProps, world, accept);
+    const picks = fillFromPools(count, plan, rngProps, world, accept,
+      chicagoPilot ? blocks.filter((b) => b.zone === 'parking') : null);
     // The zone tag is the pool the site actually came from, tracked through the
     // pop. It used to be hardcoded to `plan[0].zone`, which tagged every
     // building 'corner' including the ones on frontage — harmless for placement
@@ -1520,7 +1574,11 @@ export function generateDistrict(level, opts = {}) {
       };
       const acceptable = (q) => Math.abs(q.x) <= bound && Math.abs(q.z) <= bound
         && !(p.tierIndex >= 4 && Math.abs(q.x) < CAMERA_CORRIDOR_HALF_WIDTH + p.radius
-          && q.z > CAMERA_CORRIDOR_Z_MIN && q.z < CAMERA_CORRIDOR_Z_MAX);
+          && q.z > CAMERA_CORRIDOR_Z_MIN && q.z < CAMERA_CORRIDOR_Z_MAX)
+        // ...and kerb pushes / outward escapes must not park a building on
+        // Chicago's unbuilt parking-lot blocks.
+        && !(p.tierIndex >= 4 && blocks.some((b) => b.zone === 'parking'
+          && Math.abs(q.x - b.x) < b.w / 2 && Math.abs(q.z - b.z) < b.d / 2));
 
       const MAX_PUSHES = 8;
       for (let attempt = 0; attempt < MAX_PUSHES; attempt += 1) {
@@ -1708,6 +1766,10 @@ export function generateDistrict(level, opts = {}) {
     if (Math.abs(x) + reach > world / 2 || Math.abs(z) + reach > world / 2) return null;
     if (p.tierIndex >= 4 && Math.abs(x) < CAMERA_CORRIDOR_HALF_WIDTH + p.radius
       && z > CAMERA_CORRIDOR_Z_MIN && z < CAMERA_CORRIDOR_Z_MAX) return null;
+    // Chicago's parking-lot blocks stay unbuilt through the final contract:
+    // no building footprint may overlap a lot, whatever earlier passes did.
+    if (p.tierIndex >= 4 && blocks.some((b) => b.zone === 'parking'
+      && rectOverlapDepth(rect, { x: b.x, z: b.z, hw: b.w / 2, hd: b.d / 2, rotY: 0 }) > OCCUPANCY_EPSILON)) return null;
     if (!roadClear(p, rect) || finalOccupancy.blocked(rect)) return null;
     return rect;
   };

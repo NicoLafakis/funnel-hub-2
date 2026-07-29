@@ -52,7 +52,7 @@ import * as propkit from './content/propkit.js';
 import { createLandmark } from './content/landmarks.js';
 import { generateDistrict } from './content/districts.js';
 import {
-  bakeGroundTexture, bakeGroundDetail, roadMarkingQuads, detailTileRepeat,
+  bakeGroundTexture, bakeGroundDetail, roadMarkingQuads, parkingStallQuads, detailTileRepeat,
 } from './content/groundtex.js';
 import { loadCityTextures } from './content/textures.js';
 import { loadModelKit } from './content/modelkit.js';
@@ -886,7 +886,7 @@ export async function main() {
     // world units of depth resolution at the avatar) and the explicit
     // polygonOffset ladder on the three materials, which is what makes the
     // ordering hold at ANY distance rather than at close range only.
-    const quads = roadMarkingQuads(layout);
+    const quads = roadMarkingQuads(layout).concat(parkingStallQuads(layout));
     if (quads.length) {
       const positions = new Float32Array(quads.length * 4 * 3);
       const colors = new Float32Array(quads.length * 4 * 3);

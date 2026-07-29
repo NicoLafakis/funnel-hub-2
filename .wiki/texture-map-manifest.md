@@ -43,7 +43,7 @@ Consumption points (what code change each class needed):
 | A6 | `plaza.png` | `plaza` civic pavers | 110u | HAVE |
 | A7 | `grass.png` | `grass` parks | 140u | HAVE |
 | A8 | `ground-park-path.png` | park path strokes | 48u | GENERATED, wired |
-| A9 | `ground-parking-lot.png` | stall-lined lot asphalt | 72u | DEFERRED — layout has no lots yet |
+| A9 | ~~`ground-parking-lot.png`~~ | stall-lined lot surface | — | DONE as geometry (`parkingStallQuads`) — paint lines are sub-texel in the bake |
 
 ## B. Facade tiles (straight-on elevation, auto-trimmed by the loader)
 
@@ -104,7 +104,5 @@ Large tier (copies: 3 tiling):
   splitting instanced groups; the 60-group ceiling forbids it.
 - Pixellab asphalt prompts produce directional streaks; stick with the
   parked asphalt.png or try Leonardo for road variants.
-- Parking lots (A9) need a districts.js layout concept plus the stall-lined
-  tile; deferred.
 - `roof-green.png` has no placement rule yet (needs a per-group roof pick,
   not the per-tier strip).

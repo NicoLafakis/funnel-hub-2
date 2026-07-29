@@ -54,6 +54,11 @@
   vehicles/194 buildings; later levels retain the global template. Level 1's
   160 small frontage pieces each carry half the former mass, preserving the
   tier's exact 756-mass product while closing more of the street wall.
+- Level 1 keeps two unbuilt surface parking lots (blocks (1,1) and (3,3)):
+  building site pools skip them, the final legal-slot pass rejects any
+  building footprint overlapping a lot, stall paint is geometry
+  (`parkingStallQuads`, appended to the road-marking mesh), and 30% of the
+  car budget parks in the stalls — counts and mass untouched.
 - Level 1 orders those building sites by civic hierarchy: low-rise storefront
   runs frame the opening park, medium buildings step behind them, and large
   towers occupy the outer commercial skyline. Stable block sorting preserves

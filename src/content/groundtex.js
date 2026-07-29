@@ -511,6 +511,34 @@ const PAINT_SOFT = 0.80;
 const EDGE_SEGMENT = 40; // max world length of one edge-line quad
 
 /**
+ * Parking-lot stall paint as geometry quads (same {x, z, w, d, rotY, tone}
+ * contract as roadMarkingQuads). The ground bake runs at ~0.5 texels/world
+ * unit, so canvas-painted stall lines come out sub-texel and vanish —
+ * geometry stays crisp at any zoom. Blocks are axis-aligned on the authored
+ * Chicago grid (rotY 0); generic levels have no parking blocks.
+ */
+export function parkingStallQuads(layout) {
+  const out = [];
+  for (const b of layout.blocks || []) {
+    if (b.zone !== 'parking') continue;
+    const hw = b.w / 2;
+    const hd = b.d / 2;
+    const stallW = 10;
+    const stallD = Math.min(24, hd * 0.4);
+    const line = 1.2;
+    const count = Math.floor(b.w / stallW);
+    for (let s = 0; s <= count; s += 1) {
+      const sx = -hw + s * stallW;
+      out.push({ x: b.x + sx, z: b.z - hd + stallD / 2, w: line, d: stallD, rotY: 0, tone: 0.9 });
+      out.push({ x: b.x + sx, z: b.z + hd - stallD / 2, w: line, d: stallD, rotY: 0, tone: 0.9 });
+    }
+    out.push({ x: b.x, z: b.z - hd + stallD, w: b.w, d: line, rotY: 0, tone: 0.9 });
+    out.push({ x: b.x, z: b.z + hd - stallD, w: b.w, d: line, rotY: 0, tone: 0.9 });
+  }
+  return out;
+}
+
+/**
  * @param {object} layout - a generateDistrict() descriptor.
  * @returns {Array<{x:number,z:number,w:number,d:number,rotY:number,tone:number}>}
  *   Rect centres/sizes in WORLD units; rotY follows districts.js's convention.
@@ -663,6 +691,7 @@ function pointInRect(px, pz, rect, grow = 0) {
 // get real, value-separated surfaces (pavement / promenade).
 function surfaceForBlockZone(zone) {
   if (zone === 'park') return 'grass';
+  if (zone === 'parking') return 'asphalt';
   if (zone === 'plaza') return 'plaza';
   if (zone === 'avenue') return 'promenade';
   return 'pavement';
