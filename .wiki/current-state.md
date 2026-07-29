@@ -122,6 +122,7 @@ The nine gameplay invariants and hard placement gate are green, and `npm test` e
 3. **Balance debt:** maximum builds remain substantially below the intended duration floor.
 4. **Mobile performance:** real-device phone/tablet frame time remains unmeasured; headless `requestAnimationFrame` figures are not valid performance evidence.
 5. **Mobile UI:** Nico approved all seven named surfaces on 2026-07-28. The shorter title, pause/sound controls, safe areas, mobile typography, persisted quality selector, and direct Level Complete actions are implemented; live viewport and assistive-technology evidence remains open.
+6. **Desktop UX debt (proposed):** the [`0010-chicago-level1-playtest`](0010-chicago-level1-playtest/00-findings.md) package (2026-07-29) documents mouse-only menu traversal, tall-building camera occlusion, the fresh-boot intro-card skip, a static coins counter, ~13px HUD counters, untaught keyboard controls, and dark street-level reads (in tension with the Loop brightness fill noted above — revisit together). Remediation is specified in that package but not yet approved or implemented.
 
 The implementation-ready plan for items 1–5 is [`0006-mobile-readiness-and-placement/00-overview.md`](0006-mobile-readiness-and-placement/00-overview.md).
 
