@@ -1257,6 +1257,9 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
     // UVs on the SIDE faces (roof/ground faces and every other part sample
     // the texture's trim swatch) and its vertex color stays white so the
     // facade art shows true colors instead of being multiplied by the accent.
+    // With a roof strip (region), EVERY upward face in the group — garage
+    // decks, warehouse roofs, skylight tops — tiles the roof art by world
+    // position and goes vertex-white for the same true-colour reason.
     const isFacade = opts.facadeTextured === true && node.userData.facade === true;
     const uvAttr = geo.attributes.uv || null;
     normalMatrix.getNormalMatrix(node.matrixWorld);
@@ -1269,12 +1272,12 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
       } else {
         normals.push(0, 1, 0);
       }
-      if (isFacade) colors.push(1, 1, 1);
+      if (isFacade || (region && n.y > 0.7)) colors.push(1, 1, 1);
       else colors.push(color.r, color.g, color.b);
       if (isFacade && uvAttr && Math.abs(n.y) < 0.7) {
         const fu = region ? uvAttr.getX(i) * region.u : uvAttr.getX(i);
         uvs.push(fu, uvAttr.getY(i));
-      } else if (isFacade && region && n.y > 0.7) {
+      } else if (region && n.y > 0.7) {
         uvs.push(
           region.u + (1 - region.u) * frac1(v.x / region.tileWorld),
           1 - frac1(v.z / region.tileWorld) * region.vSpan,

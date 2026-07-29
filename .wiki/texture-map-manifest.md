@@ -100,9 +100,11 @@ Large tier (copies: 3 tiling):
 
 ## Known remaining gaps
 
-- Rooftop parts that are NOT the tagged facade base box (city-object rooftop
-  plant, garage skylights) still sample the white trim swatch.
 - Per-instance (not per-visual-ID) facade variety is impossible without
   splitting instanced groups; the 60-group ceiling forbids it.
 - Pixellab asphalt prompts produce directional streaks; stick with the
   parked asphalt.png or try Leonardo for road variants.
+- Parking lots (A9) need a districts.js layout concept plus the stall-lined
+  tile; deferred.
+- `roof-green.png` has no placement rule yet (needs a per-group roof pick,
+  not the per-tier strip).
