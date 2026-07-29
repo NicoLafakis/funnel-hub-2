@@ -952,6 +952,13 @@ export function main() {
           Audio.gulp(obj.radius);
         }
 
+        if (obj.isCapstone || obj.tierIndex >= 5 || obj.kind === 'building-large' || obj.kind === 'office') {
+          chaseCamera.addKick(0.4);
+          showBanner(`🏙️ ${obj.isCapstone ? 'CAPSTONE CONSUMED' : 'STRUCTURE SWALLOWED'}!`, 1000);
+        } else if (obj.radius >= 25) {
+          chaseCamera.addKick(0.12);
+        }
+
         if (obj.storm) {
           state.stormEatenCount += 1;
           if (state.stormEatenCount === 5) unlockAchievement('storm');
@@ -960,6 +967,22 @@ export function main() {
         if (obj.isCapstone) {
           state.capstoneEaten = true;
           if (level.levelInChapter >= 10) unlockAchievement('metroCleared');
+        }
+      }
+
+      // Visual pulse feedback for props within reach that are currently too big
+      // to swallow (Item 4 remediation), providing immediate collision feedback.
+      const avatarR = avatar.radius();
+      const reachR = avatarR * 0.78 * state.modifiedStats.attractRadiusMultiplier;
+      const reachR2 = reachR * reachR;
+      for (let i = 0; i < state.propObjects.length; i += 1) {
+        const prop = state.propObjects[i];
+        if (!prop || !prop.object3D) continue;
+        const pdx = prop.position.x - avatar.position.x;
+        const pdz = prop.position.z - avatar.position.z;
+        if (pdx * pdx + pdz * pdz < reachR2 && prop.radius > avatarR * 0.78) {
+          const pulse = 1 + Math.sin(Date.now() * 0.015) * 0.08;
+          prop.object3D.scale.setScalar(scaleForRadius(prop.kind, prop.radius) * pulse);
         }
       }
 

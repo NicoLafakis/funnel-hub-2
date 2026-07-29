@@ -445,19 +445,20 @@ function buildSpeedBump(THREE) {
   const group = new THREE.Group();
   const dim = DIMENSIONS['speed-bump'];
 
-  // Low half-cylinder ridge, yellow with two dark hazard bands across the top.
+  // Low half-cylinder ridge with high-contrast yellow hazard paint (0xf1c40f)
+  // and dark contrast bands across the top so it pops against asphalt pads.
   const ridge = new THREE.Mesh(
     new THREE.CylinderGeometry(dim.h, dim.h, dim.w, 10, 1, false, 0, Math.PI),
-    standardMat(THREE, 0xd9a713, { roughness: 0.8 })
+    standardMat(THREE, 0xf1c40f, { roughness: 0.5, metalness: 0.1 })
   );
   ridge.rotation.z = Math.PI / 2;
   ridge.rotation.x = Math.PI / 2;
   ridge.position.set(0, 0, 0);
   group.add(ridge);
 
-  const bandMat = standardMat(THREE, 0x2b2b2b, { roughness: 0.85 });
-  for (const x of [-dim.w * 0.25, dim.w * 0.25]) {
-    const band = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.14, dim.h * 0.5, dim.d * 0.9), bandMat);
+  const bandMat = standardMat(THREE, 0x111111, { roughness: 0.85 });
+  for (const x of [-dim.w * 0.3, -dim.w * 0.1, dim.w * 0.1, dim.w * 0.3]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.1, dim.h * 0.52, dim.d * 0.95), bandMat);
     band.position.set(x, dim.h * 0.7, 0);
     group.add(band);
   }

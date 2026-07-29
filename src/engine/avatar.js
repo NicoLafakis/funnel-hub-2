@@ -80,8 +80,9 @@ export function createAvatar(scene, THREE) {
     if (len > 0.0001) {
       const nx = inputDx / len;
       const nz = inputDz / len;
-      // Mild slowdown as mass grows (genre-typical), capped so it never stalls.
-      const growthDrag = 60 / Math.max(60, radius());
+      // Mild slowdown as mass grows (genre-typical), dampened so giant avatars
+      // retain snappy movement speed (min 0.65 speed floor for speedrunning).
+      const growthDrag = Math.max(0.65, Math.sqrt(60 / Math.max(60, radius())));
       speed = BASE_SPEED * _speedMultiplier * Math.min(1, len) * growthDrag;
       object3D.position.x += nx * speed * dt;
       object3D.position.z += nz * speed * dt;

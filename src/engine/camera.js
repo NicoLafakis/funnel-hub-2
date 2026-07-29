@@ -68,11 +68,27 @@ export function createChaseCamera(camera, avatar, THREE) {
       damp
     );
     camera.lookAt(lookTarget);
+
+    // Camera shake impulse for large prop / capstone swallows (addKick).
+    if (shakeIntensity > 0.001) {
+      const offset = (Math.random() * 2 - 1) * shakeIntensity * (r * 0.08);
+      camera.position.x += offset;
+      camera.position.y += offset * 0.5;
+      shakeIntensity *= Math.exp(-dt * 12);
+    } else {
+      shakeIntensity = 0;
+    }
+  }
+
+  function addKick(amount = 0.3) {
+    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+      shakeIntensity = Math.min(1.5, shakeIntensity + amount);
+    }
   }
 
   function setObstacles(meshList) {
     obstacles = Array.isArray(meshList) ? meshList : [];
   }
 
-  return { update, setObstacles };
+  return { update, setObstacles, addKick };
 }
