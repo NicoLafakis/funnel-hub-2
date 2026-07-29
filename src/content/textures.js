@@ -64,12 +64,13 @@ export const PHOTOREAL_TEXTURE_MANIFEST = {
   // Variant arts per tier, loaded alongside the base facade into an ARRAY
   // (instancing.js picks one per instanced group by stable key hash, so
   // variety costs zero extra draw calls — the 60-group ceiling stands).
-  // Same fit/tiling and roof strip as the tier's base entry.
+  // Entries are src strings, or { src, roof } to override the tier's roof
+  // strip — e.g. the sage-painted eco storefront carries the sedum roof.
   facadeVariants: {
     'building-small': [
       'assets/textures/photoreal/facade-small-brick-brown.png',
       'assets/textures/photoreal/facade-small-limestone.png',
-      'assets/textures/photoreal/facade-small-painted.png',
+      { src: 'assets/textures/photoreal/facade-small-painted.png', roof: 'assets/textures/photoreal/roof-green.png' },
       'assets/textures/photoreal/facade-small-ironspot.png',
     ],
     'building-medium': [
@@ -434,11 +435,16 @@ async function loadPhotorealSet(THREE, opts = {}) {
       // Variant arts share the tier's fit/tiling and roof strip; the array is
       // only returned when at least one variant loaded.
       const variantSrcs = (PHOTOREAL_TEXTURE_MANIFEST.facadeVariants || {})[kind] || [];
-      const variants = await Promise.all(variantSrcs.map(async (src) => {
-        const vraw = await loadImage(src);
+      const variants = await Promise.all(variantSrcs.map(async (variant) => {
+        const vsrc = typeof variant === 'string' ? variant : variant.src;
+        const vroof = typeof variant === 'object' && variant.roof ? variant.roof : roofSrcs[kind];
+        const [vraw, vroofImg] = await Promise.all([
+          loadImage(vsrc),
+          vroof ? loadImage(vroof) : null,
+        ]);
         if (!vraw) return null;
         const vimg = autoTrimFacade(vraw);
-        const v = bakePhotorealFacade(vimg, kind, entry, size, roofImg);
+        const v = bakePhotorealFacade(vimg, kind, entry, size, vroofImg);
         const vtex = new THREE.CanvasTexture(v.canvas);
         vtex.colorSpace = THREE.SRGBColorSpace;
         vtex.anisotropy = 4;

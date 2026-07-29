@@ -82,7 +82,7 @@ Large tier (copies: 3 tiling):
 | C1 | `roof-gravel.png` | small tier default | GENERATED, wired |
 | C2 | `roof-concrete.png` | medium tier default | GENERATED, wired |
 | C3 | `roof-dark.png` | large tier default | GENERATED, wired |
-| C4 | `roof-green.png` | sedum accent | GENERATED, unwired (no placement rule yet) |
+| C4 | `roof-green.png` | sedum accent on the sage-painted storefront variant | GENERATED, wired (per-variant roof override) |
 
 ## D. Water & specials
 
@@ -104,5 +104,3 @@ Large tier (copies: 3 tiling):
   splitting instanced groups; the 60-group ceiling forbids it.
 - Pixellab asphalt prompts produce directional streaks; stick with the
   parked asphalt.png or try Leonardo for road variants.
-- `roof-green.png` has no placement rule yet (needs a per-group roof pick,
-  not the per-tier strip).
