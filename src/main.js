@@ -673,9 +673,14 @@ export async function main() {
     // colour and steals energy from the diffuse — invisible as a look, wrong
     // as physics, and it applies across the single largest surface in frame.
     const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, roughness: 0.93, metalness: 0.0 });
+    // Level 1 (Chicago Loop) renders with the photographic texture set when
+    // it loaded (.wiki/texture-map-manifest.md); every other level keeps the
+    // procedural look.
+    const photoreal = level.authoredCity === 'chicago-loop' && cityTextures
+      ? cityTextures.photoreal : null;
     const baked = bakeGroundTexture(layout, {
       metro,
-      textures: cityTextures ? cityTextures.ground : null,
+      textures: photoreal ? photoreal.ground : (cityTextures ? cityTextures.ground : null),
       // No fixed `size`: groundtex derives the canvas from level.world at a
       // CONSTANT world-space texel density (GROUND_TEXELS_PER_UNIT), so lane
       // paint and paving read identically on level 1 and level 100. The old
@@ -1285,8 +1290,9 @@ export async function main() {
     }
 
     state.world = createInstancedWorld({
-      scene: engine.scene, propkit, accent: metro.accent, textures: cityTextures,
-      seed: layout.seed, cityId: level.authoredCity,
+      scene: engine.scene, propkit, accent: metro.accent,
+      textures: photoreal ? { ...cityTextures, facades: photoreal.facades } : cityTextures,
+      seed: layout.seed, cityId: level.authoredCity, photorealFacades: !!photoreal,
     });
     state.world.set(worldProps);
     state.world.setQuality(engine.getPerformanceSnapshot().profile);

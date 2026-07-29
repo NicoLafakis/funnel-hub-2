@@ -11,3 +11,4 @@ shots/
 .env*
 .env.local
 .leonardo-key
+.pixellab

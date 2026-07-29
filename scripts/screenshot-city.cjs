@@ -10,13 +10,26 @@ const fs = require('node:fs');
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on('pageerror', (e) => console.log('pageerror:', String(e)));
   page.on('console', (m) => { if (m.type() === 'error') console.log('console.error:', m.text()); });
-  await page.goto('http://localhost:3003/', { waitUntil: 'load' });
+  await page.goto(`http://localhost:${process.env.PORT || 3003}/`, { waitUntil: 'load' });
   await page.waitForTimeout(800);
   await page.click('#startBtn');
-  await page.waitForTimeout(600);
-  await page.click('.metro-card:not(.locked) .levelnode:not(.locked)');
-  await page.waitForTimeout(400);
-  await page.click('#goBtn');
+  await page.waitForTimeout(1200);
+  // Flow varies: straight into gameplay, or via worldmap -> intro card.
+  // All conditional clicks are non-fatal — a stale selector must not kill
+  // the shot run.
+  try {
+    if (await page.$('.metro-card:not(.locked) .levelnode:not(.locked)')) {
+      await page.click('.metro-card:not(.locked) .levelnode:not(.locked)', { timeout: 2000 });
+      await page.waitForTimeout(400);
+    }
+  } catch { /* no worldmap step */ }
+  try {
+    const goVisible = await page.evaluate(() => {
+      const b = document.querySelector('#goBtn');
+      return !!(b && b.offsetParent);
+    });
+    if (goVisible) await page.click('#goBtn', { timeout: 2000 });
+  } catch { /* intro card not up */ }
   await page.waitForTimeout(3000);
 
   const info = await page.evaluate(() => {

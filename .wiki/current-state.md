@@ -69,6 +69,14 @@
   concrete, blue-green glass, and restrained landmark purple for buildings,
   with a separate realistic traffic palette. Building profiles add dark
   ground-floor glazing, entrance canopies, roof parapets, plant, and vents.
+- Level 1 renders with the photographic texture set
+  (`assets/textures/photoreal/`, `PHOTOREAL_TEXTURES_ENABLED`): facades are
+  composed at each tier's real face aspect so windows stay square, ground
+  zones fill from photo patterns at quarter wash (open pavement included),
+  and textured building groups skip the palette multiply
+  (`photorealFacades`). Generic levels keep the procedural facade bake.
+  The 28-tile expansion plan is `texture-map-manifest.md`; roof tiles are
+  the largest known gap (roofs still sample the trim swatch).
 
 ## Verified automated baseline
 

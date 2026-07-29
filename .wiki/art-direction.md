@@ -17,6 +17,16 @@ the photoreal set stays parked, and "premium" here means better-executed flat
 style, not a swap to photorealism. Everything below that references "not
 photorealism" is this call, stated once.
 
+**Direction update (2026-07-28), Level 1 only:** new target frames
+(`assets/references/target-in_game-graphics-*.png`) supersede the parked-set
+call for the Chicago Loop. Level 1 now renders with the photographic texture
+set in `assets/textures/photoreal/` — per-tier facades baked at their real
+face aspect, ground-zone pattern fills, and the palette multiply bypassed on
+textured building groups (instancing.js `photorealFacades`). The 99 generic
+levels keep the procedural premium-stylized path above; the call is unchanged
+for them. The full tile expansion plan lives in
+[`texture-map-manifest.md`](texture-map-manifest.md).
+
 ## 1. Districts, not scatter
 
 **Authored-city pilot (2026-07-28):** Level 1 now proves the next step beyond

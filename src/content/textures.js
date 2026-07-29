@@ -22,40 +22,60 @@
 // module never imports 'three' itself (content/ convention).
 import { mulberry32 } from '../data/seeds.js';
 
-// Master switch for the PHOTOGRAPHIC texture overlay. Stays OFF: the
-// photorealistic set clashed with the flat Hole.io art direction
-// (art-direction.md §1) and was moved to assets/textures/photoreal/. Keeping
-// this false skips the fetches entirely, so missing files don't spam 404s into
-// the console (and the e2e smoke).
-export const CITY_TEXTURES_ENABLED = false;
+// Master switch for the PHOTOGRAPHIC texture set in
+// assets/textures/photoreal/ (generated offline, see
+// .wiki/texture-map-manifest.md). This set is the approved look for the
+// Level 1 Chicago Loop: it loads alongside the procedural set and main.js
+// hands it to the renderer only for authoredCity === 'chicago-loop'. Any
+// image that fails to load drops out per-entry, so the game boots
+// identically with the files missing.
+export const PHOTOREAL_TEXTURES_ENABLED = true;
 
 // Master switch for the PROCEDURAL flat-cartoon facade set (bakeFacade below).
-// This is the "flat-style set" the photoreal switch was waiting on, generated
-// at runtime instead of shipped as art: no new binary assets, no dependency,
-// and it is authored in the art direction rather than adapted to it.
+// Generated at runtime instead of shipped as art: no new binary assets, no
+// dependency, and it is authored for the pastel palette multiply, which is
+// why it stays the default for the 99 generic levels.
 export const PROCEDURAL_FACADES_ENABLED = true;
 
-// Building kind -> facade image; ground zone -> surface image. Paths are
-// relative to index.html (same convention as assets/hubs/<metro>.png).
-// `crop` trims illustration margins (edge fractions l/t/r/b) so the facade
-// fills the whole UV square edge to edge.
-export const CITY_TEXTURE_MANIFEST = {
+// Photoreal set: building kind -> facade image; ground zone -> surface image.
+// Paths are relative to index.html (same convention as assets/hubs/<metro>.png).
+// Facades are composed onto a canvas whose aspect matches the tier's real
+// face aspect (PHOTOREAL_FACE_ASPECT below) so windows stay square in world
+// units instead of smearing 1.6x-2.8x vertically:
+//   fit: 'cover' — single-frame art (the storefront) scaled to fill, sides
+//     cropped; seamless grid art instead tiles `copies` times down the canvas
+//     height so window scale matches across tiers.
+// Ground zones without a dedicated tile alias the sidewalk for now
+// (pavement/promenade get their own tiles per the manifest doc).
+export const PHOTOREAL_TEXTURE_MANIFEST = {
   facades: {
-    'building-small': { src: 'assets/textures/facade-small.png', crop: { l: 0.20, t: 0.0, r: 0.11, b: 0.13 } },
-    'building-medium': { src: 'assets/textures/facade-medium.png' },
-    'building-large': { src: 'assets/textures/facade-large.png' },
+    'building-small': { src: 'assets/textures/photoreal/facade-small.png', fit: 'cover' },
+    'building-medium': { src: 'assets/textures/photoreal/facade-medium.png', copies: 2 },
+    'building-large': { src: 'assets/textures/photoreal/facade-large.png', copies: 3 },
   },
   ground: {
-    asphalt: 'assets/textures/asphalt.png',
-    curb: 'assets/textures/sidewalk.png',
-    plaza: 'assets/textures/plaza.png',
-    grass: 'assets/textures/grass.png',
+    asphalt: 'assets/textures/photoreal/asphalt.png',
+    curb: 'assets/textures/photoreal/sidewalk.png',
+    pavement: 'assets/textures/photoreal/sidewalk.png',
+    promenade: 'assets/textures/photoreal/sidewalk.png',
+    plaza: 'assets/textures/photoreal/plaza.png',
+    grass: 'assets/textures/photoreal/grass.png',
   },
 };
 
+// Real rendered face aspect (h/w) per tier, measured in the header below.
+// The photoreal canvas is baked at this aspect so the face's 0..1 UV maps it
+// distortion-free.
+const PHOTOREAL_FACE_ASPECT = {
+  'building-small': 1.571,
+  'building-medium': 2.182,
+  'building-large': 2.800,
+};
+
 // UV point every non-facade building part samples (propkit.js). Must sit
-// inside the swatch stamped by stampTrimSwatch below: canvas top-left 8%
-// maps to uv u 0..0.08 / v 0.92..1 (CanvasTexture flipY).
+// inside the swatch stamped into every facade canvas (bakeFacade and
+// bakePhotorealFacade below): canvas top-left 8% maps to
+// uv u 0..0.08 / v 0.92..1 (CanvasTexture flipY).
 export const TRIM_UV = [0.04, 0.96];
 const TRIM_SWATCH_FRACTION = 0.08;
 // PURE WHITE, not the old #c8c8c8. Every non-facade part (window bands,
@@ -74,7 +94,7 @@ const GROUND_CROP_BOTTOM = 0.04;
 
 // --- Procedural flat-cartoon facades -------------------------------------
 //
-// WHY THIS EXISTS. With CITY_TEXTURES_ENABLED false, buildings render as flat
+// WHY THIS EXISTS. Before this set, buildings rendered as flat
 // vertex-coloured boxes with three thin window BANDS of geometry — the only
 // image texture anywhere in the running game was the ground. Buildings are the
 // largest thing in frame after the ground (measured rendered sizes below), so
@@ -244,20 +264,34 @@ function loadImage(src) {
   });
 }
 
-function stampTrimSwatch(img, size, crop) {
+/**
+ * Composes one photoreal facade at its tier's real face aspect. The merged
+ * building geometry hands every side face a 0..1 UV square (propkit.js), so a
+ * square source stretched over a 1.6x-2.8x tall face would smear its windows
+ * vertically; baking the canvas at the face aspect makes that mapping
+ * distortion-free. 'cover' art (the single-frame storefront) is scaled to
+ * fill and cropped at the sides; seamless grid art tiles `copies` times down
+ * the height so window scale matches across tiers. The trim swatch goes on
+ * last, same contract as the procedural bake.
+ */
+function bakePhotorealFacade(img, kind, entry, size) {
+  const aspect = PHOTOREAL_FACE_ASPECT[kind] || 1;
   const canvas = document.createElement('canvas');
   canvas.width = size;
-  canvas.height = size;
+  canvas.height = Math.round(size * aspect);
   const ctx = canvas.getContext('2d');
-  if (crop) {
-    ctx.drawImage(
-      img,
-      img.width * crop.l, img.height * crop.t,
-      img.width * (1 - crop.l - crop.r), img.height * (1 - crop.t - crop.b),
-      0, 0, size, size,
-    );
+  if (entry.fit === 'cover') {
+    // Uniform scale that fills the canvas, centered: the sides crop away.
+    const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
   } else {
-    ctx.drawImage(img, 0, 0, size, size);
+    const copies = Math.max(1, entry.copies || 1);
+    const copyH = canvas.height / copies;
+    for (let i = 0; i < copies; i += 1) {
+      ctx.drawImage(img, 0, Math.round(i * copyH), canvas.width, Math.ceil(copyH));
+    }
   }
   ctx.fillStyle = TRIM_SWATCH_COLOR;
   ctx.fillRect(0, 0, size * TRIM_SWATCH_FRACTION, size * TRIM_SWATCH_FRACTION);
@@ -277,39 +311,24 @@ function cropGroundSource(img, size) {
 }
 
 /**
- * Loads the realistic city texture set. Never throws.
- * @param {object} THREE - the shared three namespace (from main.js).
- * @param {{size?: number}} [opts] - size: working canvas pixels (square).
- * @returns {Promise<{facades: Object<string, object>, ground: Object<string, HTMLCanvasElement>}|null>}
- *   facades: building kind -> THREE.CanvasTexture (with trim swatch).
- *   ground: zone -> canvas pattern source for groundtex.js.
- *   null when there is no DOM or not a single image loaded.
+ * The photographic set: per-tier facades composed at their real face aspect
+ * plus ground zone pattern sources for groundtex.js. Null when not a single
+ * image loads.
  */
-export async function loadCityTextures(THREE, opts = {}) {
-  if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
-  if (!CITY_TEXTURES_ENABLED) {
-    // Procedural path. `ground` is deliberately EMPTY: groundtex.js already
-    // paints every ground class procedurally at constant world texel density,
-    // and handing it surfaces here would replace that with something coarser.
-    // Facades only.
-    if (!PROCEDURAL_FACADES_ENABLED) return null;
-    const facades = buildProceduralFacades(THREE);
-    return facades ? { facades, ground: {} } : null;
-  }
+async function loadPhotorealSet(THREE, opts = {}) {
   const size = opts.size || 512;
-
   const facadeEntries = await Promise.all(
-    Object.entries(CITY_TEXTURE_MANIFEST.facades).map(async ([kind, entry]) => {
+    Object.entries(PHOTOREAL_TEXTURE_MANIFEST.facades).map(async ([kind, entry]) => {
       const img = await loadImage(entry.src);
       if (!img) return null;
-      const tex = new THREE.CanvasTexture(stampTrimSwatch(img, size, entry.crop));
+      const tex = new THREE.CanvasTexture(bakePhotorealFacade(img, kind, entry, size));
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 4;
       return [kind, tex];
     }),
   );
   const groundEntries = await Promise.all(
-    Object.entries(CITY_TEXTURE_MANIFEST.ground).map(async ([zone, src]) => {
+    Object.entries(PHOTOREAL_TEXTURE_MANIFEST.ground).map(async ([zone, src]) => {
       const img = await loadImage(src);
       if (!img) return null;
       return [zone, cropGroundSource(img, size)];
@@ -320,4 +339,23 @@ export async function loadCityTextures(THREE, opts = {}) {
   const ground = Object.fromEntries(groundEntries.filter(Boolean));
   if (!Object.keys(facades).length && !Object.keys(ground).length) return null;
   return { facades, ground };
+}
+
+/**
+ * Loads every city texture set. Never throws.
+ * @param {object} THREE - the shared three namespace (from main.js).
+ * @returns {Promise<{facades: Object<string, object>|null, ground: Object, photoreal: {facades: Object, ground: Object}|null}|null>}
+ *   facades: procedural building kind -> THREE.CanvasTexture, the default
+ *     for the generic levels (null when disabled).
+ *   ground: procedural path ships no ground surfaces (groundtex.js paints
+ *     every zone procedurally for the generic levels) — always {}.
+ *   photoreal: the photographic Level 1 set, or null when it failed to load.
+ *   null when there is no DOM or nothing loaded at all.
+ */
+export async function loadCityTextures(THREE) {
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
+  const facades = PROCEDURAL_FACADES_ENABLED ? buildProceduralFacades(THREE) : null;
+  const photoreal = PHOTOREAL_TEXTURES_ENABLED ? await loadPhotorealSet(THREE) : null;
+  if (!facades && !photoreal) return null;
+  return { facades, ground: {}, photoreal };
 }

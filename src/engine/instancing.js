@@ -123,11 +123,13 @@ const EDIBILITY_TOO_BIG = 2;
  *   seed?: number,     // level/layout seed — drives the per-instance pastel
  *     palette picks (buildings/vehicles). Deterministic: same seed ⇒ same
  *     colors; omitted ⇒ palette derived from the accent hash.
+ *   photorealFacades?: boolean, // building groups with a facade map skip
+ *     the palette multiply (full-colour photos carry their own colour).
  *   goldenTint?: string, // retained for API stability; the golden group's
  *     gold read now comes from propkit's opts.golden instance colors
  * }} opts
  */
-export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textures = null, seed, cityId = null } = {}) {
+export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textures = null, seed, cityId = null, photorealFacades = false } = {}) {
   // groups: key `${kind}|${golden ? 1 : 0}` ->
   //   { kind, golden, mesh, slots: [propIndex per slot], baseColors: [Color] }
   const groups = new Map();
@@ -273,6 +275,7 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
         visualId,
         materialVariant,
         golden,
+        facadeMap,
         mesh,
         yOffset: bb && Number.isFinite(bb.min.y) ? -bb.min.y : 0,
         slots: [],
@@ -298,7 +301,12 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       // these kinds bake with white vertex colors, so the instance color IS
       // the body color — palette pick x propkit's brightness jitter. This
       // base is what setEdibility()/pulseInstance() modulate on top of.
-      if (palette && !group.golden && paletteKinds.has(group.kind)) {
+      // Photoreal facade groups skip this pick: a full-colour photo
+      // multiplied by a brick/glass palette tint muddies it, so they keep
+      // propkit's neutral grey jitter (a near-identity multiply). Vehicles
+      // have no facade map and keep the palette either way.
+      if (palette && !group.golden && paletteKinds.has(group.kind)
+        && !(photorealFacades && group.facadeMap)) {
         const authoredPalette = typeof propkit.cityPalette === 'function'
           ? propkit.cityPalette(THREE, cityId, group.kind, palette, group.visualId)
           : palette;

@@ -841,6 +841,10 @@ export function bakeGroundTexture(layout, opts = {}) {
   // pattern transform is expressed in WORLD units like everything else: one
   // source tile spans TILE_WORLD world units on every level.
   const TILE_WORLD = { asphalt: 72, curb: 54, plaza: 110, promenade: 96, pavement: 96, grass: 140 };
+  // The wash pushes a photographic pattern toward the zone's flat tint; at
+  // full strength it erases the photo it sits on (asphalt 0.72). Quarter
+  // strength keeps zones on the same value ladder without flattening them.
+  const PATTERN_WASH_SCALE = 0.25;
   const patterns = {};
   if (opts.textures) {
     for (const zone of Object.keys(TILE_WORLD)) {
@@ -863,7 +867,7 @@ export function bakeGroundTexture(layout, opts = {}) {
       ctx.fillStyle = patterns[zone];
       ctx.fillRect(-halfW, -halfD, halfW * 2, halfD * 2);
       if (spec.wash > 0) {
-        ctx.globalAlpha = spec.wash;
+        ctx.globalAlpha = spec.wash * PATTERN_WASH_SCALE;
         ctx.fillStyle = cssOf[zone];
         ctx.fillRect(-halfW, -halfD, halfW * 2, halfD * 2);
         ctx.globalAlpha = 1;
@@ -886,7 +890,7 @@ export function bakeGroundTexture(layout, opts = {}) {
 
   // 1. Open ground between blocks: paved, not bare metro colour. This alone is
   //    most of "bare brown ground" — the large expanses now have a surface.
-  ctx.fillStyle = cssOf.pavement;
+  ctx.fillStyle = patterns.pavement || cssOf.pavement;
   ctx.fillRect(-half, -half, world, world);
   ctx.save();
   clipRect(ctx, half, half);
