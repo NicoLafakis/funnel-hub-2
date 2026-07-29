@@ -16,7 +16,8 @@
 import { QUALITY_PROFILES } from './quality.js';
 import { EffectComposer } from '../../assets/vendor/postprocessing/EffectComposer.js';
 import { RenderPass } from '../../assets/vendor/postprocessing/RenderPass.js';
-import { BokehPass } from '../../assets/vendor/postprocessing/BokehPass.js';
+import { ShaderPass } from '../../assets/vendor/postprocessing/ShaderPass.js';
+import { FarFieldDofShader, FAR_FIELD_BLUR_RADIUS_UV } from './dof.js';
 
 // --- Sun shadow geometry (0005 RC-1). See followShadow() for the derivations.
 // Every one of these is load-bearing; none is a taste value.
@@ -355,18 +356,57 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
   }
 
   const clock = new THREE.Clock();
-  // Recovered July 29 depth-of-field pass, adapted to V2's quality ladder.
-  // The low profile renders directly to preserve its GPU budget; medium/high
-  // keep a deliberately restrained city-scale blur with focus pinned to the
-  // ground-flush hole each frame by main.js.
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-  const bokehPass = new BokehPass(scene, camera, {
-    focus: 60,
-    aperture: 0.0001,
-    maxblur: 0.007,
+
+  // DEPTH OF FIELD — far field only. The low profile still renders straight to
+  // the default framebuffer with no composer at all, so its GPU budget is
+  // untouched; medium/high get exactly ONE extra full-screen pass.
+  //
+  // THE DEPTH ATTACHMENT IS THE WHOLE POINT OF THIS RENDER TARGET. EffectComposer
+  // otherwise builds its two half-float buffers with a plain depth RENDERBUFFER,
+  // which a shader cannot read — which is why the BokehPass this replaces had to
+  // re-render the entire scene with an override MeshDepthMaterial just to get
+  // depth into a texture (BokehPass.js:139-150), doubling the frame's draw calls
+  // and triangles. Attaching a DepthTexture to the composer's own buffers means
+  // the RenderPass writes depth and colour in the SAME geometry pass and the DOF
+  // shader samples what is already there: one geometry pass, one blur pass.
+  //
+  //   * HalfFloatType matches what EffectComposer would have chosen on its own,
+  //     so the colour precision of the chain is unchanged.
+  //   * The size is 1x1 on purpose. resize() runs immediately below (and again
+  //     from setQuality) and is the single owner of the buffer dimensions; a
+  //     guessed initial size would just be a second, drift-prone copy of it.
+  //   * renderTarget2 is `renderTarget1.clone()` inside EffectComposer, and
+  //     RenderTarget.copy() clones the depth texture rather than sharing it, so
+  //     each buffer owns its own depth attachment and the read/write swap cannot
+  //     hand the shader a depth texture that is being written to.
+  //   * DepthTexture image sizing is handled by WebGLTextures, which re-allocates
+  //     it from the render target's width/height whenever they change, so
+  //     composer.setSize() covers it.
+  const composerTarget = new THREE.WebGLRenderTarget(1, 1, {
+    type: THREE.HalfFloatType,
+    depthTexture: new THREE.DepthTexture(1, 1),
   });
-  composer.addPass(bokehPass);
+  composerTarget.texture.name = 'EffectComposer.rt1';
+  const composer = new EffectComposer(renderer, composerTarget);
+  composer.addPass(new RenderPass(scene, camera));
+
+  const dofPass = new ShaderPass(FarFieldDofShader);
+  dofPass.uniforms.cameraNear.value = camera.near;
+  dofPass.uniforms.cameraFar.value = camera.far;
+  dofPass.uniforms.blurRadius.value = FAR_FIELD_BLUR_RADIUS_UV;
+  // tDepth has to be rebound every frame rather than once here: EffectComposer
+  // swaps readBuffer/writeBuffer after this pass (needsSwap is true for a
+  // ShaderPass), so the buffer the RenderPass drew into — and therefore the
+  // depth attachment holding this frame's depth — alternates between
+  // renderTarget1 and renderTarget2. Wrapping render() keeps that coupling in
+  // one place instead of leaving a stale texture bound on alternate frames.
+  const renderDofPass = dofPass.render.bind(dofPass);
+  dofPass.render = (r, writeBuffer, readBuffer, deltaTime, maskActive) => {
+    dofPass.uniforms.tDepth.value = readBuffer.depthTexture;
+    renderDofPass(r, writeBuffer, readBuffer, deltaTime, maskActive);
+  };
+  composer.addPass(dofPass);
+
   const frameTimes = [];
   let lastRenderAt = null;
 
@@ -374,7 +414,7 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
     const profile = typeof next === 'string' ? QUALITY_PROFILES[next] : next;
     if (!profile) return false;
     activeQuality = profile;
-    bokehPass.enabled = profile.effectsDensity >= 0.7;
+    dofPass.enabled = profile.effectsDensity >= 0.7;
     activeShadowMapSize = profile.shadowMapSize;
     renderer.shadowMap.enabled = profile.shadows;
     sun.castShadow = profile.shadows;
@@ -399,6 +439,10 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
     composer.setSize(w, h);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
+    // The DOF disk is defined as a fraction of frame WIDTH but offsets in uv,
+    // so only the aspect correction is resolution-dependent — it makes the disk
+    // round in pixels instead of stretched in uv. Same scheme BokehShader used.
+    dofPass.uniforms.aspect.value = camera.aspect;
   }
 
   if (typeof window !== 'undefined') {
@@ -413,14 +457,22 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
       if (frameTimes.length > 300) frameTimes.shift();
     }
     lastRenderAt = now;
-    if (bokehPass.enabled) composer.render();
+    if (dofPass.enabled) composer.render();
     else renderer.render(scene, camera);
   }
 
-  function setFocus(distance) {
-    if (Number.isFinite(distance) && distance > 0) {
-      bokehPass.uniforms.focus.value = distance;
-    }
+  // Replaces the old setFocus(distance). A focus DISTANCE was the wrong shape of
+  // API for this effect and was load-bearing in the defect: three's bokeh CoC is
+  // symmetric about the focus plane, so "focus on the hole" necessarily meant
+  // "blur everything nearer than the hole just as hard". A BAND is the honest
+  // contract — sharp at and before nearEdge, fully blurred at and past farEdge —
+  // and it cannot express a near-field blur at all. Derive the arguments with
+  // farFieldBlurBand() in dof.js; do not pass hand-picked distances.
+  function setDepthBlurBand(nearEdge, farEdge) {
+    if (!Number.isFinite(nearEdge) || !Number.isFinite(farEdge) || farEdge <= nearEdge) return false;
+    dofPass.uniforms.blurNear.value = nearEdge;
+    dofPass.uniforms.blurFar.value = farEdge;
+    return true;
   }
 
   function getPerformanceSnapshot() {
@@ -443,5 +495,8 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
 
   setQuality(activeQuality);
 
-  return { scene, camera, renderer, clock, resize, render, setFocus, setMood, followShadow, setQuality, getPerformanceSnapshot };
+  return {
+    scene, camera, renderer, clock, resize, render,
+    setDepthBlurBand, setMood, followShadow, setQuality, getPerformanceSnapshot,
+  };
 }

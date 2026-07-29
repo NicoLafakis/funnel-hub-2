@@ -1776,6 +1776,143 @@ async function main() {
         && !/new THREE\.SphereGeometry/.test(avatarSource));
   }
 
+  // DEPTH OF FIELD — the far-field-only contract, asserted rather than eyeballed.
+  // The old BokehPass could not pass any of these: its circle of confusion was
+  // symmetric about the focus plane, so everything nearer than the hole blurred
+  // as hard as everything beyond it. These checks pin the three properties that
+  // replaced it: zero blur across the whole playable volume, a monotonic ramp
+  // that only exists past the map edge, and correct scaling across the level and
+  // hole-radius ladders (a hardcoded distance fails at one end of both).
+  console.log('DEPTH OF FIELD (far field only):');
+  {
+    const dofMod = await import('../src/engine/dof.js');
+    const { farFieldBlurBand, FAR_FIELD_BLUR_RADIUS_UV } = dofMod;
+    // main.js atmosphere constants, mirrored here (this file cannot import
+    // main.js — it touches document at module scope).
+    const HAZE_RUN_WORLD = 0.35;
+    // camera.js DIST_RADIUS_MULT and the pitch clamp it enforces.
+    const DIST_RADIUS_MULT = 17.5;
+    // Tallest caster in the game: the level-75 building-large at 671u
+    // (scene.js SHADOW_CASTER_HEIGHT derivation).
+    const TALLEST_PROP = 671;
+
+    // GLSL smoothstep, exactly: it returns literal 0 for x <= edge0, which is
+    // the property the "provably sharp" claim rests on.
+    const smoothstep = (edge0, edge1, x) => {
+      const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+      return t * t * (3 - 2 * t);
+    };
+    // Place a real PerspectiveCamera exactly where camera.js would frame the
+    // hole, so the band is derived from the same kind of matrix the renderer
+    // sees rather than from a hand-written stub.
+    const frameCamera = (r, pitchDeg, yawDeg, tx, tz) => {
+      const cam = new THREE.PerspectiveCamera(70, 16 / 9, 20, 12000);
+      const pitch = (pitchDeg * Math.PI) / 180;
+      const yaw = (yawDeg * Math.PI) / 180;
+      const dist = r * DIST_RADIUS_MULT;
+      cam.position.set(
+        tx - Math.sin(yaw) * dist * Math.cos(pitch),
+        dist * Math.sin(pitch),
+        tz - Math.cos(yaw) * dist * Math.cos(pitch),
+      );
+      cam.lookAt(tx, 0, tz);
+      cam.updateMatrixWorld();
+      return cam;
+    };
+    // View depth of a world point: dot(p - eye, forward), forward = -matrixWorld
+    // column 3. Computed independently of the closed form under test.
+    const viewDepth = (cam, x, y, z) => {
+      const e = cam.matrixWorld.elements;
+      return -((x - cam.position.x) * e[8] + (y - cam.position.y) * e[9] + (z - cam.position.z) * e[10]);
+    };
+
+    const band = { nearEdge: 0, farEdge: 0 };
+    let playableAlwaysSharp = true;
+    let rampAlwaysForward = true;
+    let rampAlwaysPartway = true;
+    let sweeps = 0;
+    for (const n of [1, 7, 30, 66, 100]) {
+      const world = worldSize(n);
+      const half = world / 2;
+      const run = HAZE_RUN_WORLD * world;
+      // Radii from spawn (26, avatar.js floor) through the level's own cap
+      // (main.js sets avatar.radiusCap = world * 0.2).
+      for (const r of [26, 60, 151, world * 0.2]) {
+        for (const pitchDeg of [35, 55, 65]) {
+          for (const yawDeg of [0, 30, 45, 120, 210, 315]) {
+            // Hole at the middle and at both worst-case corners of the play
+            // bound (districts.js clamps props to world/2 - 30), which is where
+            // the map's diagonal is longest in view depth.
+            for (const [tx, tz] of [[0, 0], [half - 30, half - 30], [-(half - 30), half - 30]]) {
+              const cam = frameCamera(r, pitchDeg, yawDeg, tx, tz);
+              farFieldBlurBand(cam, half, run, band);
+              sweeps += 1;
+              if (!(band.farEdge > band.nearEdge)) rampAlwaysForward = false;
+              // Every corner of the playable square, on the ground and at prop
+              // height. The camera looks down at every legal pitch, so raising y
+              // reduces view depth — these bound the whole playable volume.
+              for (const cx of [-half, half]) {
+                for (const cz of [-half, half]) {
+                  for (const cy of [0, 200, TALLEST_PROP]) {
+                    if (smoothstep(band.nearEdge, band.farEdge, viewDepth(cam, cx, cy, cz)) !== 0) {
+                      playableAlwaysSharp = false;
+                    }
+                  }
+                }
+              }
+              const mid = smoothstep(band.nearEdge, band.farEdge, (band.nearEdge + band.farEdge) / 2);
+              if (!(mid > 0 && mid < 1)) rampAlwaysPartway = false;
+            }
+          }
+        }
+      }
+    }
+    check('blur is exactly zero across the whole playable volume, every level/radius/pitch/yaw',
+      sweeps === 1080 && playableAlwaysSharp);
+    check('the blur band always ramps outward (never inverted, i.e. never near-field)',
+      rampAlwaysForward);
+    check('the ramp is partial mid-band, so blur increases with distance rather than switching on',
+      rampAlwaysPartway);
+
+    // Scaling. Same hole radius, bigger map -> the sharp zone has to reach
+    // further; same map, bigger hole -> the camera stands off further and the
+    // sharp zone has to reach further again.
+    const bandFor = (n, r) => {
+      const world = worldSize(n);
+      const cam = frameCamera(r, 55, 0, 0, 0);
+      return farFieldBlurBand(cam, world / 2, HAZE_RUN_WORLD * world, { nearEdge: 0, farEdge: 0 });
+    };
+    const l1 = bandFor(1, 26);
+    const l100 = bandFor(100, 26);
+    const l1Big = bandFor(1, 151);
+    check('the sharp zone grows with the map (level 1 -> level 100 at the same hole size)',
+      l100.nearEdge > l1.nearEdge * 1.5);
+    check('the sharp zone grows with the camera standoff (hole 26 -> 151 on the same map)',
+      l1Big.nearEdge > l1.nearEdge + (151 - 26) * DIST_RADIUS_MULT * 0.5);
+
+    // Degenerate inputs may only ever reduce blur, never blur the play area.
+    const straightDown = new THREE.PerspectiveCamera(70, 16 / 9, 20, 12000);
+    straightDown.position.set(0, 1000, 0);
+    straightDown.lookAt(0, 0, 0.0001);
+    const collapsed = farFieldBlurBand(straightDown, 1207.5, 845.25, { nearEdge: 0, farEdge: 0 });
+    check('a degenerate camera disables the pass instead of blurring the play area',
+      collapsed.nearEdge >= 1e9
+        && farFieldBlurBand(frameCamera(26, 55, 0, 0, 0), NaN, 845.25, { nearEdge: 0, farEdge: 0 }).nearEdge >= 1e9);
+
+    // Strength: strictly gentler at the peak than the BokehPass it replaces,
+    // whose furthest tap sat at maxblur * 0.4 = 0.007 * 0.4 = 0.0028 of frame
+    // width — and which held that peak across nearly the whole frame.
+    check('peak blur radius is below the old pass peak of 0.28% of frame width',
+      FAR_FIELD_BLUR_RADIUS_UV > 0 && FAR_FIELD_BLUR_RADIUS_UV < 0.007 * 0.4);
+
+    // The shader itself: the two clauses that make "no near blur" structural
+    // rather than tuned. A future edit that reintroduces a symmetric CoC or
+    // drops the early-out has to delete one of these to pass.
+    check('the DOF shader has a one-sided smoothstep CoC and a zero-blur early out',
+      /coc\s*=\s*smoothstep\(\s*blurNear,\s*blurFar,/.test(dofMod.FarFieldDofShader.fragmentShader)
+        && /if\s*\(\s*coc\s*<=\s*0\.0\s*\)/.test(dofMod.FarFieldDofShader.fragmentShader));
+  }
+
   {
     const budget = effectsMod.createRingBudget({ maxConcurrent: 2 });
     check('quality can lower the rival feedback budget without suppressing player feedback',

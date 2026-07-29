@@ -287,8 +287,13 @@ function buildChicagoLoop(world) {
   };
 
   // Faux surrounding city: a dense deterministic grid outside the playable
-  // square. Distance, fog, and simplified silhouettes do the work that a
-  // post-process DOF pass would do at much higher mobile cost. Chicago remains
+  // square. Distance, fog and simplified silhouettes carry most of the
+  // separation; this comment used to say they carried ALL of it because "a
+  // post-process DOF pass" would cost too much on mobile, which stopped being
+  // true when the far-field-only pass landed (src/engine/dof.js). That pass
+  // exists precisely for this band — it is sharp out to the playable edge and
+  // ramps up only across these context buildings — and it costs one full-screen
+  // pass on medium/high with no second geometry pass at all. Chicago remains
   // geographically legible: city north/west/south, Lake Michigan to the east.
   const contextBuildings = [];
   const contextTrees = [];

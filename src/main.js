@@ -33,6 +33,7 @@ import { createEngine } from './engine/scene.js';
 import { createAvatar, createHoleVisual, SKINS } from './engine/avatar.js';
 import { createGrowthEffects, createRingBudget, RIVAL_RING } from './engine/effects.js';
 import { createChaseCamera } from './engine/camera.js';
+import { farFieldBlurBand } from './engine/dof.js';
 import { createInput } from './engine/input.js';
 import { createQualityController, selectInitialQuality } from './engine/quality.js';
 import { createSpatialHash } from './engine/spatialhash.js';
@@ -2876,6 +2877,10 @@ export async function main() {
   // ---------------------------------------------------------------------------
   // Main loop
   // ---------------------------------------------------------------------------
+  // Reused output for farFieldBlurBand(), so the per-frame depth-of-field update
+  // allocates nothing (tech-architecture §1: no per-frame object churn).
+  const dofBand = { nearEdge: 0, farEdge: 0 };
+
   function frame() {
     const dt = Math.min(0.05, engine.clock.getDelta());
     if (state.mode === 'play') {
@@ -2886,7 +2891,29 @@ export async function main() {
     if (state.world) {
       state.world.update(dt, engine.camera);
     }
-    engine.setFocus(engine.camera.position.distanceTo(avatar.position));
+    // FAR-FIELD DEPTH OF FIELD. This used to be
+    // `engine.setFocus(camera.position.distanceTo(avatar.position))`, which was
+    // the direct cause of the near-field blur: three's bokeh CoC is symmetric
+    // about the focus plane, so focusing on the hole blurred everything nearer
+    // than the hole exactly as hard as everything beyond it. The replacement
+    // hands the pass a DISTANCE BAND that cannot express near blur — sharp out
+    // to the far edge of the playable square, ramping up only past it.
+    //
+    // Both edges are derived per frame from the live camera matrix and this
+    // level's own world size, so they track the two ladders that would break any
+    // constant: the map grows with level (2415u at L1 to 4800u at L100) and the
+    // camera standoff grows with the hole radius. HAZE_RUN_WORLD * world is where
+    // the horizon stack reaches flat sky colour and blur stops being visible, so
+    // that is where the ramp ends. See dof.js for the corner-maximum proof.
+    if (state.level) {
+      farFieldBlurBand(
+        engine.camera,
+        state.level.world / 2,
+        HAZE_RUN_WORLD * state.level.world,
+        dofBand,
+      );
+      engine.setDepthBlurBand(dofBand.nearEdge, dofBand.farEdge);
+    }
     engine.render();
     if (state.saveData.settings.qualityMode === 'auto') {
       const changedTier = qualityController.sample(dt * 1000);
