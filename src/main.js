@@ -481,7 +481,14 @@ export async function main() {
         state.saveData.achievements.push(key);
         saveSave(state.saveData);
       }
-      showToast(`<b>ACHIEVEMENT</b><br>${entry[0]}<br><span style="color:#9fb4c4;font-size:12px">${entry[1]}</span>`);
+      const recoveredIconKeys = new Set([
+        'first', 'combo10', 'combo25', 'gold', 'rival', 'fast', 'storm',
+        'god', 'unsub', 'breeze', 'win', 'metroCleared', 'centurion', 'hoarder',
+      ]);
+      const icon = recoveredIconKeys.has(key)
+        ? `<img src="assets/icons/achievements/${key}.png" alt="">`
+        : '';
+      showToast(`<div class="toast-achievement">${icon}<span><b>ACHIEVEMENT</b><br>${entry[0]}<br><span style="color:#9fb4c4;font-size:12px">${entry[1]}</span></span></div>`);
       Audio.golden();
     }
     return entry;
@@ -671,6 +678,20 @@ export async function main() {
     // procedural look.
     const photoreal = level.authoredCity === 'chicago-loop' && cityTextures
       ? cityTextures.photoreal : null;
+    // The recovered July 29 metro art applies only after the authored Chicago
+    // pilot. This ordering is load-bearing: Level 1 remains The Loop with its
+    // existing photographic surfaces, while later chapters may use their
+    // recovered per-metro facade and street palettes.
+    const metroArt = !photoreal && cityTextures && cityTextures.metros
+      ? cityTextures.metros[metro.id] || null
+      : null;
+    const activeGroundTextures = photoreal
+      ? photoreal.ground
+      : metroArt
+        ? metroArt.ground
+        : cityTextures
+          ? cityTextures.ground
+          : null;
 
     // Authored-city pilot background: low-detail, non-interactive context
     // outside the playable square plus the Loop elevated rail cue inside it.
@@ -692,7 +713,7 @@ export async function main() {
     const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, roughness: 0.93, metalness: 0.0 });
     const baked = bakeGroundTexture(layout, {
       metro,
-      textures: photoreal ? photoreal.ground : (cityTextures ? cityTextures.ground : null),
+      textures: activeGroundTextures,
       // No fixed `size`: groundtex derives the canvas from level.world at a
       // CONSTANT world-space texel density (GROUND_TEXELS_PER_UNIT), so lane
       // paint and paving read identically on level 1 and level 100. The old
@@ -1303,7 +1324,11 @@ export async function main() {
 
     state.world = createInstancedWorld({
       scene: engine.scene, propkit, accent: metro.accent,
-      textures: photoreal ? { ...cityTextures, facades: photoreal.facades } : cityTextures,
+      textures: photoreal
+        ? { ...cityTextures, facades: photoreal.facades }
+        : metroArt
+          ? { ...cityTextures, facades: metroArt.facades, ground: metroArt.ground }
+          : cityTextures,
       seed: layout.seed, cityId: level.authoredCity, photorealFacades: !!photoreal,
     });
     state.world.set(worldProps);
@@ -2861,6 +2886,7 @@ export async function main() {
     if (state.world) {
       state.world.update(dt, engine.camera);
     }
+    engine.setFocus(engine.camera.position.distanceTo(avatar.position));
     engine.render();
     if (state.saveData.settings.qualityMode === 'auto') {
       const changedTier = qualityController.sample(dt * 1000);

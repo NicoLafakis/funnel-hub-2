@@ -69,6 +69,7 @@ async function main() {
   const startupMod = await import('../src/meta/startup.js');
   const cityContextMod = await import('../src/content/city-context.js');
   const cityObjectsMod = await import('../src/content/city-object-catalog.js');
+  const texturesMod = await import('../src/content/textures.js');
   const THREE = await import('three');
 
   const {
@@ -1730,6 +1731,49 @@ async function main() {
     check('runtime quality applies profile effects and optional-detail density',
       /setMaxConcurrent\(Math\.max\(0, Math\.round\(2 \* profile\.effectsDensity\)\)\)/.test(mainSrc)
         && /state\.world\.setQuality\(profile\)/.test(mainSrc));
+  }
+
+  console.log('JULY 29 RECOVERY CONTRACT:');
+  {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const root = path.join(path.dirname(process.argv[1]), '..');
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'assets', 'art-manifest.json'), 'utf8'));
+    const manifestPaths = [
+      ...Object.values(manifest.metros || {}).flatMap((entry) => Object.values(entry || {})),
+      ...Object.values(manifest.icons || {}).flatMap((entry) => Object.values(entry || {})),
+    ];
+    const recoveredGenerics = [
+      'assets/textures/asphalt.png',
+      'assets/textures/facade-apartment.png',
+      'assets/textures/facade-concrete.png',
+      'assets/textures/facade-office.png',
+      'assets/textures/facade-apartment-v2.png',
+      'assets/textures/facade-apartment-v3.png',
+      'assets/textures/facade-concrete-v2.png',
+      'assets/textures/facade-office-v2.png',
+      'assets/textures/facade-office-v3.png',
+      'assets/textures/facade-storefront.png',
+      'assets/textures/ground-asphalt.png',
+      'assets/textures/ground-grass.png',
+      'assets/textures/ground-parking.png',
+      'assets/textures/ground-sidewalk.png',
+    ];
+    const allRecoveredImages = [...new Set([...manifestPaths, ...recoveredGenerics])];
+    check('all 109 recovered images are inventoried and non-empty',
+      allRecoveredImages.length === 109
+        && allRecoveredImages.every((rel) => fs.statSync(path.join(root, rel)).size > 0));
+    check('all ten recovered metro texture sets map to real V2 metros',
+      texturesMod.RECOVERED_METRO_TEXTURE_IDS.length === 10
+        && texturesMod.RECOVERED_METRO_TEXTURE_IDS.every((id) => METROS.some((metro) => metro.id === id)));
+    const levelOne = generateLevel(1);
+    const avatarSource = fs.readFileSync(path.join(root, 'src', 'engine', 'avatar.js'), 'utf8');
+    check('Gate Zero: Level 1 is authored Chicago and the player is not a sphere',
+      levelOne.cityName === 'Chicago'
+        && levelOne.districtName === 'The Loop · Chicago'
+        && levelOne.authoredCity === 'chicago-loop'
+        && /new THREE\.CircleGeometry\(APERTURE_R/.test(avatarSource)
+        && !/new THREE\.SphereGeometry/.test(avatarSource));
   }
 
   {

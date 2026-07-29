@@ -100,6 +100,24 @@ export const PHOTOREAL_TEXTURE_MANIFEST = {
   },
 };
 
+// Recovered 2026-07-29 metro art. These files were accidentally authored in
+// the read-only V1 checkout; V2 owns their runtime contract here. Chicago's
+// authored Level 1 continues to use PHOTOREAL_TEXTURE_MANIFEST above. The ten
+// later metro chapters receive their own facade/street palette without ever
+// changing Level 1's `chicago-loop` identity or its approved photographic set.
+export const RECOVERED_METRO_TEXTURE_IDS = [
+  'harbor-metropolis',
+  'vieux-continent',
+  'old-fog-town',
+  'neon-district',
+  'desert-spires',
+  'coliseum-city',
+  'carnival-coast',
+  'red-square-heights',
+  'harbor-opera-bay',
+  'capital-prime',
+];
+
 // Real rendered face aspect (h/w) per tier, measured in the header below.
 // The photoreal canvas is baked at this aspect so the face's 0..1 UV maps it
 // distortion-free.
@@ -469,6 +487,45 @@ async function loadPhotorealSet(THREE, opts = {}) {
   return { facades, ground };
 }
 
+async function loadRecoveredMetroSet(THREE, metroId, opts = {}) {
+  const size = opts.size || 256;
+  const root = `assets/textures/metro/${metroId}`;
+  const facadeSources = {
+    'building-small': `${root}/facade-storefront.png`,
+    'building-medium': `${root}/facade-apartment.png`,
+    'building-large': `${root}/facade-office.png`,
+  };
+  const facadeEntries = await Promise.all(
+    Object.entries(facadeSources).map(async ([kind, src]) => {
+      const raw = await loadImage(src);
+      if (!raw) return null;
+      const img = autoTrimFacade(raw);
+      const baked = bakePhotorealFacade(img, kind, { fit: 'cover' }, size, null);
+      const tex = new THREE.CanvasTexture(baked.canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      tex.userData.facadeRegion = baked.region;
+      return [kind, tex];
+    }),
+  );
+  const [street, sidewalk] = await Promise.all([
+    loadImage(`${root}/street.png`),
+    loadImage(`${root}/sidewalk.png`),
+  ]);
+  const ground = {};
+  if (street) ground.asphalt = cropGroundSource(street, size);
+  if (sidewalk) {
+    const surface = cropGroundSource(sidewalk, size);
+    ground.curb = surface;
+    ground.pavement = surface;
+    ground.promenade = surface;
+    ground.plaza = surface;
+  }
+  const facades = Object.fromEntries(facadeEntries.filter(Boolean));
+  if (!Object.keys(facades).length && !Object.keys(ground).length) return null;
+  return { facades, ground };
+}
+
 /**
  * Loads every city texture set. Never throws.
  * @param {object} THREE - the shared three namespace (from main.js).
@@ -483,7 +540,13 @@ async function loadPhotorealSet(THREE, opts = {}) {
 export async function loadCityTextures(THREE) {
   if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
   const facades = PROCEDURAL_FACADES_ENABLED ? buildProceduralFacades(THREE) : null;
-  const photoreal = PHOTOREAL_TEXTURES_ENABLED ? await loadPhotorealSet(THREE) : null;
-  if (!facades && !photoreal) return null;
-  return { facades, ground: {}, photoreal };
+  const [photoreal, metroEntries] = await Promise.all([
+    PHOTOREAL_TEXTURES_ENABLED ? loadPhotorealSet(THREE) : null,
+    Promise.all(RECOVERED_METRO_TEXTURE_IDS.map(async (metroId) => (
+      [metroId, await loadRecoveredMetroSet(THREE, metroId)]
+    ))),
+  ]);
+  const metros = Object.fromEntries(metroEntries.filter(([, set]) => !!set));
+  if (!facades && !photoreal && !Object.keys(metros).length) return null;
+  return { facades, ground: {}, photoreal, metros };
 }

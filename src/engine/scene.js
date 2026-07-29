@@ -14,6 +14,9 @@
 // inside createEngine(), so a bare `import` of this file never throws in Node.
 
 import { QUALITY_PROFILES } from './quality.js';
+import { EffectComposer } from '../../assets/vendor/postprocessing/EffectComposer.js';
+import { RenderPass } from '../../assets/vendor/postprocessing/RenderPass.js';
+import { BokehPass } from '../../assets/vendor/postprocessing/BokehPass.js';
 
 // --- Sun shadow geometry (0005 RC-1). See followShadow() for the derivations.
 // Every one of these is load-bearing; none is a taste value.
@@ -352,6 +355,18 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
   }
 
   const clock = new THREE.Clock();
+  // Recovered July 29 depth-of-field pass, adapted to V2's quality ladder.
+  // The low profile renders directly to preserve its GPU budget; medium/high
+  // keep a deliberately restrained city-scale blur with focus pinned to the
+  // ground-flush hole each frame by main.js.
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bokehPass = new BokehPass(scene, camera, {
+    focus: 60,
+    aperture: 0.0001,
+    maxblur: 0.007,
+  });
+  composer.addPass(bokehPass);
   const frameTimes = [];
   let lastRenderAt = null;
 
@@ -359,6 +374,7 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
     const profile = typeof next === 'string' ? QUALITY_PROFILES[next] : next;
     if (!profile) return false;
     activeQuality = profile;
+    bokehPass.enabled = profile.effectsDensity >= 0.7;
     activeShadowMapSize = profile.shadowMapSize;
     renderer.shadowMap.enabled = profile.shadows;
     sun.castShadow = profile.shadows;
@@ -379,6 +395,8 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
     const dpr = Math.min((hasWindow ? window.devicePixelRatio : 1) || 1, activeQuality.dprCap);
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, true);
+    composer.setPixelRatio(dpr);
+    composer.setSize(w, h);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
   }
@@ -395,7 +413,14 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
       if (frameTimes.length > 300) frameTimes.shift();
     }
     lastRenderAt = now;
-    renderer.render(scene, camera);
+    if (bokehPass.enabled) composer.render();
+    else renderer.render(scene, camera);
+  }
+
+  function setFocus(distance) {
+    if (Number.isFinite(distance) && distance > 0) {
+      bokehPass.uniforms.focus.value = distance;
+    }
   }
 
   function getPerformanceSnapshot() {
@@ -418,5 +443,5 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
 
   setQuality(activeQuality);
 
-  return { scene, camera, renderer, clock, resize, render, setMood, followShadow, setQuality, getPerformanceSnapshot };
+  return { scene, camera, renderer, clock, resize, render, setFocus, setMood, followShadow, setQuality, getPerformanceSnapshot };
 }

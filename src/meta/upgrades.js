@@ -286,6 +286,13 @@ export function buildShopViewModel(saveData) {
       id: p.id,
       name: p.name,
       icon: p.icon,
+      iconSrc: p.effects.eatRadiusMultiplier ? 'assets/icons/upgrades/size.png'
+        : p.effects.moveSpeedMultiplier ? 'assets/icons/upgrades/speed.png'
+          : p.effects.attractRadiusMultiplier ? 'assets/icons/upgrades/magnet.png'
+            : p.effects.extraSeconds ? 'assets/icons/upgrades/time.png'
+              : p.effects.massGainMultiplier || p.effects.extraStartMass
+                ? 'assets/icons/upgrades/growth.png'
+                : null,
       description: p.description,
       affordable: coins >= t.price,
     })),

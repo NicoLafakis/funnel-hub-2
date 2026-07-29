@@ -356,7 +356,9 @@ function ensureV2Styles(doc) {
     .buildpick:hover:not(:disabled){background:rgba(0,164,189,.2);}
     .buildpick:disabled{opacity:.45;cursor:not-allowed;}
     .buildpick.picked{border-color:#1c2733;background:rgba(245,194,107,.16);opacity:1;}
-    .buildpick-icon{font-size:18px;flex:0 0 auto;}
+    .buildpick-icon{font-size:18px;flex:0 0 auto;width:24px;height:24px;
+      display:inline-flex;align-items:center;justify-content:center;}
+    .buildpick-icon img{width:24px;height:24px;image-rendering:pixelated;display:block;}
     .buildpick-text{display:flex;flex-direction:column;gap:1px;min-width:0;}
     .buildpick-name{font-weight:700;font-size:13.5px;}
     .buildpick-desc{color:#9fb4c2;font-size:12px;line-height:1.3;}
@@ -420,7 +422,9 @@ export function renderBuildShop(container, viewModel, handlers = {}) {
       btn.className = 'buildpick' + (isPicked ? ' picked' : '');
       btn.disabled = tier.lockedPickId ? !isPicked : !pick.affordable;
       btn.innerHTML = `
-        <span class="buildpick-icon">${pick.icon || ''}</span>
+        <span class="buildpick-icon">${pick.iconSrc
+          ? `<img src="${pick.iconSrc}" alt="">`
+          : (pick.icon || '')}</span>
         <span class="buildpick-text">
           <span class="buildpick-name">${pick.name || pick.id}${isPicked ? ' ✓' : ''}</span>
           <span class="buildpick-desc">${pick.description || ''}</span>
