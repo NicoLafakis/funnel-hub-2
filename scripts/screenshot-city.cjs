@@ -10,7 +10,7 @@ const fs = require('node:fs');
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on('pageerror', (e) => console.log('pageerror:', String(e)));
   page.on('console', (m) => { if (m.type() === 'error') console.log('console.error:', m.text()); });
-  await page.goto(`http://localhost:${process.env.PORT || 3003}/`, { waitUntil: 'load' });
+  await page.goto(process.env.BASE_URL || `http://localhost:${process.env.PORT || 3003}/`, { waitUntil: 'load' });
   await page.waitForTimeout(800);
   await page.click('#startBtn');
   await page.waitForTimeout(1200);
