@@ -41,8 +41,15 @@ collision or progression. See
 at a sparse prop ring. Chicago establishes the pattern: reuse the playable
 area's road/block rhythm as low-detail instanced context, preserve geographic
 edges such as lake or river, simplify and desaturate with distance, then let
-fog erase fine detail. A full-screen DOF pass is optional—not a prerequisite
-for a convincing faux city—provided near, middle, and far silhouettes overlap.
+fog erase fine detail. A full-screen DOF pass was optional at the time this
+was written—not a prerequisite for a convincing faux city—provided near,
+middle, and far silhouettes overlap. **Update (2026-07-29, `5b2bf02`):** the
+runtime now ships one. `src/engine/dof.js` is deliberately far-field-only —
+sharp across the entire playable square, ramping up only past its edge,
+which is exactly the faux context city band this section describes — so it
+adds to, rather than substitutes for, the distance/fog/silhouette technique
+above. See `tech-architecture.md` §1 and the errata note in
+`0007-chicago-loop-authored-city/00-findings.md`.
 
 The single biggest visual upgrade. **Levels get procedural district layouts
 instead of uniform scatter:**

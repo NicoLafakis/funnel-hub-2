@@ -194,6 +194,36 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
   clean. Edibility-ratio re-verification and the 1.284-vs-1.327 discrepancy
   this pass surfaced are recorded in `art-direction.md` §3, not duplicated
   here.
+- **Depth of field replaced with a far-field-only pass (2026-07-29,
+  `5b2bf02`).** The recovered `BokehPass` (`0009-july29-recovery`) had a
+  symmetric circle of confusion around a focus plane pinned to the avatar
+  every frame (`setFocus(distance)`), which blurred geometry nearer than the
+  hole exactly as hard as geometry beyond it — a defect of the technique, not
+  its settings. Replaced by `src/engine/dof.js`, a single `ShaderPass` whose
+  CoC is `smoothstep(blurNear, blurFar, viewDepth)`: sharp from the camera
+  out to the far edge of the playable square, ramping up only past it, where
+  the faux context city (`0007-chicago-loop-authored-city`) lives.
+  `scene.js`'s `setFocus(distance)` API
+  is gone; `setDepthBlurBand(nearEdge, farEdge)` replaces it, and `main.js`
+  drives both edges every frame from `farFieldBlurBand()` — derived from the
+  live `camera.matrixWorld` and `state.level.world`, nothing hardcoded, so it
+  scales across levels 1-100 without a per-level constant. This also removes
+  a full second geometry pass: `BokehPass` re-rendered the entire scene with
+  an override `MeshDepthMaterial` purely to get depth into a texture; the
+  composer's own buffers now carry a `DepthTexture` (`WebGLRenderTarget` with
+  `HalfFloatType` + `THREE.DepthTexture`), so colour and depth come out of
+  the same `RenderPass`. Vendor files `assets/vendor/postprocessing/
+  BokehPass.js` and `assets/vendor/shaders/BokehShader.js` are deleted;
+  `ShaderPass.js` (already vendored, §4) is the only postprocessing module
+  the DOF chain needs now. Low profile still renders straight to the default
+  framebuffer with no composer at all (unchanged); medium/high get exactly
+  one full-screen pass, same as before. Verified in a real WebGL2 context
+  (Playwright + SwiftShader, no dev server): a fragment inside the sharp zone
+  is bit-identical to effect-off, high-frequency contrast past the far edge
+  drops 203.4 → 10.1, and forcing the band inward blurs that same near
+  fragment. Updates the stale "no post-processing composer" claim in
+  `0007-chicago-loop-authored-city/00-findings.md:50` — see the errata note
+  there.
 
 ## 2. World representation — the spatial hash is the world
 
@@ -220,7 +250,9 @@ src/
   engine/   input.js (state machine), camera.js (orbit+lookahead),
             scene.js, avatar.js, spatialhash.js (new), pools.js (new),
             instancing.js (new), effects.js (new: pooled one-shot event
-            effects — the growth shockwave; art §5)
+            effects — the growth shockwave; art §5), dof.js (new: far-field
+            depth-of-field shader + farFieldBlurBand() band derivation,
+            replaces the recovered BokehPass; §1)
   systems/  swallow.js, combo.js, rivals.js, storms.js, achievements.js,
             audio.js
   content/  propkit.js, landmarks.js, districts.js (new: layout generator),

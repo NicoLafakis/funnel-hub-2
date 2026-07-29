@@ -53,6 +53,17 @@ technique: instanced simplified geometry, a quieter far-distance palette, and
 the existing exponential fog. Chicago combines both reference modes—dense city
 continuation north/west/south and a broad Lake Michigan edge to the east.
 
+> **Errata (2026-07-29, `5b2bf02`):** the claim above ("does not ship a
+> post-processing composer") was already false when written — a `BokehPass`
+> composer had been ported in the July 29 recovery (`0009-july29-recovery`)
+> before this pass — and is unambiguously false now: `5b2bf02` replaced that
+> `BokehPass` with a purpose-built far-field-only `ShaderPass`
+> (`src/engine/dof.js`) that is sharp across the whole playable square and
+> ramps up only past its edge, i.e. exactly across the faux context city this
+> section describes. See `tech-architecture.md` §1 for the current pipeline.
+> This paragraph is left as-written above; treat it as historical record of
+> the finding at the time, not current fact.
+
 ## Chicago research translated into level rules
 
 Authoritative and architectural sources establish the following durable cues:
@@ -88,7 +99,9 @@ camera, spawn, and footprint contracts.
   edges; a third broad plane establishes Lake Michigan to the east.
 - 454 low-detail buildings, 1,138 tree canopies, 62 road strips, and rooftop
   silhouettes extend the city beyond the north, west, and south boundaries.
-  Distance-banded color and fog soften the far field without post-processing.
+  Distance-banded color and fog soften the far field; as of `5b2bf02`
+  (2026-07-29) the far-field-only DOF pass in `src/engine/dof.js` also ramps
+  up across exactly this band (see the errata note above).
 - Background context is render-only: it cannot be eaten, collided with, added
   to spatial hashes, or counted as progression mass.
 - The generic Harbor bridge signature is disabled for the Chicago pilot, and
