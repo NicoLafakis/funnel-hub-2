@@ -41,6 +41,10 @@ Touch ownership, non-blocking optional assets, fresh-save routing, legal-slot
 placement, runtime quality tiers, diagnostics, and the approved mobile UI are
 implemented in the current worktree. No deployment is implied by this plan.
 
+## Playtest findings and proposed remediation
+
+- [`0010-chicago-level1-playtest/00-findings.md`](0010-chicago-level1-playtest/00-findings.md) — three-persona scripted playtest of Level 1 (The Loop — Chicago): graphics + keyboard-control findings synthesis, with `requirements.md`, `design.md`, `tasks.md`, persona reports in `personas/`, and evidence in `shots/playtest/` (capture rig: `scripts/playtest-capture.cjs`). Status: findings complete; remediation proposed, not yet approved or implemented.
+
 ## Implemented remediation records
 
 These packages document decisions and acceptance evidence that are now in the
