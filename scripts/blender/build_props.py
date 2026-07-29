@@ -66,6 +66,7 @@ DOOR_GLASS = srgb('#38495e')     # fixed, dark ground-floor entrance glass
 ROOF = srgb('#8b93a2')           # fixed, roof deck — a distinct slate value
 AWNING = srgb('#e2725b')         # fixed, shopfront awning pop (Hole.io refs)
 BEACON = srgb('#ff3b30')         # fixed, mast-tip aviation light (matches propkit)
+WOOD = srgb('#8a6a4a')           # fixed, cedar water-tower tanks
 
 WHITE = (1.0, 1.0, 1.0)          # tintable, full strength
 CANOPY = (0.85, 0.85, 0.85)      # tintable, canopy body (tufts stay WHITE = lighter)
@@ -98,13 +99,13 @@ def apply_bevel(obj, width, segments=2):
     bpy.ops.object.modifier_apply(modifier=mod.name)
 
 
-def box(dims, loc, bevel=0.0, rot_x=0.0):
+def box(dims, loc, bevel=0.0, rot_x=0.0, rot_y=0.0):
     bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
     o = bpy.context.active_object
     o.scale = (dims[0], dims[1], dims[2])
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    if rot_x:
-        o.rotation_euler = (math.radians(rot_x), 0, 0)
+    if rot_x or rot_y:
+        o.rotation_euler = (math.radians(rot_x), math.radians(rot_y), 0)
         bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
     if bevel:
         apply_bevel(o, bevel)
@@ -352,6 +353,21 @@ BUILDING_BOXES = {
     'building_small': (7.14, 7.16, 11.00),
     'building_medium': (11.22, 11.22, 35.83),
     'building_large': (15.30, 15.30, 62.49),
+    # Archetype variants share their tier's box: tiers are rescaled at runtime
+    # onto the procedural bounding boxes, so consistency with the base three is
+    # what keeps gameplay radii identical across a district.
+    'building_small_brownstone': (7.14, 7.16, 11.00),
+    'building_small_storefront': (7.14, 7.16, 11.00),
+    'building_small_warehouse': (7.14, 7.16, 11.00),
+    'building_small_rowhouse': (7.14, 7.16, 11.00),
+    'building_medium_loft': (11.22, 11.22, 35.83),
+    'building_medium_deco': (11.22, 11.22, 35.83),
+    'building_medium_office': (11.22, 11.22, 35.83),
+    'building_medium_hotel': (11.22, 11.22, 35.83),
+    'building_large_slab': (15.30, 15.30, 62.49),
+    'building_large_setback': (15.30, 15.30, 62.49),
+    'building_large_curtain': (15.30, 15.30, 62.49),
+    'building_large_cornice': (15.30, 15.30, 62.49),
 }
 
 
@@ -368,21 +384,106 @@ def window_mullions(half, z, height, thickness=0.36, offset=1.65):
     ]
 
 
-def parapet_ring(outer, thickness, z_bottom, z_top):
+def parapet_ring(outer, thickness, z_bottom, z_top, color=None):
     """Roof parapet as FOUR perimeter slabs, not one solid box. A solid cap
     would bury the ROOF-coloured deck inside it and leave the deck's top face
     coplanar with the cap's — the ring keeps the roof colour and the roof plant
     visible from the game's high camera, exactly like the Hole.io references."""
+    if color is None:
+        color = WALL_LIGHT
     half = outer / 2
     inner = half - thickness
     h = z_top - z_bottom
     z = (z_top + z_bottom) / 2
     return [
-        (box((outer, thickness, h), (0, half - thickness / 2, z)), WALL_LIGHT),
-        (box((outer, thickness, h), (0, -(half - thickness / 2), z)), WALL_LIGHT),
-        (box((thickness, inner * 2, h), (half - thickness / 2, 0, z)), WALL_LIGHT),
-        (box((thickness, inner * 2, h), (-(half - thickness / 2), 0, z)), WALL_LIGHT),
+        (box((outer, thickness, h), (0, half - thickness / 2, z)), color),
+        (box((outer, thickness, h), (0, -(half - thickness / 2), z)), color),
+        (box((thickness, inner * 2, h), (half - thickness / 2, 0, z)), color),
+        (box((thickness, inner * 2, h), (-(half - thickness / 2), 0, z)), color),
     ]
+
+
+# --- Roof-furniture kit -------------------------------------------------------
+# The camera looks DOWN at rooftops most of the time, so these are the
+# highest-value parts in the pack. Everything takes the roof-deck top z and
+# builds upward; keep silhouettes chunky (they read at 60+ m camera distance).
+
+def parapet_with_cap(outer, thickness, z_bottom, z_top, overhang=0.18):
+    """Parapet ring plus a slightly wider cap ring on top — the cap overhang
+    is what makes the roofline read as a finished cornice from above."""
+    return (parapet_ring(outer, thickness, z_bottom, z_top)
+            + parapet_ring(outer + overhang * 2, thickness + overhang,
+                           z_top, z_top + 0.16))
+
+
+def ac_unit(x, y, z, w=1.40, d=1.10, h=0.60):
+    """Rooftop AC condenser: TRIM body with a dark fan grille on top."""
+    return [
+        (box((w, d, h), (x, y, z + h / 2)), TRIM),
+        (box((w * 0.72, d * 0.72, 0.12), (x, y, z + h + 0.05)), WALL_DARK),
+    ]
+
+
+def vent_pipe(x, y, z, h=0.90, r=0.16):
+    return [(cyl(r, h, (x, y, z + h / 2), vertices=6), TRIM)]
+
+
+def mushroom_vent(x, y, z, h=0.55, r=0.30):
+    return [
+        (cyl(r * 0.5, h, (x, y, z + h / 2), vertices=6), TRIM),
+        (cone(r, r * 0.35, r * 0.9, (x, y, z + h + r * 0.4), vertices=8), TRIM),
+    ]
+
+
+def water_tower(x, y, z, r=1.05, tank_h=1.80, leg_h=1.30):
+    """Classic cedar rooftop tank on legs — the single most valuable roof
+    silhouette for brick/older archetypes under a top-down camera."""
+    parts = []
+    for dx in (-r * 0.6, r * 0.6):
+        for dy in (-r * 0.6, r * 0.6):
+            parts.append((box((0.20, 0.20, leg_h), (x + dx, y + dy, z + leg_h / 2)), TRIM))
+    parts.append((box((r * 1.7, r * 1.7, 0.16), (x, y, z + leg_h + 0.08)), TRIM))
+    parts.append((cyl(r, tank_h, (x, y, z + leg_h + 0.16 + tank_h / 2), vertices=10), WOOD))
+    parts.append((cone(r * 1.08, 0.0, r * 0.95,
+                       (x, y, z + leg_h + 0.16 + tank_h + r * 0.45), vertices=10), WALL_DARK))
+    return parts
+
+
+def penthouse(x, y, z, w, d, h):
+    """Elevator/stair penthouse with a glazed clerestory band and roof cap."""
+    return [
+        (box((w, d, h), (x, y, z + h / 2)), WALL),
+        (box((w * 1.03, d * 1.03, h * 0.42), (x, y, z + h * 0.60)), WINDOW),
+        (box((w * 1.06, d * 1.06, 0.18), (x, y, z + h + 0.09)), ROOF),
+    ]
+
+
+def chimney(x, y, z, h=2.20, w=0.62):
+    return [
+        (box((w, w, h), (x, y, z + h / 2)), WALL_DARK),
+        (box((w * 1.35, w * 1.35, 0.24), (x, y, z + h + 0.12)), WALL_LIGHT),
+    ]
+
+
+def flag_pole(x, y, z, h=5.0):
+    return [
+        (cyl(0.09, h, (x, y, z + h / 2), vertices=6), TRIM),
+        (box((0.90, 0.06, 0.55), (x + 0.48, y, z + h - 0.45)), AWNING),
+        (sphere(0.14, (x, y, z + h + 0.08), segments=6, rings=4), TRIM),
+    ]
+
+
+def punched_row(w, z, h, n, y, win_w=0.90, win_h=None):
+    """A row of n punched WINDOW slabs on one facade at depth y (front or
+    back). Slightly proud of the wall so the grid reads at glancing angles."""
+    win_h = win_h or h
+    span = w * 0.8
+    step = span / (n - 1) if n > 1 else 0.0
+    parts = []
+    for i in range(n):
+        x = -span / 2 + i * step
+        parts.append((box((win_w, 0.14, win_h), (x, y, z)), WINDOW))
+    return parts
 
 
 def build_building_small():
@@ -414,13 +515,12 @@ def build_building_small():
     ]
     parts += window_mullions(3.05, 7.90, 1.75, thickness=0.34, offset=1.55)
     parts += [(box((6.30, 6.30, 0.40), (0, 0, 9.96)), ROOF)]
-    parts += parapet_ring(6.90, 0.40, 9.70, 10.62)
-    parts += [
-        (box((1.40, 1.15, 0.66), (1.20, -1.05, 10.49)), TRIM),
-        (box((1.05, 0.85, 0.12), (1.20, -1.05, 10.88)), WALL_DARK),
-        (box((1.90, 1.70, 0.90), (-1.20, 1.00, 10.55)), WALL),
-        (cyl(0.17, 0.78, (-0.10, -1.85, 10.49), vertices=6), TRIM),
-    ]
+    parts += parapet_with_cap(6.90, 0.40, 9.70, 10.62)
+    parts += ac_unit(1.20, -1.05, 10.16)
+    parts += ac_unit(2.00, 1.60, 10.16, 1.00, 0.85, 0.50)
+    parts += penthouse(-1.20, 1.00, 10.16, 1.90, 1.70, 0.90)
+    parts += vent_pipe(-0.10, -1.85, 10.16, 0.78)
+    parts += mushroom_vent(-2.10, -1.70, 10.16)
     prop = finish_prop(parts, 'building_small')
     return fit_to_box(prop, *BUILDING_BOXES['building_small'])
 
@@ -441,17 +541,19 @@ def build_building_medium():
         base = 4.32 + i * 3.82
         parts.append((box((10.90, 10.90, 2.30), (0, 0, base + 1.35)), WINDOW))
         parts.append((box((11.08, 11.08, 0.36), (0, 0, base + 3.60)), WALL_LIGHT))
+        parts += window_mullions(5.52, base + 1.35, 2.30, thickness=0.42, offset=2.70)
     parts += [
         (box((11.22, 11.22, 1.10), (0, 0, 23.85)), WALL_LIGHT),
         (box((7.30, 7.30, 4.60), (0, 0, 26.30)), WALL),
         (box((7.45, 7.45, 2.40), (0, 0, 26.30)), WINDOW),
         (box((7.10, 7.10, 0.36), (0, 0, 28.70)), ROOF),
     ]
-    parts += parapet_ring(7.70, 0.36, 28.40, 29.28)
+    parts += parapet_with_cap(7.70, 0.36, 28.40, 29.28)
+    parts += water_tower(2.00, -1.60, 28.88, r=0.95, tank_h=1.60, leg_h=1.10)
+    parts += ac_unit(-2.20, 1.60, 28.88, 1.90, 1.50, 0.95)
+    parts += penthouse(-1.90, -2.00, 28.88, 2.30, 2.10, 1.40)
+    parts += vent_pipe(0.60, 2.60, 28.88, 1.00)
     parts += [
-        (cyl(1.00, 1.70, (2.00, -1.60, 29.73), vertices=8), TRIM),
-        (box((1.90, 1.50, 0.95), (-2.20, 1.60, 29.36)), TRIM),
-        (box((2.30, 2.10, 1.40), (-1.90, -2.00, 29.58)), WALL),
         (cyl(0.34, 6.00, (0, 0, 32.28), vertices=6), TRIM),
         (sphere(0.55, (0, 0, 35.28), segments=6, rings=3), BEACON),
     ]
@@ -486,15 +588,405 @@ def build_building_large():
         (box((8.55, 8.55, 2.40), (0, 0, 48.50)), WINDOW),
         (box((8.20, 8.20, 0.40), (0, 0, 50.62)), ROOF),
     ]
-    parts += parapet_ring(8.90, 0.40, 50.30, 51.24)
+    parts += parapet_with_cap(12.10, 0.36, 46.10, 46.90)
+    parts += ac_unit(4.60, 4.60, 46.60, 1.60, 1.30, 0.70)
+    parts += ac_unit(-4.60, -4.60, 46.60, 1.40, 1.15, 0.60)
+    parts += vent_pipe(-4.60, 4.40, 46.60, 1.00)
+    parts += parapet_with_cap(8.90, 0.40, 50.30, 51.24)
+    parts += ac_unit(2.20, -1.80, 50.82, 2.30, 1.80, 1.10)
+    parts += penthouse(-2.00, 1.70, 50.82, 2.60, 2.30, 1.70)
+    parts += vent_pipe(2.60, 2.40, 50.82, 1.10)
     parts += [
-        (box((2.30, 1.80, 1.10), (2.20, -1.80, 51.37)), TRIM),
-        (box((2.60, 2.30, 1.70), (-2.00, 1.70, 51.67)), WALL),
         (cyl(0.42, 10.50, (0, 0, 56.49), vertices=6), TRIM),
         (sphere(0.75, (0, 0, 61.74), segments=6, rings=3), BEACON),
     ]
     prop = finish_prop(parts, 'building_large')
     return fit_to_box(prop, *BUILDING_BOXES['building_large'])
+
+
+# --- Building archetype variants ----------------------------------------------
+# Same tier boxes, same color contract (WALL*/WHITE = tintable facade ladder;
+# WINDOW/TRIM/DOOR_GLASS/ROOF/AWNING/WOOD/BEACON = fixed). Each archetype gets
+# a distinct top-down signature: roof furniture and roofline first, cornices
+# and setbacks second, street-level read third.
+
+def build_building_small_brownstone():
+    """Chicago brownstone walk-up: raised basement + stoop, two proud bay
+    windows per upper floor, a two-step cornice, and a chimney cluster."""
+    parts = [
+        (box((5.60, 5.60, 1.10), (0, 0, 0.55)), WALL_DARK),      # raised basement
+        (box((5.60, 5.60, 8.30), (0, 0, 5.25)), WALL),           # body, z 1.10..9.40
+        # Stoop: three steps up to the raised entrance on the +Y front.
+        (box((1.60, 0.55, 0.36), (-1.50, 3.08, 0.18)), WALL_LIGHT),
+        (box((1.60, 0.55, 0.72), (-1.50, 2.85, 0.36)), WALL_LIGHT),
+        (box((1.60, 0.60, 1.10), (-1.50, 2.60, 0.55)), WALL_LIGHT),
+        (box((1.10, 0.16, 2.10), (-1.50, 2.86, 2.15)), DOOR_GLASS),
+        (box((1.40, 0.24, 0.26), (-1.50, 2.90, 3.32)), WALL_LIGHT),  # door lintel
+    ]
+    # Bay windows: two proud bays per upper floor on the front, glazed faces.
+    for fi in range(2):
+        z = 3.40 + fi * 3.00
+        for bx in (-1.45, 1.45):
+            parts.append((box((1.70, 0.55, 2.40), (bx, 2.98, z)), WALL))
+            parts.append((box((1.50, 0.12, 1.90), (bx, 3.26, z)), WINDOW))
+            parts.append((box((1.80, 0.62, 0.22), (bx, 2.99, z + 1.30)), WALL_LIGHT))
+    # Side/rear floor bands + basement windows.
+    parts.append((box((5.68, 5.68, 0.55), (0, 0, 0.60)), WINDOW))
+    for fi in range(3):
+        parts.append((box((5.70, 5.70, 1.20), (0, 0, 2.40 + fi * 2.60)), WINDOW))
+    # Two-step cornice + roof deck.
+    parts += [
+        (box((6.30, 6.30, 0.50), (0, 0, 9.55)), WALL_LIGHT),
+        (box((5.95, 5.95, 0.35), (0, 0, 9.95)), WALL_LIGHT),
+        (box((5.60, 5.60, 0.30), (0, 0, 10.05)), ROOF),
+    ]
+    # Chimney cluster + a vent (the brownstone roof signature).
+    parts += chimney(-1.80, -1.80, 10.20, h=2.20)
+    parts += chimney(1.80, -1.60, 10.20, h=1.70)
+    parts += chimney(0.20, 1.80, 10.20, h=1.95, w=0.50)
+    parts += vent_pipe(2.10, 1.20, 10.20, 0.80)
+    prop = finish_prop(parts, 'building_small_brownstone')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_small_storefront():
+    """Corner storefront: glazed shopfront band with two awnings and a sign
+    band, punched windows above, parapet with cap, small AC plant."""
+    parts = [
+        (box((6.40, 6.40, 3.40), (0, 0, 1.70)), WALL_DARK),
+        (box((6.55, 6.55, 2.20), (0, 0, 1.75)), WINDOW),          # recessed shopfront
+        (box((1.30, 0.20, 2.60), (-1.90, 3.24, 1.30)), DOOR_GLASS),
+        (box((1.30, 0.20, 2.60), (1.90, 3.24, 1.30)), DOOR_GLASS),
+        (box((2.60, 0.75, 0.20), (-1.90, 3.30, 2.95), rot_x=-18.0), AWNING),
+        (box((2.60, 0.75, 0.20), (1.90, 3.30, 2.95), rot_x=-18.0), AWNING),
+        (box((6.70, 6.70, 0.55), (0, 0, 3.72)), TRIM),            # sign band
+        (box((6.10, 6.10, 5.40), (0, 0, 6.72)), WALL),            # upper floors
+    ]
+    for fi in range(2):
+        z = 5.45 + fi * 2.60
+        parts += punched_row(6.10, z, 1.50, 4, 3.09, win_w=1.00)
+        parts.append((box((6.20, 6.20, 1.30), (0, 0, z)), WINDOW))  # side/rear band
+    parts += [
+        (box((6.80, 6.80, 0.45), (0, 0, 9.62)), WALL_LIGHT),      # cornice
+        (box((6.10, 6.10, 0.30), (0, 0, 9.92)), ROOF),
+    ]
+    parts += parapet_with_cap(6.80, 0.36, 9.75, 10.45)
+    parts += ac_unit(1.60, -1.40, 10.07)
+    parts += ac_unit(-1.70, 1.30, 10.07, 1.10, 0.90, 0.50)
+    parts += vent_pipe(0.20, -2.10, 10.07, 0.75)
+    prop = finish_prop(parts, 'building_small_storefront')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_small_warehouse():
+    """Brick loft/warehouse: flat front with loading dock + door, two tall
+    bands with mullions, and a three-tooth sawtooth roof with rear vents."""
+    parts = [
+        (box((6.60, 6.60, 8.60), (0, 0, 4.30)), WALL),            # tall brick body
+        (box((6.72, 6.72, 2.00), (0, 0, 3.20)), WINDOW),
+        (box((6.72, 6.72, 2.00), (0, 0, 6.20)), WINDOW),
+    ]
+    parts += window_mullions(3.44, 3.20, 2.00, thickness=0.40, offset=1.70)
+    parts += window_mullions(3.44, 6.20, 2.00, thickness=0.40, offset=1.70)
+    parts += [
+        # Loading dock + door on the front.
+        (box((3.20, 0.70, 0.80), (0.80, 3.55, 0.40)), WALL_DARK),
+        (box((2.40, 0.18, 3.00), (0.80, 3.34, 2.30)), TRIM),
+        (box((2.80, 0.26, 0.30), (0.80, 3.36, 3.95)), WALL_LIGHT),
+        (box((1.10, 0.16, 2.20), (-2.20, 3.34, 1.10)), DOOR_GLASS),  # side door
+        (box((6.80, 6.80, 0.40), (0, 0, 8.72)), WALL_LIGHT),      # top band
+        # Flat rear strip carries the roof deck + vents.
+        (box((6.60, 1.30, 0.24), (0, 2.65, 8.98)), ROOF),
+    ]
+    # Sawtooth roof: three sloped slabs (rot about Y) + vertical glazing at
+    # each tooth's high edge. Teeth span y -3.30..2.00, leaving the rear strip.
+    for i in range(3):
+        x = -2.20 + i * 2.20
+        parts.append((box((2.45, 5.30, 0.24), (x, -0.65, 9.75), rot_y=24.0), WALL_LIGHT))
+        parts.append((box((0.20, 5.30, 1.00), (x + 1.05, -0.65, 9.55)), WINDOW))
+    for x in (-2.00, 0.00, 2.00):
+        parts += mushroom_vent(x, 2.65, 9.10)
+    prop = finish_prop(parts, 'building_small_warehouse')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_small_rowhouse():
+    """Narrow rowhouse pair: two bodies at different heights with a party wall
+    rising between them — the stepped party-wall silhouette — plus chimneys."""
+    parts = [
+        (box((3.30, 5.60, 8.60), (-1.70, 0, 4.30)), WALL),
+        (box((3.30, 5.60, 9.80), (1.70, 0, 4.90)), WALL),
+        (box((0.35, 5.60, 10.40), (0.0, 0, 5.20)), WALL_DARK),    # party wall
+    ]
+    for cx, top in ((-1.70, 8.60), (1.70, 9.80)):
+        for fi in range(2):
+            parts.append((box((3.42, 5.70, 1.10), (cx, 0, 3.20 + fi * 2.40)), WINDOW))
+        parts += [
+            (box((1.00, 0.16, 2.20), (cx - 0.80, 2.84, 1.10)), DOOR_GLASS),
+            (box((0.90, 0.50, 0.30), (cx - 0.80, 3.02, 0.15)), WALL_LIGHT),  # stoop
+            (box((1.10, 0.14, 1.30), (cx + 0.90, 2.83, 1.50)), WINDOW),      # parlour win
+            (box((3.60, 5.90, 0.42), (cx, 0, top + 0.21)), WALL_LIGHT),      # cornice
+            (box((3.30, 5.60, 0.24), (cx, 0, top + 0.54)), ROOF),
+        ]
+        parts += chimney(cx + 0.90, -1.80, top + 0.66, h=1.80)
+        parts += chimney(cx - 1.00, 1.60, top + 0.66, h=1.40, w=0.50)
+    prop = finish_prop(parts, 'building_small_rowhouse')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_medium_loft():
+    """Brick loft (Rookery/Monadnock feel): punched window grid with pier
+    relief, strong two-step cornice, water tower + penthouse on the roof."""
+    parts = [
+        (box((10.40, 10.40, 3.60), (0, 0, 1.80)), WALL_DARK),
+        (box((10.55, 10.55, 2.20), (0, 0, 1.85)), WINDOW),
+        (box((2.20, 0.26, 2.80), (0, 5.24, 1.40)), DOOR_GLASS),
+        (box((10.90, 10.90, 0.60), (0, 0, 3.90)), WALL_LIGHT),    # base cornice
+        (box((10.20, 10.20, 25.20), (0, 0, 16.80)), WALL),        # body to 29.40
+    ]
+    for fi in range(8):
+        z = 5.60 + fi * 3.00
+        parts += punched_row(10.20, z, 1.70, 5, 5.14, win_w=1.15)
+        parts += punched_row(10.20, z, 1.70, 5, -5.14, win_w=1.15)
+        parts.append((box((10.30, 10.30, 1.30), (0, 0, z)), WINDOW))  # side band
+    # Pier relief: thin vertical piers between window columns, front/back.
+    for x in (-3.06, 0.0, 3.06):
+        parts.append((box((0.40, 0.20, 24.20), (x, 5.16, 16.80)), WALL_DARK))
+        parts.append((box((0.40, 0.20, 24.20), (x, -5.16, 16.80)), WALL_DARK))
+    # Strong cornice: two stacked proud slabs + roof deck.
+    parts += [
+        (box((10.90, 10.90, 0.70), (0, 0, 29.75)), WALL_LIGHT),
+        (box((10.60, 10.60, 0.45), (0, 0, 30.30)), WALL_LIGHT),
+        (box((10.20, 10.20, 0.30), (0, 0, 30.65)), ROOF),
+    ]
+    parts += water_tower(2.60, -2.40, 30.80, r=1.15, tank_h=2.00, leg_h=1.50)
+    parts += penthouse(-2.60, 2.20, 30.80, 2.60, 2.20, 1.60)
+    parts += ac_unit(2.40, 2.60, 30.80)
+    parts += vent_pipe(-0.20, -3.60, 30.80, 1.20)
+    parts += mushroom_vent(-3.40, -1.00, 30.80)
+    prop = finish_prop(parts, 'building_medium_loft')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_medium_deco():
+    """Art-deco mid-rise: vertical pier emphasis, two stepped setbacks near
+    the top, crown bands + pyramid fin, sparse roof plant."""
+    parts = [
+        (box((10.60, 10.60, 3.40), (0, 0, 1.70)), WALL_DARK),
+        (box((10.75, 10.75, 2.10), (0, 0, 1.75)), WINDOW),
+        (box((2.40, 0.26, 2.80), (0, 5.41, 1.40)), DOOR_GLASS),
+        (box((3.40, 0.50, 0.40), (0, 5.30, 3.10)), WALL_LIGHT),   # entry canopy
+        (box((10.20, 10.20, 21.60), (0, 0, 14.40)), WALL),        # shaft to 25.20
+    ]
+    # Vertical piers running the full shaft on all four faces.
+    for c in (-4.20, -2.10, 0.0, 2.10, 4.20):
+        parts.append((box((0.55, 0.30, 21.60), (c, 5.16, 14.40)), WALL_LIGHT))
+        parts.append((box((0.55, 0.30, 21.60), (c, -5.16, 14.40)), WALL_LIGHT))
+        parts.append((box((0.30, 0.55, 21.60), (5.16, c, 14.40)), WALL_LIGHT))
+        parts.append((box((0.30, 0.55, 21.60), (-5.16, c, 14.40)), WALL_LIGHT))
+    for fi in range(6):
+        parts.append((box((10.30, 10.30, 1.80), (0, 0, 6.00 + fi * 3.20)), WINDOW))
+    # Setbacks + crown.
+    parts += [
+        (box((11.00, 11.00, 0.80), (0, 0, 25.60)), WALL_LIGHT),   # crown band 1
+        (box((8.20, 8.20, 4.20), (0, 0, 27.90)), WALL),           # setback 1
+        (box((8.35, 8.35, 2.20), (0, 0, 27.70)), WINDOW),
+        (box((8.70, 8.70, 0.55), (0, 0, 30.20)), WALL_LIGHT),     # crown band 2
+        (box((5.60, 5.60, 3.00), (0, 0, 31.95)), WALL),           # setback 2
+        (box((5.75, 5.75, 1.60), (0, 0, 31.80)), WINDOW),
+        (box((6.00, 6.00, 0.50), (0, 0, 33.65)), WALL_LIGHT),     # crown
+        (cone(1.20, 0.30, 1.60, (0, 0, 34.70), vertices=4), WALL_LIGHT),  # fin
+    ]
+    # Sparse plant on the first setback terrace.
+    parts += ac_unit(4.50, 4.50, 26.00, 1.00, 0.85, 0.50)
+    parts += vent_pipe(-4.50, -4.50, 26.00, 0.80)
+    prop = finish_prop(parts, 'building_medium_deco')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_medium_office():
+    """Postwar office block: geometry ribbon-window banding (glass band +
+    proud ledge per floor), parapet with cap, and a six-unit roof AC farm."""
+    parts = [
+        (box((10.60, 10.60, 3.20), (0, 0, 1.60)), WALL_DARK),
+        (box((10.75, 10.75, 2.00), (0, 0, 1.65)), WINDOW),
+        (box((2.40, 0.26, 2.60), (0, 5.41, 1.30)), DOOR_GLASS),
+        (box((11.00, 11.00, 0.55), (0, 0, 3.48)), WALL_LIGHT),
+        (box((10.30, 10.30, 26.60), (0, 0, 16.90)), WALL),        # slab to 30.20
+    ]
+    for fi in range(9):
+        z = 5.20 + fi * 2.80
+        parts.append((box((10.55, 10.55, 1.70), (0, 0, z)), WINDOW))
+        parts.append((box((10.75, 10.75, 0.30), (0, 0, z + 1.25)), WALL_LIGHT))
+    parts.append((box((10.30, 10.30, 0.30), (0, 0, 30.35)), ROOF))
+    parts += parapet_with_cap(10.80, 0.40, 30.10, 31.00)
+    # AC farm: 2x3 condenser grid + vents.
+    for ix in (-3.00, 0.0, 3.00):
+        for iy in (-2.60, 1.00):
+            parts += ac_unit(ix, iy, 30.50, 1.50, 1.20, 0.65)
+    parts += vent_pipe(3.20, 3.40, 30.50, 1.10)
+    parts += mushroom_vent(-3.20, 3.40, 30.50)
+    prop = finish_prop(parts, 'building_medium_office')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_medium_hotel():
+    """Hotel mid-rise: regular punched grid with balcony strips on the front,
+    entrance canopy, penthouse + water tower on the roof."""
+    parts = [
+        (box((10.40, 10.40, 3.60), (0, 0, 1.80)), WALL_DARK),
+        (box((10.55, 10.55, 2.20), (0, 0, 1.85)), WINDOW),
+        (box((2.60, 0.26, 2.90), (0, 5.24, 1.45)), DOOR_GLASS),
+        (box((4.20, 1.10, 0.35), (0, 5.60, 3.20)), TRIM),         # entry canopy
+        (box((10.80, 10.80, 0.55), (0, 0, 3.90)), WALL_LIGHT),
+        (box((10.00, 10.00, 25.20), (0, 0, 16.80)), WALL),        # body to 29.40
+    ]
+    for fi in range(7):
+        z = 5.60 + fi * 3.40
+        parts += punched_row(10.00, z, 1.80, 6, 5.04, win_w=1.00)
+        parts.append((box((9.20, 0.55, 0.18), (0, 5.20, z - 1.15)), WALL_LIGHT))  # balcony
+        parts.append((box((10.10, 10.10, 1.40), (0, 0, z)), WINDOW))  # side/rear band
+    parts += [
+        (box((10.70, 10.70, 0.70), (0, 0, 29.75)), WALL_LIGHT),   # cornice
+        (box((10.00, 10.00, 0.30), (0, 0, 30.25)), ROOF),
+    ]
+    parts += parapet_ring(10.70, 0.38, 29.95, 30.75)
+    parts += penthouse(-2.40, 1.80, 30.40, 2.80, 2.40, 1.80)
+    parts += water_tower(2.60, -2.20, 30.40, r=1.05, tank_h=1.90, leg_h=1.40)
+    parts += ac_unit(2.60, 2.80, 30.40, 1.20, 1.00, 0.55)
+    prop = finish_prop(parts, 'building_medium_hotel')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_large_slab():
+    """Modernist slab tower (Mies feel): clean curtain mass with an expressed
+    mullion grid of shallow ribs, and a rooftop mechanical screen."""
+    parts = [
+        (box((14.60, 14.60, 5.60), (0, 0, 2.80)), WALL_DARK),
+        (box((14.75, 14.75, 3.40), (0, 0, 2.60)), WINDOW),
+        (box((3.20, 0.28, 3.80), (0, 7.32, 1.90)), DOOR_GLASS),
+        (box((15.10, 15.10, 0.70), (0, 0, 5.85)), WALL_LIGHT),
+        (box((13.55, 13.55, 44.00), (0, 0, 28.20)), WALL),        # core
+        (box((13.80, 13.80, 44.00), (0, 0, 28.20)), WINDOW),      # glass skin
+    ]
+    # Expressed mullions: shallow vertical ribs, 7 per face.
+    for i in range(7):
+        c = -6.00 + i * 2.00
+        parts.append((box((0.32, 0.26, 44.00), (c, 6.95, 28.20)), WALL))
+        parts.append((box((0.32, 0.26, 44.00), (c, -6.95, 28.20)), WALL))
+        parts.append((box((0.26, 0.32, 44.00), (6.95, c, 28.20)), WALL))
+        parts.append((box((0.26, 0.32, 44.00), (-6.95, c, 28.20)), WALL))
+    # Spandrel lines.
+    for i in range(8):
+        parts.append((box((13.95, 13.95, 0.30), (0, 0, 9.00 + i * 5.40)), WALL))
+    # Rooftop mechanical screen (a tall dark parapet ring hides the plant).
+    parts.append((box((13.80, 13.80, 0.35), (0, 0, 50.35)), ROOF))
+    parts += parapet_ring(13.00, 0.50, 50.50, 53.00, WALL_DARK)
+    parts += parapet_ring(13.30, 0.60, 53.00, 53.18, WALL_LIGHT)  # screen cap
+    prop = finish_prop(parts, 'building_large_slab')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_large_setback():
+    """Setback skyscraper (Board of Trade feel): ribbed shaft, two massing
+    setbacks, crown with pyramid cap, terrace plant, and a flag pole."""
+    parts = [
+        (box((14.80, 14.80, 5.00), (0, 0, 2.50)), WALL_DARK),
+        (box((14.95, 14.95, 3.00), (0, 0, 2.40)), WINDOW),
+        (box((3.40, 0.28, 4.00), (0, 7.44, 2.00)), DOOR_GLASS),
+        (box((15.30, 15.30, 0.80), (0, 0, 5.40)), WALL_LIGHT),
+        (box((13.60, 13.60, 24.00), (0, 0, 17.80)), WALL),        # shaft to 29.80
+    ]
+    # Vertical ribs on the shaft.
+    for i in range(5):
+        c = -5.40 + i * 2.70
+        parts.append((box((0.50, 0.30, 24.00), (c, 6.85, 17.80)), WALL_LIGHT))
+        parts.append((box((0.50, 0.30, 24.00), (c, -6.85, 17.80)), WALL_LIGHT))
+        parts.append((box((0.30, 0.50, 24.00), (6.85, c, 17.80)), WALL_LIGHT))
+        parts.append((box((0.30, 0.50, 24.00), (-6.85, c, 17.80)), WALL_LIGHT))
+    for fi in range(6):
+        parts.append((box((13.75, 13.75, 2.20), (0, 0, 8.40 + fi * 3.70)), WINDOW))
+    # Setback 1, setback 2, crown.
+    parts += [
+        (box((14.20, 14.20, 0.90), (0, 0, 30.25)), WALL_LIGHT),
+        (box((10.40, 10.40, 12.00), (0, 0, 36.70)), WALL),
+        (box((10.55, 10.55, 9.60), (0, 0, 36.50)), WINDOW),
+        (box((10.90, 10.90, 0.70), (0, 0, 43.00)), WALL_LIGHT),
+        (box((7.40, 7.40, 8.00), (0, 0, 47.30)), WALL),
+        (box((7.55, 7.55, 6.00), (0, 0, 47.20)), WINDOW),
+        (box((7.90, 7.90, 0.60), (0, 0, 51.55)), WALL_LIGHT),
+        (box((5.20, 5.20, 3.20), (0, 0, 53.45)), WALL),
+        (box((5.60, 5.60, 0.55), (0, 0, 55.30)), WALL_LIGHT),
+        (cone(2.20, 0.40, 2.40, (0, 0, 56.80), vertices=4), WALL_LIGHT),
+    ]
+    # Terrace plant on both setbacks.
+    parts += ac_unit(5.60, 4.60, 30.70, 1.40, 1.10, 0.60)
+    parts += ac_unit(-5.60, -4.60, 30.70, 1.40, 1.10, 0.60)
+    parts += vent_pipe(4.60, -5.60, 30.70, 1.00)
+    parts += ac_unit(4.40, 4.40, 43.35, 1.00, 0.90, 0.55)
+    parts += flag_pole(0, 0, 55.57, h=5.50)
+    prop = finish_prop(parts, 'building_large_setback')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_large_curtain():
+    """Glass curtain tower: smooth glass mass with a dense vertical fin
+    rhythm, thin roof cap, minimal roof plant."""
+    parts = [
+        (box((14.40, 14.40, 4.60), (0, 0, 2.30)), WALL_DARK),
+        (box((14.55, 14.55, 2.80), (0, 0, 2.20)), WINDOW),
+        (box((3.00, 0.26, 3.60), (0, 7.24, 1.80)), DOOR_GLASS),
+        (box((13.40, 13.40, 48.00), (0, 0, 28.60)), WALL),        # core
+        (box((13.70, 13.70, 48.00), (0, 0, 28.60)), WINDOW),      # glass skin
+    ]
+    # Vertical fins, 9 per face.
+    for i in range(9):
+        c = -6.40 + i * 1.60
+        parts.append((box((0.24, 0.30, 48.00), (c, 6.92, 28.60)), WALL_LIGHT))
+        parts.append((box((0.24, 0.30, 48.00), (c, -6.92, 28.60)), WALL_LIGHT))
+        parts.append((box((0.30, 0.24, 48.00), (6.92, c, 28.60)), WALL_LIGHT))
+        parts.append((box((0.30, 0.24, 48.00), (-6.92, c, 28.60)), WALL_LIGHT))
+    parts += [
+        (box((13.90, 13.90, 0.50), (0, 0, 52.85)), WALL_LIGHT),   # thin cap
+        (box((13.40, 13.40, 0.30), (0, 0, 53.20)), ROOF),
+    ]
+    parts += penthouse(-3.00, -2.60, 53.35, 3.20, 2.60, 1.80)
+    parts += ac_unit(3.20, 2.80, 53.35, 1.30, 1.10, 0.60)
+    parts += vent_pipe(3.40, -3.20, 53.35, 0.90)
+    prop = finish_prop(parts, 'building_large_curtain')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
+
+
+def build_building_large_cornice():
+    """Masonry high-rise with cornice: punched grid shaft, strong horizontal
+    cornice bands at two heights, and two water towers on the roof."""
+    parts = [
+        (box((14.60, 14.60, 5.20), (0, 0, 2.60)), WALL_DARK),
+        (box((14.75, 14.75, 3.20), (0, 0, 2.50)), WINDOW),
+        (box((3.20, 0.28, 4.00), (0, 7.34, 2.00)), DOOR_GLASS),
+        (box((15.30, 15.30, 0.90), (0, 0, 5.65)), WALL_LIGHT),    # base cornice
+        (box((13.80, 13.80, 42.00), (0, 0, 27.10)), WALL),        # shaft to 48.10
+    ]
+    for fi in range(11):
+        z = 7.80 + fi * 3.65
+        parts += punched_row(13.80, z, 1.90, 6, 6.94, win_w=1.30)
+        parts += punched_row(13.80, z, 1.90, 6, -6.94, win_w=1.30)
+        parts.append((box((13.90, 13.90, 1.50), (0, 0, z)), WINDOW))  # side band
+    # Cornice bands at two heights + roof deck.
+    parts += [
+        (box((14.60, 14.60, 0.80), (0, 0, 28.00)), WALL_LIGHT),   # mid cornice
+        (box((14.90, 14.90, 1.00), (0, 0, 48.55)), WALL_LIGHT),   # crown cornice
+        (box((14.20, 14.20, 0.60), (0, 0, 49.35)), WALL_LIGHT),
+        (box((13.80, 13.80, 0.35), (0, 0, 49.80)), ROOF),
+    ]
+    parts += parapet_ring(14.60, 0.42, 49.60, 50.50)
+    parts += water_tower(-3.60, -3.00, 49.98, r=1.25, tank_h=2.20, leg_h=1.60)
+    parts += water_tower(3.40, 2.80, 49.98, r=1.05, tank_h=1.90, leg_h=1.40)
+    parts += ac_unit(3.60, -3.40, 49.98, 1.40, 1.20, 0.60)
+    parts += vent_pipe(-0.50, 3.80, 49.98, 1.20)
+    parts += mushroom_vent(-3.80, 3.60, 49.98)
+    prop = finish_prop(parts, 'building_large_cornice')
+    return fit_to_box(prop, *BUILDING_BOXES[prop.name])
 
 
 BUILDERS = [
@@ -507,6 +999,18 @@ BUILDERS = [
     build_building_small,
     build_building_medium,
     build_building_large,
+    build_building_small_brownstone,
+    build_building_small_storefront,
+    build_building_small_warehouse,
+    build_building_small_rowhouse,
+    build_building_medium_loft,
+    build_building_medium_deco,
+    build_building_medium_office,
+    build_building_medium_hotel,
+    build_building_large_slab,
+    build_building_large_setback,
+    build_building_large_curtain,
+    build_building_large_cornice,
 ]
 
 

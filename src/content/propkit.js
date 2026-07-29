@@ -1136,7 +1136,7 @@ function groupBounds(group, THREE) {
 //     palette-base kinds like the car — otherwise), keeping the
 //     vertexColors x instanceColor contract intact.
 // Normals are inverse-transpose scaled (diagonal scale => divide + normalize).
-function bakeModelPart(THREE, modelGeo, targetBox, tintHex) {
+function bakeModelPart(THREE, modelGeo, targetBox, tintHex, facade = null) {
   const pos = modelGeo.attributes.position.array;
   const nrm = modelGeo.attributes.normal ? modelGeo.attributes.normal.array : null;
   const col = modelGeo.attributes.color ? modelGeo.attributes.color.array : null;
@@ -1145,33 +1145,42 @@ function bakeModelPart(THREE, modelGeo, targetBox, tintHex) {
   const sy = (targetBox.max.y - targetBox.min.y) / Math.max(1e-6, src.max.y - src.min.y);
   const sz = (targetBox.max.z - targetBox.min.z) / Math.max(1e-6, src.max.z - src.min.z);
   const tint = resolveColor(THREE, tintHex);
+  const spanZ = Math.max(1e-6, targetBox.max.z - targetBox.min.z);
+  const spanX = Math.max(1e-6, targetBox.max.x - targetBox.min.x);
+  const spanY = Math.max(1e-6, targetBox.max.y - targetBox.min.y);
+  const frac1 = (t) => ((t % 1) + 1) % 1;
 
   const count = pos.length / 3;
   const positions = new Array(pos.length);
   const normals = new Array(pos.length);
   const colors = new Array(pos.length);
+  const uvs = new Array(count * 2);
   for (let i = 0; i < count; i += 1) {
     positions[i * 3] = targetBox.min.x + (pos[i * 3] - src.min.x) * sx;
     positions[i * 3 + 1] = targetBox.min.y + (pos[i * 3 + 1] - src.min.y) * sy;
     positions[i * 3 + 2] = targetBox.min.z + (pos[i * 3 + 2] - src.min.z) * sz;
+    let nx = 0;
+    let ny = 1;
+    let nz = 0;
     if (nrm) {
-      const nx = nrm[i * 3] / sx;
-      const ny = nrm[i * 3 + 1] / sy;
-      const nz = nrm[i * 3 + 2] / sz;
+      nx = nrm[i * 3] / sx;
+      ny = nrm[i * 3 + 1] / sy;
+      nz = nrm[i * 3 + 2] / sz;
       const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-      normals[i * 3] = nx / len;
-      normals[i * 3 + 1] = ny / len;
-      normals[i * 3 + 2] = nz / len;
-    } else {
-      normals[i * 3] = 0;
-      normals[i * 3 + 1] = 1;
-      normals[i * 3 + 2] = 0;
+      nx /= len;
+      ny /= len;
+      nz /= len;
     }
+    normals[i * 3] = nx;
+    normals[i * 3 + 1] = ny;
+    normals[i * 3 + 2] = nz;
+    let greyscale = true;
     if (col) {
       const r = col[i * 3];
       const g = col[i * 3 + 1];
       const b = col[i * 3 + 2];
-      if (Math.abs(r - g) < 0.02 && Math.abs(g - b) < 0.02) {
+      greyscale = Math.abs(r - g) < 0.02 && Math.abs(g - b) < 0.02;
+      if (greyscale) {
         colors[i * 3] = r * tint.r;
         colors[i * 3 + 1] = r * tint.g;
         colors[i * 3 + 2] = r * tint.b;
@@ -1185,21 +1194,59 @@ function bakeModelPart(THREE, modelGeo, targetBox, tintHex) {
       colors[i * 3 + 1] = tint.g;
       colors[i * 3 + 2] = tint.b;
     }
+    // Facade-textured bake (photoreal set, textures.js). SEAM / Blender
+    // contract: only GREYSCALE (tintable) vertices take the facade art —
+    // side faces get a box-projected UV into the facade region, upward
+    // faces tile the roof strip by world position — and go vertex-white so
+    // the texture shows true colors. FIXED non-greyscale vertices (roof
+    // furniture, trim, signage) keep their authored color and land on
+    // TRIM_UV, so detail parts never smear facade windows across
+    // themselves. The procedural merge's facade remap assumes box-like
+    // massing; this box projection is the defensive equivalent for authored
+    // geometry whose UVs sit wherever the Blender export left them.
+    let uv = TRIM_UV;
+    if (facade && greyscale) {
+      if (facade.tileWorld && ny > 0.7) {
+        uv = [
+          facade.u + (1 - facade.u) * frac1(positions[i * 3] / facade.tileWorld),
+          1 - frac1(positions[i * 3 + 2] / facade.tileWorld) * facade.vSpan,
+        ];
+      } else if (Math.abs(ny) < 0.7) {
+        const across = Math.abs(nx) >= Math.abs(nz)
+          ? (positions[i * 3 + 2] - targetBox.min.z) / spanZ
+          : (positions[i * 3] - targetBox.min.x) / spanX;
+        uv = [across * facade.u, (positions[i * 3 + 1] - targetBox.min.y) / spanY];
+      }
+      if (uv !== TRIM_UV) {
+        colors[i * 3] = 1;
+        colors[i * 3 + 1] = 1;
+        colors[i * 3 + 2] = 1;
+      }
+    }
+    uvs[i * 2] = uv[0];
+    uvs[i * 2 + 1] = uv[1];
   }
   const indices = modelGeo.index ? Array.from(modelGeo.index.array) : null;
-  return { count, positions, normals, colors, indices };
+  return { count, positions, normals, colors, uvs, indices };
 }
 
 function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
   const descriptor = resolveVisualArchetype(visualId, kind);
   // Blender prop pack: prefer the authored model when this descriptor maps to
   // one AND the kit loaded (main.js setModelKit); otherwise the procedural
-  // bake — silent fallback, identical gameplay.
-  const modelName = blenderModelKit && !descriptor.cityObject
-    ? (PROP_MODELS.byVisualId[descriptor.id] || PROP_MODELS.byKind[descriptor.gameplayKind] || null)
+  // bake — silent fallback, identical gameplay. Per-visualId models (the
+  // Chicago archetype set, modelkit.js byVisualId) win over the kind-level
+  // model; a byVisualId model that failed to load simply falls through to
+  // the kind-level one, and city-authored objects are eligible too (their
+  // procedural bake supplies the normalization envelope below).
+  const visualModelName = PROP_MODELS.byVisualId[descriptor.id] || null;
+  const kindModelName = PROP_MODELS.byKind[descriptor.gameplayKind] || null;
+  const modelName = blenderModelKit
+    ? (blenderModelKit[visualModelName] ? visualModelName
+      : blenderModelKit[kindModelName] ? kindModelName : null)
     : null;
-  const modelGeo = modelName ? blenderModelKit[modelName] || null : null;
-  const key = `${descriptor.id}|${accentColorHex}|${opts.facadeTextured ? 'tex' : 'plain'}|${opts.paletteBase ? 'palette' : 'accent'}|${modelGeo ? 'kit' : 'proc'}`;
+  const modelGeo = modelName ? blenderModelKit[modelName] : null;
+  const key = `${descriptor.id}|${accentColorHex}|${opts.facadeTextured ? 'tex' : 'plain'}|${opts.paletteBase ? 'palette' : 'accent'}|${modelName || 'proc'}`;
   const cached = mergedGeometryCache.get(key);
   if (cached) return cached;
 
@@ -1208,22 +1255,39 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
   if (modelGeo) {
     // Measure the procedural BASE build (no recipe cue) to get the exact
     // footprint/height the gameplay math was tuned against, then normalize
-    // the model onto it. The archetype's recipe cue (car cap/bar/mast...) is
-    // still merged on top from an otherwise-empty group, so metro variant
-    // silhouettes survive the model swap.
-    const variant = descriptor.tint !== undefined || descriptor.flavor !== undefined
-      ? { tint: descriptor.tint, flavor: descriptor.flavor }
-      : undefined;
-    const procBase = createPropMesh(descriptor.gameplayKind, THREE, accentColorHex, variant, {
-      paletteBase: !!opts.paletteBase,
-    });
-    procBase.updateMatrixWorld(true);
+    // the model onto it. For street-prop archetypes the recipe cue (car
+    // cap/bar/mast...) is still merged on top from an otherwise-empty group,
+    // so metro variant silhouettes survive the model swap; city-authored
+    // objects instead let the model replace their whole procedural bake
+    // (buildCityObject only supplies the normalization envelope).
     const tintHex = descriptor.tint !== undefined ? descriptor.tint : accentColorHex;
-    modelPart = bakeModelPart(THREE, modelGeo, groupBounds(procBase, THREE), tintHex);
-    group = new THREE.Group();
-    applyVisualRecipe(group, THREE, descriptor, resolveColor(THREE, accentColorHex), {
-      paletteBase: !!opts.paletteBase,
-    });
+    let targetBox;
+    if (descriptor.cityObject) {
+      const procBase = buildCityObject(THREE, descriptor, resolveColor(THREE, accentColorHex), {
+        paletteBase: !!opts.paletteBase,
+      });
+      procBase.updateMatrixWorld(true);
+      targetBox = groupBounds(procBase, THREE);
+      group = new THREE.Group();
+    } else {
+      const variant = descriptor.tint !== undefined || descriptor.flavor !== undefined
+        ? { tint: descriptor.tint, flavor: descriptor.flavor }
+        : undefined;
+      const procBase = createPropMesh(descriptor.gameplayKind, THREE, accentColorHex, variant, {
+        paletteBase: !!opts.paletteBase,
+      });
+      procBase.updateMatrixWorld(true);
+      targetBox = groupBounds(procBase, THREE);
+      group = new THREE.Group();
+      applyVisualRecipe(group, THREE, descriptor, resolveColor(THREE, accentColorHex), {
+        paletteBase: !!opts.paletteBase,
+      });
+    }
+    // Photoreal facades survive the model swap: tintable model vertices are
+    // remapped into the facade/roof regions (see bakeModelPart); with no
+    // roof strip the facade region spans the whole texture (`{ u: 1 }`).
+    const facade = opts.facadeTextured ? (opts.facadeRegion || { u: 1 }) : null;
+    modelPart = bakeModelPart(THREE, modelGeo, targetBox, tintHex, facade);
   } else {
     group = createVisualPropMesh(descriptor.id, kind, THREE, accentColorHex, {
       paletteBase: !!opts.paletteBase,
@@ -1299,7 +1363,7 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
       normals.push(modelPart.normals[i]);
       colors.push(modelPart.colors[i]);
     }
-    for (let i = 0; i < modelPart.count; i += 1) uvs.push(TRIM_UV[0], TRIM_UV[1]);
+    for (let i = 0; i < modelPart.count; i += 1) uvs.push(modelPart.uvs[i * 2], modelPart.uvs[i * 2 + 1]);
     if (modelPart.indices) {
       for (let i = 0; i < modelPart.indices.length; i += 1) indices.push(modelPart.indices[i] + vertexOffset);
     } else {

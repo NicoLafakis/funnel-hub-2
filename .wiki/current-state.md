@@ -26,6 +26,17 @@
 - Reference-led building profiles include four-sided window bays, storefront
   bases, rooftop plant, and stepped tower crowns; chase heading uses a 0.16s
   critically damped angular spring for continuous left/right follow velocity.
+- The Blender prop pack now carries 15 building archetypes (upgraded base
+  small/medium/large plus brownstone, storefront, warehouse, rowhouse, loft,
+  deco, office, hotel, slab, setback, curtain, cornice) with dense roof
+  furniture — capped parapets, water towers, penthouses, AC plant. Chicago
+  building visualIds map per-archetype in `modelkit.js` (per-model graceful
+  degradation; base pack stays all-or-nothing), and Level 1's building mix
+  drops the legacy flat-box baselines in favor of the full authored roster
+  (~114 instanced groups). Group/draw-call budgets are measured targets, not
+  ceilings: `scripts/perf-probe.cjs` (real GPU via `--use-angle=default`)
+  measures L1 at ~73-79fps avg / ~1.0M tris / ~390 calls on an Intel iGPU at
+  1600×900 uncapped.
 - Signature Chicago profiles override that shared recipe where identity
   matters: Willis uses bundled-tube setbacks and twin antennas, Marina City
   uses paired balcony drums, CNA keeps its red slab, Tribune gets a taller

@@ -12,7 +12,13 @@ Every asset any of us authors ends up in a `<canvas>` on a phone over a cell con
 This is the constraint the Blender skills do not know about. It is not negotiable and it
 is not "optimized later" — it is a design input at the first blockout.
 
-**Default budgets** (a scene may exceed these only with an explicit, stated reason):
+**Budgets are measured targets, not ceilings** (owner directive, Flywheel V2): do NOT
+pre-limit art or archetype count to stay under these numbers. Build for quality,
+desktop-first, then measure the real frame cost in the browser (draw calls, tris in
+view, frame time) and report it. A budget is only exceeded when measurement says so —
+never assumed. Only then do we optimize (instancing, LOD, compression).
+
+**Default budgets**:
 
 | Metric | Desktop | Mobile |
 |---|---|---|

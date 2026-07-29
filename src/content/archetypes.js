@@ -318,7 +318,9 @@ export const DISTRICT_CATALOGS = Object.freeze(allCatalogs);
 // exclusively to Level 1. Icon-sheet objects are interactive props; rail-sheet
 // objects are assembled semantically by city-context instead of masquerading
 // as road vehicles or freestanding buildings. The 186
-// shared urban objects are divided across Levels 2-10 (21 max per level).
+// shared urban objects are divided across Levels 2-10 (21 max per level);
+// the shared BUILDINGS additionally join Level 1's mix (see below) so every
+// L1 building maps to an authored archetype model.
 // Other areas retain their existing catalogs until researched city rosters
 // are authored.
 const chicagoSpecific = CITY_OBJECTS.filter((entry) => entry.cityId === 'chicago');
@@ -333,15 +335,27 @@ const CHICAGO_AREA_CATALOGS = Object.freeze(Object.fromEntries(Array.from({ leng
     : sharedUrban.filter((entry, index) => index % 9 === 10 - district);
   const base = allCatalogs['harbor-metropolis'][district];
   const mixes = Object.freeze(Object.fromEntries(GAMEPLAY_KINDS.map((kind) => {
-    // Chicago icons supply the built environment. Non-building tiers retain
-    // the complete seeded legacy mix so cars/buses/bikes stay varied after
-    // train and track modules move to their authored rail context.
-    const baseIds = district === 1 && !kind.startsWith('building')
-      ? base.mixes[kind]
+    // Chicago icons supply the built environment. District 1 buildings drop
+    // the legacy harbor-metropolis baselines entirely — those read as flat
+    // palette-tinted boxes next to the photoreal/authored Chicago roster —
+    // and instead borrow the shared-urban BUILDINGS on top of the icons
+    // (they still appear in their own round-robin districts too). Every
+    // district-1 building visual therefore maps to an authored Blender
+    // archetype model. Non-building tiers keep the full legacy mix so
+    // cars/buses/bikes stay varied after train and track modules move to
+    // their authored rail context. Later districts retain the
+    // single-baseline legacy mix; their visual identity comes from the
+    // round-robined shared-urban introductions.
+    const baseIds = district === 1
+      ? (kind.startsWith('building') ? [] : base.mixes[kind])
       : base.mixes[kind].slice(0, 1);
+    const d1SharedBuildings = district === 1 && kind.startsWith('building')
+      ? sharedUrban.filter((entry) => entry.gameplayKind === kind).map((entry) => entry.id)
+      : [];
     return [kind, Object.freeze([
       ...baseIds,
       ...slice.filter((entry) => entry.gameplayKind === kind).map((entry) => entry.id),
+      ...d1SharedBuildings,
     ])];
   })));
   return [district, Object.freeze({ mixes, introduces: Object.freeze(district === 1 ? [] : slice.map((entry) => entry.id)) })];

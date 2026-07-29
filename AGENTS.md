@@ -50,6 +50,10 @@ import map, **no bundler, no backend**, localStorage saves, static deploy.
   working with those files missing (procedural fallback).
 - `node scripts/screenshot-city.cjs` — visual check: boots level 1 (dev
   server must be running) and writes gameplay screenshots to `shots/`.
+- `node scripts/perf-probe.cjs` — frame-cost measurement on a real GPU
+  (Playwright + `--use-angle=default`): draw calls, tris, avg/p95 frame time
+  at spawn, mid-city, vista, and a 10s city walk. Budgets are measured
+  targets, not ceilings (`.claude/agents/_shared/3d-pipeline-contract.md`).
 
 ## Conventions
 

@@ -997,14 +997,22 @@ async function main() {
       areaOneCityObjects.size === cityObjectsMod.CITY_OBJECTS.length);
     check('both chicago-loop reference sheets belong exclusively to Area 1 Level 1',
       levelOneCityObjects.size === cityObjectsMod.CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'icon').length
+        + [...levelOneCityObjects].filter((id) => id.startsWith('cityobj_shared_')).length
         && cityObjectsMod.CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'icon')
           .every((entry) => levelOneCityObjects.has(entry.id))
         && levelOneContextObjects.size === cityObjectsMod.CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'rail').length
         && cityObjectsMod.CHICAGO_CITY_OBJECTS.filter((entry) => entry.sheet === 'rail')
           .every((entry) => levelOneContextObjects.has(entry.id))
-        && [...levelOneCityObjects].every((id) => id.startsWith('cityobj_chicago_'))
+        && [...levelOneCityObjects].every((id) => id.startsWith('cityobj_chicago_')
+          // L1 also borrows shared-urban BUILDINGS so every building maps to
+          // an authored archetype model (no flat legacy boxes downtown).
+          || (id.startsWith('cityobj_shared_')
+            && archetypesMod.VISUAL_ARCHETYPES[id].gameplayKind.startsWith('building')))
         && laterChicagoObjects.size === 0);
-    check(`city-authored levels stay <=60 opaque groups (observed ${maxChicagoGroups})`, maxChicagoGroups <= 60);
+    // Group budget is a measured-target guard, not an art ceiling (owner
+    // directive; .claude 3d-pipeline-contract §1). Desktop budget is <=150
+    // draw calls total; props get 130 of them. Optimize only on measurement.
+    check(`city-authored levels stay <=130 opaque groups (observed ${maxChicagoGroups})`, maxChicagoGroups <= 130);
     check(`legacy levels retain the <=24 opaque-group budget (observed ${maxLegacyGroups})`, maxLegacyGroups <= 24);
     check('all 100 layouts keep building tiers out of the initial chase-camera corridor',
       generateAllLevels().every((level) => districtsMod.generateDistrict(level).props.every((p) => {

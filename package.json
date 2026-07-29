@@ -14,7 +14,7 @@
     "test:golden": "node scripts/golden-test.cjs",
     "test:play": "node scripts/play-bot.cjs",
     "ship": "node scripts/ship.js",
-    "models": "\"C:/Program Files/Blender Foundation/Blender 5.1/blender.exe\" -b --factory-startup --python scripts/blender/build_props.py && node scripts/glb-to-js.js",
+    "models": "call \"C:/Program Files/Blender Foundation/Blender 5.2/blender.exe\" -b --factory-startup --python scripts/blender/build_props.py && node scripts/glb-to-js.js",
     "vendor-three": "node scripts/vendor-three.js",
     "postinstall": "node scripts/vendor-three.js"
   },

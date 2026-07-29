@@ -185,12 +185,17 @@ for (let n = 1; n <= LEVELS; n += 1) {
   }
 
   const allRects = layout.props.map((q) => ({ r: propRect(q), kind: q.kind, visualId: q.visualId }));
-  const landmarkPhysical = landmarkBoundsFor(level.metro.landmarkType);
+  // Mirror the game's own override (main.js, districts.js): the authored
+  // Chicago pilot renders mega-spire whatever the metro descriptor says, so
+  // the audit must measure against the same landmark the placement pass
+  // cleared — otherwise L1 is gated against a landmark that is never built.
+  const landmarkType = level.authoredCity === 'chicago-loop' ? 'mega-spire' : level.metro.landmarkType;
+  const landmarkPhysical = landmarkBoundsFor(landmarkType);
   if (landmarkPhysical) {
     const scale = Math.min(1, capstoneGateRadius(level) / landmarkPhysical.boundingRadius);
     allRects.push({
-      kind: level.metro.landmarkType,
-      visualId: level.metro.landmarkType,
+      kind: landmarkType,
+      visualId: landmarkType,
       r: {
         x: layout.landmark.x,
         z: layout.landmark.z,

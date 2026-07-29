@@ -1009,12 +1009,12 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "maxZ": 4.121600151062012
   },
   "cityobj_shared_brick_office_block": {
-    "minX": -0.7049999833106995,
-    "minY": 1.1175870645585562e-10,
-    "minZ": -0.7049999833106995,
-    "maxX": 0.7049999833106995,
-    "maxY": 0.5698000192642212,
-    "maxZ": 0.7049999833106995
+    "minX": -5.610000133514404,
+    "minY": -4.7683716530855236e-8,
+    "minZ": -5.610000133514404,
+    "maxX": 5.610000133514404,
+    "maxY": 23.90399932861328,
+    "maxZ": 5.610000133514404
   },
   "cityobj_shared_bridge_approach": {
     "minX": -3.569999933242798,
@@ -1625,12 +1625,12 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "maxZ": 5.610000133514404
   },
   "cityobj_shared_modern_glass_office_tower": {
-    "minX": -0.7049999833106995,
+    "minX": -7.650000095367432,
     "minY": 1.1175870645585562e-10,
-    "minZ": -0.7049999833106995,
-    "maxX": 0.7049999833106995,
-    "maxY": 0.5698000192642212,
-    "maxZ": 0.7049999833106995
+    "minZ": -7.650000095367432,
+    "maxX": 7.650000095367432,
+    "maxY": 51.45000076293945,
+    "maxZ": 7.650000095367432
   },
   "cityobj_shared_museum": {
     "minX": -5.610000133514404,
@@ -2265,12 +2265,12 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "maxZ": 0.7049999833106995
   },
   "cityobj_shared_townhouse_row": {
-    "minX": -0.7049999833106995,
-    "minY": 1.1175870645585562e-10,
-    "minZ": -0.7049999833106995,
-    "maxX": 0.7049999833106995,
-    "maxY": 0.5698000192642212,
-    "maxZ": 0.7049999833106995
+    "minX": -3.569999933242798,
+    "minY": -1.1920929132713809e-8,
+    "minZ": -3.5799999237060547,
+    "maxX": 3.569999933242798,
+    "maxY": 8.359999656677246,
+    "maxZ": 4.121600151062012
   },
   "cityobj_shared_traffic_island_module": {
     "minX": -0.7049999833106995,
