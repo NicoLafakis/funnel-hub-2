@@ -40,6 +40,9 @@ import map, **no bundler, no backend**, localStorage saves, static deploy.
   JS data modules the runtime actually loads (`src/content/modelkit.js`).
 - `npm run build` / `npm run ship` — dist build / pre-deploy checklist
   (ship never deploys by default)
+- `node scripts/pixellab.js` — PixelLab art pipeline (key from `.pixellab`,
+  gitignored; never print it). `scripts/gen-photoreal-tiles.sh` batch-
+  generates the Level 1 photoreal set (see `.wiki/texture-map-manifest.md`).
 - `node scripts/leonardo.js` — art pipeline (key from `.leonardo-key`,
   gitignored; never print it). Generated city surfaces live in
   `assets/textures/` (building facades per tier + ground zones) and are

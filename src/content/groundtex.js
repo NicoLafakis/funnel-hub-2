@@ -840,7 +840,7 @@ export function bakeGroundTexture(layout, opts = {}) {
   // Optional photographic surfaces (textures.js). Kept working, but now the
   // pattern transform is expressed in WORLD units like everything else: one
   // source tile spans TILE_WORLD world units on every level.
-  const TILE_WORLD = { asphalt: 72, curb: 54, plaza: 110, promenade: 96, pavement: 96, grass: 140 };
+  const TILE_WORLD = { asphalt: 72, curb: 54, plaza: 110, promenade: 96, pavement: 96, grass: 140, parkPath: 48 };
   // The wash pushes a photographic pattern toward the zone's flat tint; at
   // full strength it erases the photo it sits on (asphalt 0.72). Quarter
   // strength keeps zones on the same value ladder without flattening them.
@@ -912,7 +912,7 @@ export function bakeGroundTexture(layout, opts = {}) {
         if (chicagoLoop) {
           const insetX = hw * 0.48;
           const insetZ = hd * 0.48;
-          ctx.strokeStyle = cssOf.sand;
+          ctx.strokeStyle = patterns.parkPath || cssOf.sand;
           ctx.lineWidth = 9;
           ctx.beginPath();
           ctx.moveTo(-hw, 0); ctx.lineTo(hw, 0);
@@ -937,7 +937,7 @@ export function bakeGroundTexture(layout, opts = {}) {
           ctx.fill();
         } else {
           const pathZ = (rng() * 2 - 1) * hd * 0.5;
-          ctx.strokeStyle = cssOf.sand;
+          ctx.strokeStyle = patterns.parkPath || cssOf.sand;
           ctx.lineWidth = 11;
           ctx.beginPath();
           ctx.moveTo(-hw, pathZ - hd * 0.12);

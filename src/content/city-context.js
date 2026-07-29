@@ -7,7 +7,7 @@ function material(THREE, color, roughness = 0.82) {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness: 0 });
 }
 
-export function createCityContext(THREE, descriptor) {
+export function createCityContext(THREE, descriptor, opts = {}) {
   const group = new THREE.Group();
   group.name = `city-context-${descriptor && descriptor.id ? descriptor.id : 'none'}`;
   if (!descriptor || descriptor.id !== 'chicago-loop') return group;
@@ -24,12 +24,30 @@ export function createCityContext(THREE, descriptor) {
     group.add(mesh);
   }
 
+  // Photoreal water tiles (textures.js, canvases via main.js). One clone per
+  // plane so each sets its own world-scale repeat; flat color fallback keeps
+  // the old look when the tiles are missing.
+  const waterCanvases = { river: opts.waterRiver || null, lake: opts.waterLake || null };
+  const WATER_TILE_WORLD = 96;
   const waterMat = new THREE.MeshStandardMaterial({
     color: 0x397e9f, roughness: 0.34, metalness: 0.05,
   });
   for (const [i, rec] of (descriptor.water || []).entries()) {
     const geo = new THREE.PlaneGeometry(rec.w, rec.d);
-    const mesh = new THREE.Mesh(geo, waterMat);
+    const src = waterCanvases[rec.lake ? 'lake' : 'river'];
+    let mat = waterMat;
+    if (src && typeof document !== 'undefined') {
+      const tex = new THREE.CanvasTexture(src);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(rec.w / WATER_TILE_WORLD, rec.d / WATER_TILE_WORLD);
+      tex.anisotropy = 4;
+      mat = new THREE.MeshStandardMaterial({
+        color: 0xffffff, roughness: 0.34, metalness: 0.05, map: tex,
+      });
+    }
+    const mesh = new THREE.Mesh(geo, mat);
     mesh.name = rec.lake ? 'lake-michigan-context' : `chicago-river-${i}`;
     mesh.rotation.x = -Math.PI / 2;
     mesh.rotation.z = rec.rotY || 0;

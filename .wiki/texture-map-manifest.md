@@ -2,107 +2,107 @@
 
 Goal: close the gap between the current flat look and
 `assets/references/target-in_game-graphics-city.png` (dense, realistically
-surfaced city). The parked set in `assets/textures/photoreal/` (7 tiles) is a
-start, not a set. This is the full shopping list.
+surfaced city). The parked set in `assets/textures/photoreal/` (7 tiles) was a
+start, not a set. This is the full shopping list; statuses updated 2026-07-28
+after the PixelLab generation batch.
 
-Generation: `node scripts/leonardo.js gen "<prompt>" 512 512 <out>` (key in
-`.leonardo-key`, never print it). All tiles **512×512, seamless, top-down for
-ground / straight-on elevation for facades, no watermark margins** (the
-loader crops edges; edge-to-edge art needs no crop). Save as real PNGs — the
-current parked files are JPEGs with a `.png` extension (works in browsers,
-breaks tooling assumptions).
+Generation: `node scripts/pixellab.js gen "<prompt>" 400 400 <out> --view
+"high top-down"|side` (key in `.pixellab`, gitignored; never print it).
+Batch script: `scripts/gen-photoreal-tiles.sh` (skips existing files).
+Leonardo remains available (`scripts/leonardo.js`). All tiles **400² or
+512², seamless, top-down for ground / straight-on elevation for facades**.
+Generator elevations arrive on a white background — the loader auto-trims
+near-white margins (`autoTrimFacade` in textures.js), so "edge to edge"
+failures get a texture-worded regen ("full-frame architectural texture, no
+building silhouette, no sky, no trees"), not a manual crop.
 
-Consumption points (what code change each class needs):
+Consumption points (what code change each class needed):
 
 - **Ground tiles** → `src/content/groundtex.js` pattern map (`TILE_WORLD`,
-  `fillZone`). Already wired; adding a zone = one manifest entry.
+  `fillZone`; wash at quarter strength when a pattern fills). Park paths are
+  pattern strokes through grass blocks.
 - **Facades** → `src/content/textures.js` manifest → propkit instanced
-  building material. One map per instanced group today; variants need
-  per-group selection (groups are keyed by `visualId`, so variant assignment
-  is seeded per identity — no instancing rework, just a map picker).
-- **Roof tiles** → NEW. Roof faces currently sample the white trim swatch
-  (TRIM_UV). The chase camera looks down, so roofs are ~30% of frame; mapping
-  top faces to a roof texture is the single biggest win after facades.
-  Requires a second material or UV region in propkit's merged building
-  geometry.
-- **Water** → NEW. Chicago river/lakefront context is render-only flat
-  geometry today; a repeating water tile + slight opacity is enough.
+  building material. Variants load as an ARRAY per tier; instancing.js picks
+  one per group by stable key hash — zero extra draw calls against the
+  60-opaque-group ceiling.
+- **Roof tiles** → appended as a strip beside each facade canvas
+  (`bakePhotorealFacade`); propkit maps roof faces by world position
+  (`facadeRegion` UV split, 32u tile).
+- **Water** → `src/content/city-context.js` planes (96u repeat), canvases
+  passed from main.js.
 
 ## A. Ground tiles (seamless, top-down)
 
 | # | File | Zone / use | Tile world | Status |
 |---|------|-----------|-----------|--------|
-| A1 | `ground-asphalt.png` | `asphalt` carriageways | 72u | HAVE (photoreal/asphalt.png) |
-| A2 | `ground-asphalt-worn.png` | avenue/arterial variant w/ patches | 72u | TODO |
-| A3 | `ground-sidewalk.png` | `curb` kerb rings | 54u | HAVE (photoreal/sidewalk.png) |
-| A4 | `ground-pavement.png` | `pavement` open block ground (largest area!) | 96u | TODO — today flat fill, no pattern at all |
-| A5 | `ground-promenade.png` | `promenade` warm avenue paving | 96u | TODO |
-| A6 | `ground-plaza.png` | `plaza` civic pavers | 110u | HAVE (photoreal/plaza.png) |
-| A7 | `ground-grass.png` | `grass` parks | 140u | HAVE (photoreal/grass.png) |
-| A8 | `ground-park-path.png` | park path network (replaces painted sand strokes) | 96u | TODO |
-| A9 | `ground-parking-lot.png` | asphalt w/ baked stall lines, for pocket lots | 72u | TODO (layout has no lots yet — pair with a districts.js change or defer) |
+| A1 | `asphalt.png` | `asphalt` carriageways | 72u | HAVE |
+| A2 | `ground-asphalt-worn.png` | avenue variant | 72u | DROPPED — 2 gens, both directional streaks; A1 reused |
+| A3 | `sidewalk.png` | `curb` kerb rings | 54u | HAVE |
+| A4 | `ground-pavement.png` | `pavement` open block ground | 96u | GENERATED, wired |
+| A5 | `ground-promenade.png` | `promenade` warm avenue paving | 96u | GENERATED, wired |
+| A6 | `plaza.png` | `plaza` civic pavers | 110u | HAVE |
+| A7 | `grass.png` | `grass` parks | 140u | HAVE |
+| A8 | `ground-park-path.png` | park path strokes | 48u | GENERATED, wired |
+| A9 | `ground-parking-lot.png` | stall-lined lot asphalt | 72u | DEFERRED — layout has no lots yet |
 
-## B. Facade tiles (straight-on elevation, windows edge-to-edge, no margins)
+## B. Facade tiles (straight-on elevation, auto-trimmed by the loader)
 
-Small tier (storefront street wall — the target's defining feature, 160
-instances on Level 1). Each needs a shopfront band at the bottom:
-
-| # | File | Look | Status |
-|---|------|------|--------|
-| B1 | `facade-small-brick-red.png` | red brick, 2-3 storey, dark shopfront | HAVE (photoreal/facade-small.png, needs margin crop) |
-| B2 | `facade-small-brick-brown.png` | brown/Chicago common brick, awning band | TODO |
-| B3 | `facade-small-limestone.png` | buff limestone, terra-cotta cornice | TODO |
-| B4 | `facade-small-painted.png` | painted storefront (sage/teal), canvas awnings | TODO |
-| B5 | `facade-small-ironspot.png` | dark iron-spot brick, stone base | TODO |
-
-Medium tier (mid-rise step-behind):
+Small tier (storefront street wall; fit: cover):
 
 | # | File | Look | Status |
 |---|------|------|--------|
-| B6 | `facade-medium-concrete.png` | concrete balcony grid | HAVE (photoreal/facade-medium.png) |
-| B7 | `facade-medium-brick-loft.png` | warehouse loft, large industrial bays | TODO |
-| B8 | `facade-medium-limestone.png` | buff office block, punched windows | TODO |
-| B9 | `facade-medium-brick-bay.png` | brick apartment w/ bay windows | TODO |
+| B1 | `facade-small.png` | red brick storefront | HAVE (base) |
+| B2 | `facade-small-brick-brown.png` | brown brick, dark awning band | GENERATED |
+| B3 | `facade-small-limestone.png` | buff limestone, terra-cotta cornice | GENERATED |
+| B4 | `facade-small-painted.png` | sage green, striped awnings | GENERATED |
+| B5 | `facade-small-ironspot.png` | dark iron-spot brick, stone base | GENERATED |
 
-Large tier (outer skyline):
+Medium tier (copies: 2 tiling):
 
 | # | File | Look | Status |
 |---|------|------|--------|
-| B10 | `facade-large-glass-blue.png` | blue-green glass curtain grid | HAVE (photoreal/facade-large.png) |
-| B11 | `facade-large-glass-dark.png` | smoked/black glass (Willis read) | TODO |
-| B12 | `facade-large-concrete-glass.png` | buff concrete frame + glass bands | TODO |
-| B13 | `facade-large-violet.png` | violet/purple glass landmark tower (target's signature) | TODO |
+| B6 | `facade-medium.png` | concrete balcony grid | HAVE (base) |
+| B7 | `facade-medium-brick-loft.png` | warehouse loft, industrial bays | GENERATED |
+| B8 | `facade-medium-limestone.png` | buff office, punched windows | GENERATED |
+| B9 | `facade-medium-brick-bay.png` | brick apartment w/ bays | GENERATED |
 
-Aspect note: face h/w is 1.57/2.18/2.80 by tier (textures.js header). Loader
-should tile/crop per tier so windows stay square in world units — do NOT
-stretch a square tile 0..1.
+Large tier (copies: 3 tiling):
 
-## C. Roof tiles (seamless, top-down)
+| # | File | Look | Status |
+|---|------|------|--------|
+| B10 | `facade-large.png` | blue-green glass curtain grid | HAVE (base) |
+| B11 | `facade-large-glass-dark.png` | smoked black glass | GENERATED (2nd attempt — 1st was a tower illustration) |
+| B12 | `facade-large-concrete-glass.png` | concrete frame + blue glass bands | GENERATED |
+| B13 | `facade-large-violet.png` | violet glass landmark tower | GENERATED (2nd attempt — 1st had trees/skyline) |
+
+## C. Roof tiles (seamless, top-down; strip-appended per tier)
 
 | # | File | Use | Status |
 |---|------|-----|--------|
-| C1 | `roof-gravel.png` | tar-and-gravel w/ HVAC specks, low-rise default | TODO |
-| C2 | `roof-concrete.png` | light concrete w/ expansion joints, mid-rise | TODO |
-| C3 | `roof-dark.png` | dark membrane, tower default | TODO |
-| C4 | `roof-green.png` | sedum/green roof accent (park-adjacent blocks) | TODO (optional) |
+| C1 | `roof-gravel.png` | small tier default | GENERATED, wired |
+| C2 | `roof-concrete.png` | medium tier default | GENERATED, wired |
+| C3 | `roof-dark.png` | large tier default | GENERATED, wired |
+| C4 | `roof-green.png` | sedum accent | GENERATED, unwired (no placement rule yet) |
 
 ## D. Water & specials
 
 | # | File | Use | Status |
 |---|------|-----|--------|
-| D1 | `water-river.png` | Chicago river edges (context), subtle ripple | TODO |
-| D2 | `water-lake.png` | eastern lakefront, calmer/bluer | TODO (can share D1 tinted) |
+| D1 | `water-river.png` | Chicago river context planes | GENERATED, wired |
+| D2 | `water-lake.png` | lakefront context plane | GENERATED, wired |
 
 ## Deliberately NOT on the list
 
-- Normal/roughness maps — the pipeline is albedo-only MeshStandardMaterial;
-  lighting carries depth. Don't add maps the renderer can't use.
-- Tree/vehicle/prop textures — those are geometry (Blender kit + instanced
-  bakes), they read fine.
-- Night/emissive facade variants — emissive tint already exists; skip.
+- Normal/roughness maps — the pipeline is albedo-only MeshStandardMaterial.
+- Tree/vehicle/prop textures — those are geometry and read fine.
+- Night/emissive facade variants — emissive tint already exists.
 - Crosswalks/lane paint — separate geometry already, crisper than any bake.
 
-## Totals
+## Known remaining gaps
 
-9 ground + 13 facades + 4 roofs + 2 water = **28 tiles** (4 ground + 3
-facades already exist → **21 to generate**, ~21 Leonardo gens at 512²).
+- Rooftop parts that are NOT the tagged facade base box (city-object rooftop
+  plant, garage skylights) still sample the white trim swatch.
+- Per-instance (not per-visual-ID) facade variety is impossible without
+  splitting instanced groups; the 60-group ceiling forbids it.
+- Pixellab asphalt prompts produce directional streaks; stick with the
+  parked asphalt.png or try Leonardo for road variants.

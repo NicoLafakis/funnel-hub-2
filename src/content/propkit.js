@@ -1242,6 +1242,10 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
   const n = new THREE.Vector3();
   const normalMatrix = new THREE.Matrix3();
   const white = new THREE.Color(1, 1, 1);
+  // Facade-region split (textures.js photoreal set): side faces sample
+  // u < region.u, roof faces tile the appended strip by world position.
+  const region = opts.facadeRegion || null;
+  const frac1 = (t) => ((t % 1) + 1) % 1;
 
   group.traverse((node) => {
     if (!node.isMesh || !node.geometry || !node.geometry.attributes.position) return;
@@ -1267,8 +1271,16 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
       }
       if (isFacade) colors.push(1, 1, 1);
       else colors.push(color.r, color.g, color.b);
-      if (isFacade && uvAttr && Math.abs(n.y) < 0.7) uvs.push(uvAttr.getX(i), uvAttr.getY(i));
-      else uvs.push(TRIM_UV[0], TRIM_UV[1]);
+      if (isFacade && uvAttr && Math.abs(n.y) < 0.7) {
+        const fu = region ? uvAttr.getX(i) * region.u : uvAttr.getX(i);
+        uvs.push(fu, uvAttr.getY(i));
+      } else if (isFacade && region && n.y > 0.7) {
+        uvs.push(
+          region.u + (1 - region.u) * frac1(v.x / region.tileWorld),
+          1 - frac1(v.z / region.tileWorld) * region.vSpan,
+        );
+      } else uvs.push(TRIM_UV[0], TRIM_UV[1]);
+      // (trim fallback handled by the final else above)
     }
     if (geo.index) {
       for (let i = 0; i < geo.index.count; i += 1) indices.push(geo.index.getX(i) + vertexOffset);
@@ -1368,6 +1380,7 @@ export function createInstancedPropField(kind, count, THREE, accentColorHex, opt
   const bakeAccent = paletteBase ? '#ffffff' : accentColorHex;
   const geometry = mergedKindGeometry(THREE, kind, bakeAccent, descriptor.id, {
     facadeTextured: !!opts.map,
+    facadeRegion: (opts.map && opts.map.userData && opts.map.userData.facadeRegion) || null,
     paletteBase,
   });
   // White base material: the real per-part colors live in the vertex colors;

@@ -53,13 +53,49 @@ export const PHOTOREAL_TEXTURE_MANIFEST = {
     'building-medium': { src: 'assets/textures/photoreal/facade-medium.png', copies: 2 },
     'building-large': { src: 'assets/textures/photoreal/facade-large.png', copies: 3 },
   },
+  // Roof tile per tier, drawn into a square strip appended beside the facade
+  // art (bakePhotorealFacade). The chase camera looks DOWN, so roofs are
+  // ~30% of frame; without these every roof samples the flat trim swatch.
+  roofs: {
+    'building-small': 'assets/textures/photoreal/roof-gravel.png',
+    'building-medium': 'assets/textures/photoreal/roof-concrete.png',
+    'building-large': 'assets/textures/photoreal/roof-dark.png',
+  },
+  // Variant arts per tier, loaded alongside the base facade into an ARRAY
+  // (instancing.js picks one per instanced group by stable key hash, so
+  // variety costs zero extra draw calls — the 60-group ceiling stands).
+  // Same fit/tiling and roof strip as the tier's base entry.
+  facadeVariants: {
+    'building-small': [
+      'assets/textures/photoreal/facade-small-brick-brown.png',
+      'assets/textures/photoreal/facade-small-limestone.png',
+      'assets/textures/photoreal/facade-small-painted.png',
+      'assets/textures/photoreal/facade-small-ironspot.png',
+    ],
+    'building-medium': [
+      'assets/textures/photoreal/facade-medium-brick-loft.png',
+      'assets/textures/photoreal/facade-medium-limestone.png',
+      'assets/textures/photoreal/facade-medium-brick-bay.png',
+    ],
+    'building-large': [
+      'assets/textures/photoreal/facade-large-glass-dark.png',
+      'assets/textures/photoreal/facade-large-concrete-glass.png',
+      'assets/textures/photoreal/facade-large-violet.png',
+    ],
+  },
   ground: {
     asphalt: 'assets/textures/photoreal/asphalt.png',
     curb: 'assets/textures/photoreal/sidewalk.png',
-    pavement: 'assets/textures/photoreal/sidewalk.png',
-    promenade: 'assets/textures/photoreal/sidewalk.png',
+    pavement: 'assets/textures/photoreal/ground-pavement.png',
+    promenade: 'assets/textures/photoreal/ground-promenade.png',
     plaza: 'assets/textures/photoreal/plaza.png',
     grass: 'assets/textures/photoreal/grass.png',
+    // Not groundtex zones — consumed by city-context.js for the Loop's
+    // render-only river/lake planes.
+    waterRiver: 'assets/textures/photoreal/water-river.png',
+    waterLake: 'assets/textures/photoreal/water-lake.png',
+    // Park path network (groundtex strokes it through grass blocks).
+    parkPath: 'assets/textures/photoreal/ground-park-path.png',
   },
 };
 
@@ -71,6 +107,14 @@ const PHOTOREAL_FACE_ASPECT = {
   'building-medium': 2.182,
   'building-large': 2.800,
 };
+
+// Roof strip: appended to the RIGHT of the facade art, one square tile of
+// ROOF_STRIP_PX at the canvas top. propkit maps roof faces into it by world
+// position so the tile repeats every ROOF_TILE_WORLD world units regardless
+// of footprint, and remaps side faces into the remaining u range
+// (texture.userData.facadeRegion carries the split to the merge).
+const ROOF_STRIP_PX = 256;
+const ROOF_TILE_WORLD = 32;
 
 // UV point every non-facade building part samples (propkit.js). Must sit
 // inside the swatch stamped into every facade canvas (bakeFacade and
@@ -264,6 +308,42 @@ function loadImage(src) {
   });
 }
 
+// Generator elevations arrive as a building floating on a white background.
+// Tiling or covering that directly bakes white bands into the facade, so find
+// the non-white bounding box and crop to it (with a small inset against
+// anti-aliased halo pixels). Returns the img unchanged when no margin found.
+function autoTrimFacade(img) {
+  const probe = document.createElement('canvas');
+  probe.width = img.width;
+  probe.height = img.height;
+  const pctx = probe.getContext('2d', { willReadFrequently: true });
+  pctx.drawImage(img, 0, 0);
+  const data = pctx.getImageData(0, 0, probe.width, probe.height).data;
+  const isInk = (x, y) => {
+    const i = (y * probe.width + x) * 4;
+    return data[i] < 235 || data[i + 1] < 235 || data[i + 2] < 235;
+  };
+  let top = 0;
+  let bottom = probe.height - 1;
+  let left = 0;
+  let right = probe.width - 1;
+  const colHasInk = (x) => { for (let y = 0; y < probe.height; y += 4) if (isInk(x, y)) return true; return false; };
+  const rowHasInk = (y) => { for (let x = 0; x < probe.width; x += 4) if (isInk(x, y)) return true; return false; };
+  while (top < bottom && !rowHasInk(top)) top += 1;
+  while (bottom > top && !rowHasInk(bottom)) bottom -= 1;
+  while (left < right && !colHasInk(left)) left += 1;
+  while (right > left && !colHasInk(right)) right -= 1;
+  const inset = 2;
+  left += inset; top += inset; right -= inset; bottom -= inset;
+  if (left >= right || top >= bottom) return img;
+  if (left <= inset && top <= inset && right >= probe.width - 1 - inset && bottom >= probe.height - 1 - inset) return img;
+  const out = document.createElement('canvas');
+  out.width = right - left;
+  out.height = bottom - top;
+  out.getContext('2d').drawImage(probe, left, top, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+}
+
 /**
  * Composes one photoreal facade at its tier's real face aspect. The merged
  * building geometry hands every side face a 0..1 UV square (propkit.js), so a
@@ -271,31 +351,49 @@ function loadImage(src) {
  * vertically; baking the canvas at the face aspect makes that mapping
  * distortion-free. 'cover' art (the single-frame storefront) is scaled to
  * fill and cropped at the sides; seamless grid art tiles `copies` times down
- * the height so window scale matches across tiers. The trim swatch goes on
- * last, same contract as the procedural bake.
+ * the height so window scale matches across tiers.
+ *
+ * When roofImg is loaded, a ROOF_STRIP_PX square of roof tile is appended to
+ * the right of the facade art and the return carries the UV split
+ * (`region`) for propkit's merge: side faces sample u < region.u, roof faces
+ * sample the strip by world position. The trim swatch goes on last, same
+ * contract as the procedural bake.
+ * @returns {{canvas: HTMLCanvasElement, region: {u: number, vSpan: number, tileWorld: number}|null}}
  */
-function bakePhotorealFacade(img, kind, entry, size) {
+function bakePhotorealFacade(img, kind, entry, size, roofImg) {
   const aspect = PHOTOREAL_FACE_ASPECT[kind] || 1;
+  const facadeH = Math.round(size * aspect);
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = Math.round(size * aspect);
+  canvas.width = roofImg ? size + ROOF_STRIP_PX : size;
+  canvas.height = facadeH;
   const ctx = canvas.getContext('2d');
   if (entry.fit === 'cover') {
-    // Uniform scale that fills the canvas, centered: the sides crop away.
-    const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+    // Uniform scale that fills the facade area, centered: the sides crop away.
+    const scale = Math.max(size / img.width, facadeH / img.height);
     const w = img.width * scale;
     const h = img.height * scale;
-    ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    ctx.drawImage(img, (size - w) / 2, (facadeH - h) / 2, w, h);
   } else {
     const copies = Math.max(1, entry.copies || 1);
-    const copyH = canvas.height / copies;
+    const copyH = facadeH / copies;
     for (let i = 0; i < copies; i += 1) {
-      ctx.drawImage(img, 0, Math.round(i * copyH), canvas.width, Math.ceil(copyH));
+      ctx.drawImage(img, 0, Math.round(i * copyH), size, Math.ceil(copyH));
     }
+  }
+  let region = null;
+  if (roofImg) {
+    // Roof strip: top ROOF_STRIP_PX square of the appended width. The rest of
+    // the strip is dead texels no UV ever samples.
+    ctx.drawImage(roofImg, size, 0, ROOF_STRIP_PX, ROOF_STRIP_PX);
+    region = {
+      u: size / canvas.width,
+      vSpan: ROOF_STRIP_PX / facadeH,
+      tileWorld: ROOF_TILE_WORLD,
+    };
   }
   ctx.fillStyle = TRIM_SWATCH_COLOR;
   ctx.fillRect(0, 0, size * TRIM_SWATCH_FRACTION, size * TRIM_SWATCH_FRACTION);
-  return canvas;
+  return { canvas, region };
 }
 
 function cropGroundSource(img, size) {
@@ -317,14 +415,38 @@ function cropGroundSource(img, size) {
  */
 async function loadPhotorealSet(THREE, opts = {}) {
   const size = opts.size || 512;
+  const roofSrcs = PHOTOREAL_TEXTURE_MANIFEST.roofs || {};
   const facadeEntries = await Promise.all(
     Object.entries(PHOTOREAL_TEXTURE_MANIFEST.facades).map(async ([kind, entry]) => {
-      const img = await loadImage(entry.src);
-      if (!img) return null;
-      const tex = new THREE.CanvasTexture(bakePhotorealFacade(img, kind, entry, size));
+      const [rawImg, roofImg] = await Promise.all([
+        loadImage(entry.src),
+        roofSrcs[kind] ? loadImage(roofSrcs[kind]) : null,
+      ]);
+      if (!rawImg) return null;
+      const img = autoTrimFacade(rawImg);
+      const { canvas, region } = bakePhotorealFacade(img, kind, entry, size, roofImg);
+      const tex = new THREE.CanvasTexture(canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 4;
-      return [kind, tex];
+      // propkit's merge reads this split to aim side faces at the facade art
+      // and roof faces at the appended strip (null when no roof tile loaded).
+      tex.userData.facadeRegion = region;
+      // Variant arts share the tier's fit/tiling and roof strip; the array is
+      // only returned when at least one variant loaded.
+      const variantSrcs = (PHOTOREAL_TEXTURE_MANIFEST.facadeVariants || {})[kind] || [];
+      const variants = await Promise.all(variantSrcs.map(async (src) => {
+        const vraw = await loadImage(src);
+        if (!vraw) return null;
+        const vimg = autoTrimFacade(vraw);
+        const v = bakePhotorealFacade(vimg, kind, entry, size, roofImg);
+        const vtex = new THREE.CanvasTexture(v.canvas);
+        vtex.colorSpace = THREE.SRGBColorSpace;
+        vtex.anisotropy = 4;
+        vtex.userData.facadeRegion = v.region;
+        return vtex;
+      }));
+      const set = [tex, ...variants.filter(Boolean)];
+      return [kind, set.length > 1 ? set : tex];
     }),
   );
   const groundEntries = await Promise.all(

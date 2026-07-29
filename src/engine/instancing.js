@@ -110,6 +110,14 @@ const FALLBACK_PALETTE_KINDS = new Set([
   'building-small', 'building-medium', 'building-large', 'car', 'bus',
 ]);
 
+// djb2 string hash — stable across sessions. Drives per-group facade
+// variant picks (visual variety only, never gameplay).
+function hashKey(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i += 1) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
 // Per-instance state for the edibility tint (Uint8 per prop).
 const EDIBILITY_UNSET = 0;
 const EDIBILITY_EDIBLE = 1;
@@ -259,7 +267,13 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       // gold instance colors inside propkit (opts.golden), not a geometry tint.
       // Building kinds additionally get their realistic facade texture
       // (textures.js) when the loader provided one for this kind.
-      const facadeMap = textures && textures.facades ? textures.facades[kind] : null;
+      const facadeEntry = textures && textures.facades ? textures.facades[kind] : null;
+      // Photoreal sets ship an ARRAY of variant maps per kind (textures.js):
+      // pick one per group by stable key hash, so each visual ID keeps a
+      // consistent face while different IDs vary — zero extra draw calls.
+      const facadeMap = Array.isArray(facadeEntry)
+        ? facadeEntry[hashKey(key) % facadeEntry.length]
+        : facadeEntry;
       const mesh = propkit.createInstancedPropField(kind, count, THREE, accent, {
         visualId, materialVariant, golden, map: facadeMap || undefined,
       });

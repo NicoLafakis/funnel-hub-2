@@ -660,10 +660,21 @@ export async function main() {
     engine.scene.add(root);
     state.levelRoot = root;
 
+    // Level 1 (Chicago Loop) renders with the photographic texture set when
+    // it loaded (.wiki/texture-map-manifest.md); every other level keeps the
+    // procedural look.
+    const photoreal = level.authoredCity === 'chicago-loop' && cityTextures
+      ? cityTextures.photoreal : null;
+
     // Authored-city pilot background: low-detail, non-interactive context
     // outside the playable square plus the Loop elevated rail cue inside it.
     // The root owns teardown; gameplay hashes and mass budgets never see it.
-    if (layout.context) root.add(createCityContext(THREE, layout.context));
+    if (layout.context) {
+      root.add(createCityContext(THREE, layout.context, {
+        waterRiver: photoreal && photoreal.ground ? photoreal.ground.waterRiver : null,
+        waterLake: photoreal && photoreal.ground ? photoreal.ground.waterLake : null,
+      }));
+    }
 
     // Ground: the seeded district layout baked into a real texture (streets,
     // curbs, zone tints — art §1). V1's flat color + debug GridHelper is dead.
@@ -673,11 +684,6 @@ export async function main() {
     // colour and steals energy from the diffuse — invisible as a look, wrong
     // as physics, and it applies across the single largest surface in frame.
     const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, roughness: 0.93, metalness: 0.0 });
-    // Level 1 (Chicago Loop) renders with the photographic texture set when
-    // it loaded (.wiki/texture-map-manifest.md); every other level keeps the
-    // procedural look.
-    const photoreal = level.authoredCity === 'chicago-loop' && cityTextures
-      ? cityTextures.photoreal : null;
     const baked = bakeGroundTexture(layout, {
       metro,
       textures: photoreal ? photoreal.ground : (cityTextures ? cityTextures.ground : null),

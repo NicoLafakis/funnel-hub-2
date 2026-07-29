@@ -71,12 +71,16 @@
   ground-floor glazing, entrance canopies, roof parapets, plant, and vents.
 - Level 1 renders with the photographic texture set
   (`assets/textures/photoreal/`, `PHOTOREAL_TEXTURES_ENABLED`): facades are
-  composed at each tier's real face aspect so windows stay square, ground
-  zones fill from photo patterns at quarter wash (open pavement included),
-  and textured building groups skip the palette multiply
-  (`photorealFacades`). Generic levels keep the procedural facade bake.
-  The 28-tile expansion plan is `texture-map-manifest.md`; roof tiles are
-  the largest known gap (roofs still sample the trim swatch).
+  composed at each tier's real face aspect so windows stay square, each tier
+  carries a per-group variant array (5 storefront / 4 mid-rise / 4 tower
+  looks, stable key-hash pick, zero extra draw calls), roof faces tile from
+  a strip appended to each facade canvas (propkit `facadeRegion`, 32u tile),
+  ground zones fill from photo patterns at quarter wash (open pavement and
+  park paths included), and the river/lake context planes use water tiles.
+  Textured building groups skip the palette multiply (`photorealFacades`).
+  Generic levels keep the procedural facade bake. Tiles are generated with
+  `scripts/pixellab.js` (PixelLab, key in `.pixellab`); status and known
+  gaps live in `texture-map-manifest.md`.
 
 ## Verified automated baseline
 
