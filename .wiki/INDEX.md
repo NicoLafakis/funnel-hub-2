@@ -51,6 +51,7 @@ of still-open tasks.
 - [`0002-district-object-remediation/00-overview.md`](0002-district-object-remediation/00-overview.md) — permanent visual IDs, 300 metro archetypes, collection normalization, and novelty validation.
 - [`0007-chicago-loop-authored-city/00-findings.md`](0007-chicago-loop-authored-city/00-findings.md) — actual-vs-target visual comparison and the Level 1 authored Chicago Loop pilot, including faux horizon context.
 - [`0008-city-object-library/00-overview.md`](0008-city-object-library/00-overview.md) — 234 reference-led, metric city objects and the city-first Area 1 catalog.
+- [`0009-july29-recovery/00-findings.md`](0009-july29-recovery/00-findings.md) — cross-repository recovery ledger for the 109 July 29 images and V2-native remediation.
 
 ## Historical investigations
 
