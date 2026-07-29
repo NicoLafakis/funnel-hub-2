@@ -1,6 +1,10 @@
 node_modules/
 dist/
 .leonardo-key
+.pixellab-key
+.mcp.json
+art-generation-state.json
+art-generation-jobs.json
 .DS_Store
 Thumbs.db
 *.log

@@ -18,17 +18,18 @@
 // import of this file never throws in Node.
 import * as THREE from 'three';
 
-import { createEngine } from './engine/scene.js';
+import { createEngine, markBloomEmissive } from './engine/scene.js';
 import { createAvatar } from './engine/avatar.js';
 import { createChaseCamera } from './engine/camera.js';
 import { createInput } from './engine/input.js';
 
-import { METROS } from './data/metros.js';
+import { METROS, atmosphereFor } from './data/metros.js';
 import { generateLevel, LEVEL_COUNT } from './data/levels.js';
 
 import { createPropMesh, scaleForRadius, setPropTextures } from './content/propkit.js';
 import { createLandmark } from './content/landmarks.js';
 import { generateCityLayout } from './content/citylayout.js';
+import { resolveMetroTextureSet, iconPath } from './content/artmanifest.js';
 
 import { Audio } from './systems/audio.js';
 import { createComboTracker, COMBO_TIERS } from './systems/combo.js';
@@ -36,13 +37,18 @@ import { createAchievementTracker, ACH } from './systems/achievements.js';
 import { checkSwallow, DEFAULT_SIZE_GATE } from './systems/swallow.js';
 import { createRival, updateRival, RIVAL_WARMUP_SECONDS } from './systems/rivals.js';
 import { createStormController } from './systems/storms.js';
+import { createDebrisSystem, isDebrisWorthy } from './systems/debris.js';
 
 import { loadSave, saveSave } from './meta/save.js';
 import { UPGRADE_TRACKS, UPGRADE_KEYS, cost as upgradeCost, applyUpgrades } from './meta/upgrades.js';
-import { recordSighting, checkHoarderMilestone, getFlavorText } from './meta/collection.js';
+import { recordSighting, checkHoarderMilestone, getFlavorText, CITY_QUIPS } from './meta/collection.js';
 import { renderWorldMap } from './meta/worldmap.js';
+import {
+  SKINS, SKIN_IDS, getSkin, skinPrice,
+  progressSnapshot, describeUnlock, evaluateSkinUnlocks, resolveEquippedSkinId,
+} from './meta/skins.js';
 
-import { showOverlay, hideOverlay, renderShop, updateHUD } from './ui/overlays.js';
+import { showOverlay, hideOverlay, renderShop, renderSkins, renderCollection, updateHUD } from './ui/overlays.js';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (no DOM/THREE-instance-specific state) — safe at module scope.
@@ -121,9 +127,27 @@ function computeLevelRewards(level, finalMass, timeRemaining) {
   return { stars, coins };
 }
 
+// A skin recipe stores colors as THREE-style hex NUMBERS (0xff7a18); the shop
+// swatch needs a CSS color string. Pure formatting, no THREE involved.
+function hexToCss(n) {
+  const v = typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  return `#${v.toString(16).padStart(6, '0')}`;
+}
+
 function starGlyphs(count) {
   const c = Math.max(0, Math.min(3, count || 0));
   return '★'.repeat(c) + '☆'.repeat(3 - c);
+}
+
+// 'building-small' -> 'Building Small', 'liberty-statue' -> 'Liberty Statue'.
+// Display labels for the Skyline-opedia — the kind keys ARE the registry
+// (CITY_QUIPS / LEVEL_TEMPLATE / landmarkType), so no parallel name table
+// exists to drift out of sync.
+function displayNameForKind(kind) {
+  return String(kind)
+    .split('-')
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(' ');
 }
 
 // Disposes every geometry/material under `root` and detaches it from its
@@ -151,35 +175,111 @@ export function main() {
   // storm) is rebuilt per level.
   // -------------------------------------------------------------------------
   const engine = createEngine(canvasEl, THREE);
-  const avatar = createAvatar(engine.scene, THREE);
+  // Save is loaded BEFORE the avatar so it can be built wearing the equipped
+  // skin on the very first frame — the avatar is created once and reused for
+  // all 100 levels, so there is no other surface (intro/world map/shop all
+  // render this same object behind their overlay) that could show a stale look.
+  const saveData = loadSave();
+  const avatar = createAvatar(engine.scene, THREE, {
+    skin: resolveEquippedSkinId(saveData.equippedSkin, saveData.ownedSkins),
+  });
+  // The avatar's core and rim shell are the one thing that must glow in EVERY
+  // metro, so bloom marking happens once at bootstrap — and again after every
+  // skin equip, since applySkin() resets the avatar's render layers (see
+  // avatar.js) and markBloomEmissive only ever ENABLES the bloom layer.
+  // Equipping Void therefore genuinely stops the avatar glowing.
+  markBloomEmissive(avatar.object3D, THREE);
+
   const chaseCamera = createChaseCamera(engine.camera, avatar, THREE);
   const input = createInput();
   // Scratch vector for the camera-relative steering math (see
   // rotateAxesByYaw) — allocated once, never per-frame.
   const camDirScratch = new THREE.Vector3();
 
+  // Debris pool. Parented to the ENGINE SCENE, not to a level root, so a level
+  // teardown can neither dispose it nor leak it — one geometry, one material
+  // and one instanced draw call for the whole 100-level playthrough. Level
+  // builds call debris.clear() so last level's rubble never carries over.
+  const debris = createDebrisSystem(THREE, { parent: engine.scene });
+
   // PixelLab-generated texture maps (assets/textures/, see propkit.js's
-  // setPropTextures contract). Registered once at bootstrap; every prop
-  // built afterwards picks them up. sRGB so colors survive the renderer's
-  // linear workflow; repeat wrapping so builders can tile them.
+  // setPropTextures contract). sRGB so colors survive the renderer's linear
+  // workflow; repeat wrapping so builders can tile them; nearest-neighbor
+  // magnification so the pixel-art grain stays crisp up close instead of
+  // smearing into blur.
   const texLoader = new THREE.TextureLoader();
   function loadTexture(url) {
     const tex = texLoader.load(url);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
+    tex.magFilter = THREE.NearestFilter;
     return tex;
   }
-  const asphaltTexture = loadTexture('assets/textures/asphalt.png');
+
+  // One shared texture per path for the whole session: metro art re-resolves
+  // every level (buildLevelWorld), but replaying a metro must never refetch or
+  // re-upload its textures — and cached textures are shared, so they are never
+  // disposed (level teardown disposes CLONES made by the builders, not these
+  // registry originals). Metro facades get `userData.facadePanel = true`,
+  // which buildingBoxMaterials reads to map one designed cornice-to-cornice
+  // panel per building face instead of the generic fractional tiling.
+  const textureCache = new Map();
+  function getCachedTexture(path, { facadePanel = false } = {}) {
+    let tex = textureCache.get(path);
+    if (!tex) {
+      tex = loadTexture(path);
+      textureCache.set(path, tex);
+    }
+    if (facadePanel) tex.userData.facadePanel = true;
+    return tex;
+  }
+
+  // Generic (metro-agnostic) texture paths — the fallback set every manifest
+  // resolution bottoms out on, byte-identical to the pre-manifest art.
+  const GENERIC_TEXTURES = {
+    apartment: 'assets/textures/facade-apartment-v3.png',
+    office: 'assets/textures/facade-office-v3.png',
+    concrete: 'assets/textures/facade-concrete-v2.png',
+    storefront: 'assets/textures/facade-storefront.png',
+    groundPlane: 'assets/textures/asphalt.png',
+    sidewalk: 'assets/textures/ground-sidewalk.png',
+  };
+
+  // Ground textures: each block type gets a dedicated tileable pixel-art tile
+  // generated via PixelLab's create_tiles_pro (32×32 square_topdown). The
+  // per-block textures replace the single flat-colored pads from before.
+  const groundTextures = {
+    road:     getCachedTexture('assets/textures/ground-asphalt.png'),
+    sidewalk: getCachedTexture(GENERIC_TEXTURES.sidewalk),
+    grass:    getCachedTexture('assets/textures/ground-grass.png'),
+    parking:  getCachedTexture('assets/textures/ground-parking.png'),
+  };
+
+  // Generic facade registration at bootstrap (buildLevelWorld re-registers the
+  // metro-resolved set before each level's props are built, so this is only
+  // the pre-first-level default).
   setPropTextures({
-    apartment: loadTexture('assets/textures/facade-apartment.png'),
-    office: loadTexture('assets/textures/facade-office.png'),
-    concrete: loadTexture('assets/textures/facade-concrete.png'),
+    apartment:  getCachedTexture(GENERIC_TEXTURES.apartment),
+    office:     getCachedTexture(GENERIC_TEXTURES.office),
+    concrete:   getCachedTexture(GENERIC_TEXTURES.concrete),
+    storefront: getCachedTexture(GENERIC_TEXTURES.storefront),
   });
+
+  // Generated-art manifest (assets/art-manifest.json): per-metro world
+  // textures + UI icons. Loaded async at bootstrap; until it arrives (or if
+  // it never does), every resolver falls back to the generic art above — the
+  // manifest only ever lists verified on-disk PNGs, so a null manifest and a
+  // missing entry degrade identically and safely.
+  let artManifest = null;
+  fetch('assets/art-manifest.json')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((m) => { artManifest = (m && typeof m === 'object') ? m : null; })
+    .catch(() => { artManifest = null; });
 
   const state = {
     mode: 'start', // start | worldmap | intro | play | done | fail | win | shop
-    saveData: loadSave(),
+    saveData,
     achievementTracker: createAchievementTracker(),
     levelN: 1,
     level: null,
@@ -204,6 +304,12 @@ export function main() {
   // previous session, silently (no toast/no re-save) — achievements persist
   // across reloads via saveData.achievements.
   (state.saveData.achievements || []).forEach((key) => state.achievementTracker.unlock(key));
+
+  // Retroactive skin unlocks: a save that already cleared combo25 or passed a
+  // collection/star milestone before skins existed owns those skins from its
+  // first frame back, rather than having to re-earn them. (Runs after the DOM
+  // helpers below are hoisted, so its toasts are safe.)
+  syncSkinUnlocks();
 
   // ---------------------------------------------------------------------------
   // Small DOM helpers (banner / toast / notif) — the equivalents index.html's
@@ -253,10 +359,74 @@ export function main() {
         state.saveData.achievements.push(key);
         saveSave(state.saveData);
       }
-      showToast(`<b>ACHIEVEMENT</b><br>${entry[0]}<br><span style="color:#9fb4c4;font-size:12px">${entry[1]}</span>`);
+      // Generated pixel-art badge when the manifest carries one for this key;
+      // without it the toast renders exactly as before (no broken images).
+      const achIcon = iconPath(artManifest, 'achievements', key);
+      showToast(`${achIcon ? `<img class="toasticon" src="${achIcon}" alt="">` : ''}<b>ACHIEVEMENT</b><br>${entry[0]}<br><span style="color:#9fb4c4;font-size:12px">${entry[1]}</span>`);
       Audio.golden();
+      // An achievement can be a skin's unlock condition (Void rides combo25).
+      syncSkinUnlocks();
     }
     return entry;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Avatar skins (src/meta/skins.js)
+  // ---------------------------------------------------------------------------
+
+  // Applies a skin to the live avatar and re-marks it for selective bloom.
+  // This is the ONLY place skins are applied, so "in play" and every overlay
+  // screen (which all render this same persistent avatar behind them) can never
+  // disagree about what the player is wearing.
+  function applyAvatarSkin(skinId) {
+    const applied = avatar.applySkin(skinId);
+    markBloomEmissive(avatar.object3D, THREE);
+    return applied;
+  }
+
+  // Folds any achievement/milestone skin whose condition is now satisfied into
+  // the save's owned list, persists, and toasts the new ones. Cheap and
+  // idempotent, so it is safe to call after any progress event.
+  function syncSkinUnlocks() {
+    const { owned, newlyUnlocked } = evaluateSkinUnlocks(state.saveData, state.saveData.ownedSkins);
+    if (!newlyUnlocked.length) return newlyUnlocked;
+    state.saveData.ownedSkins = owned;
+    saveSave(state.saveData);
+    for (const id of newlyUnlocked) {
+      const skin = getSkin(id);
+      showToast(`<b>SKIN UNLOCKED</b><br>${skin.icon} ${skin.name}<br><span style="color:#9fb4c4;font-size:12px">Equip it in the shop.</span>`);
+    }
+    return newlyUnlocked;
+  }
+
+  function equipSkin(skinId) {
+    const owned = state.saveData.ownedSkins || [];
+    const resolved = resolveEquippedSkinId(skinId, owned);
+    state.saveData.equippedSkin = resolved;
+    saveSave(state.saveData);
+    applyAvatarSkin(resolved);
+    return resolved;
+  }
+
+  function onBuySkin(skinId) {
+    const price = skinPrice(skinId);
+    if (price == null) return;
+    if ((state.saveData.ownedSkins || []).includes(skinId)) return;
+    if (state.saveData.coins < price) return;
+    state.saveData.coins -= price;
+    state.saveData.ownedSkins = [...(state.saveData.ownedSkins || []), skinId];
+    saveSave(state.saveData);
+    // Buying a skin equips it immediately — nobody spends 1,200 coins to then
+    // click a second button.
+    equipSkin(skinId);
+    Audio.golden();
+    openShop(); // re-render with the new balance/ownership
+  }
+
+  function onEquipSkin(skinId) {
+    equipSkin(skinId);
+    Audio.grow();
+    openShop();
   }
 
   // ---------------------------------------------------------------------------
@@ -264,6 +434,9 @@ export function main() {
   // ---------------------------------------------------------------------------
   function buildLevelWorld(level) {
     disposeObject3D(state.levelRoot);
+    // Park any rubble still in flight from the previous level — the pool
+    // itself is persistent and survives the teardown intact.
+    debris.clear();
     state.propObjects = [];
     state.rivals = [];
 
@@ -273,19 +446,50 @@ export function main() {
     state.levelRoot = root;
 
     const metro = level.metro;
-    engine.scene.background = new THREE.Color(metro.sky);
-    engine.scene.fog = new THREE.Fog(new THREE.Color(metro.sky).getHex(), level.world * 0.18, level.world * 0.95);
+    // Per-metro atmosphere: sky/fog/ambient/sun/fill-light/bloom in one call,
+    // so Neon District loads as night and Coliseum City as dry midday instead
+    // of every level sharing one white sun. Fog near/far arrive as fractions of
+    // the world size, which is why the level's world footprint goes along.
+    // A metro with no atmosphere block resolves to the pre-atmosphere defaults.
+    engine.applyAtmosphere(atmosphereFor(metro), { worldSize: level.world });
 
-    // Ground plane, sized to this level's world() footprint. The asphalt
-    // texture (tiled ~every 28 world units so its grain matches prop scale)
-    // multiplies with the metro's ground tint — a flat-colored plane read as
-    // "nothing was there" at distance; the grain gives the eye surface to
-    // hold onto, especially in the DOF-blurred background.
+    // Per-metro art (assets/art-manifest.json): resolve this metro's texture
+    // set — street/sidewalk/facades — with per-slot fallback to the generic
+    // files, and re-register the facade set BEFORE any prop is built below so
+    // every building this level constructs picks it up (propkit reads the
+    // registry at build time; levels rebuild all props, so re-registration
+    // per level is a complete swap with no stale material anywhere).
+    // Textures come from the session-wide cache, so replaying a metro costs
+    // zero fetches and level teardown never disposes a shared original.
+    const artSet = resolveMetroTextureSet(artManifest, metro.id, GENERIC_TEXTURES);
+    setPropTextures({
+      apartment:  getCachedTexture(artSet.apartment.path, { facadePanel: artSet.apartment.metro }),
+      office:     getCachedTexture(artSet.office.path, { facadePanel: artSet.office.metro }),
+      concrete:   getCachedTexture(artSet.concrete.path),
+      storefront: getCachedTexture(artSet.storefront.path, { facadePanel: artSet.storefront.metro }),
+    });
+
+    // Ground plane, sized to this level's world() footprint. The street
+    // texture (this metro's generated tile when it has one, the generic
+    // asphalt otherwise; tiled ~every 28 world units so its grain matches
+    // prop scale) multiplies with the ground tint — a flat-colored plane read
+    // as "nothing was there" at distance; the grain gives the eye surface to
+    // hold onto, especially in the DOF-blurred background. Metro street tiles
+    // carry their own designed palette, so they take a near-neutral tint
+    // instead of the metro ground color that the plain gray asphalt needs.
+    // (The ~28-units-per-repeat density also stays deliberately modest — a
+    // few metro tiles have faintly visible seams that denser tiling would
+    // amplify.)
     const groundGeo = new THREE.PlaneGeometry(level.world, level.world);
-    const groundMap = asphaltTexture.clone();
+    const groundMap = getCachedTexture(artSet.groundPlane.path).clone();
     groundMap.needsUpdate = true;
     groundMap.repeat.set(level.world / 28, level.world / 28);
-    const groundMat = new THREE.MeshStandardMaterial({ color: metro.ground, map: groundMap, roughness: 0.95, metalness: 0.02 });
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: artSet.groundPlane.metro ? '#dfe3e6' : metro.ground,
+      map: groundMap,
+      roughness: 0.95,
+      metalness: 0.02,
+    });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     root.add(ground);
@@ -301,9 +505,10 @@ export function main() {
     // matching the old 2D game's grid step. (Level 1's city layout renders
     // real roads/blocks instead, which serve the same purpose.)
     if (cityLayout) {
-      // Block pads: sidewalk-tinted planes covering each block, so the ground
-      // plane showing through between them reads as asphalt streets. Park /
-      // lot / plaza blocks get their own surface colors.
+      // Block pads: textured planes covering each block, so the ground plane
+      // showing through between them reads as asphalt streets. Each block type
+      // gets a dedicated PixelLab-generated ground tile texture (32×32 px,
+      // tiled at ~6 world-units per repeat so the pixel grain stays visible).
       const PAD_COLORS = {
         park: '#4a7d44',
         lot: '#2f3840',
@@ -312,11 +517,37 @@ export function main() {
         downtown: '#55606a',
         residential: '#5d6850',
       };
+      // Sidewalk-role pads take this metro's generated sidewalk tile when it
+      // has one (grass/parking stay generic — no per-metro slot exists for
+      // them). The b.w/6 repeat below (~6 world units per tile) is the
+      // established density and deliberately stays: a few metro sidewalk
+      // tiles have faintly visible seams that denser tiling would amplify.
+      const sidewalkTex = getCachedTexture(artSet.sidewalk.path);
+      const PAD_TEXTURES = {
+        park: groundTextures.grass,
+        lot: groundTextures.parking,
+        plaza: sidewalkTex,
+        mixed: sidewalkTex,
+        downtown: sidewalkTex,
+        residential: sidewalkTex,
+      };
       for (const b of cityLayout.blocks) {
-        const pad = new THREE.Mesh(
-          new THREE.PlaneGeometry(b.w, b.d),
-          new THREE.MeshStandardMaterial({ color: PAD_COLORS[b.type] || '#55606a', roughness: 0.95, metalness: 0.02 })
-        );
+        const padTex = PAD_TEXTURES[b.type];
+        let padMat;
+        if (padTex) {
+          const map = padTex.clone();
+          map.needsUpdate = true;
+          map.repeat.set(b.w / 6, b.d / 6);
+          // Metro sidewalk tiles carry their own palette — near-neutral tint,
+          // where the generic gray tile needs the per-block-type color.
+          const padTint = padTex === sidewalkTex && artSet.sidewalk.metro
+            ? '#cfd6da'
+            : (PAD_COLORS[b.type] || '#55606a');
+          padMat = new THREE.MeshStandardMaterial({ color: padTint, map, roughness: 0.92, metalness: 0.02 });
+        } else {
+          padMat = new THREE.MeshStandardMaterial({ color: PAD_COLORS[b.type] || '#55606a', roughness: 0.95, metalness: 0.02 });
+        }
+        const pad = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.d), padMat);
         pad.rotation.x = -Math.PI / 2;
         pad.position.set(b.x, 0.5, b.z);
         root.add(pad);
@@ -352,13 +583,30 @@ export function main() {
     // start so the first 10-15s guarantees visible growth; mid tiers get a
     // smaller share; everything else scatters as before. (An earlier 120-550
     // ring at 60% was too thin — blind drives from spawn regularly ate 0.)
+    //
+    // Metro-flavored prop variants (src/content/metroprops.js): passing the
+    // metro id makes createPropMesh resolve metro-first and fall back to the
+    // generic prop wherever this metro has no variant for that slot.
+    const metroId = metro.id;
+
     if (cityLayout) {
       // Authored placement: every template tier keeps its exact count/radius/
       // mass (the layout consumes level.template directly), positioned on the
       // street grid, plus the street-furniture kinds. `color` overrides the
       // metro accent for per-instance paint (cars/buses).
+      let propIdx = 0;
       for (const p of cityLayout.props) {
-        const mesh = createPropMesh(p.kind, THREE, p.color || metro.accent);
+        // Props the layout painted individually (traffic) keep their own paint
+        // most of the time so the streets don't read as a fleet of clones —
+        // but every third one takes the metro variant, which is how a Harbor
+        // Metropolis street ends up with yellow cabs threaded through mixed
+        // civilian traffic rather than one or the other.
+        const useVariant = !p.color || propIdx % 3 === 0;
+        propIdx += 1;
+        const mesh = createPropMesh(
+          p.kind, THREE, p.color || metro.accent,
+          useVariant ? { metro: metroId, variant: propIdx } : undefined
+        );
         // Visual size matches the swallow radius so "fits your rim" reads on
         // screen (see propkit.js scaleForRadius).
         mesh.scale.setScalar(scaleForRadius(p.kind, p.radius));
@@ -381,7 +629,7 @@ export function main() {
       level.template.forEach((tier) => {
         const nearShare = tier.tierIndex <= 1 ? 0.75 : tier.tierIndex <= 3 ? 0.3 : 0;
         for (let i = 0; i < tier.baseCount; i += 1) {
-          const mesh = createPropMesh(tier.kind, THREE, metro.accent);
+          const mesh = createPropMesh(tier.kind, THREE, metro.accent, { metro: metroId, variant: i });
           const pos = Math.random() < nearShare
             ? randomRingPos(80, 380, tier.baseRadius * 1.3 + 20)
             : randomGroundPos(level.world, tier.baseRadius * 1.3 + 20);
@@ -410,7 +658,7 @@ export function main() {
     {
       const biteTier = level.template[0];
       for (let i = 0; i < 10; i += 1) {
-        const mesh = createPropMesh(biteTier.kind, THREE, metro.accent);
+        const mesh = createPropMesh(biteTier.kind, THREE, metro.accent, { metro: metroId, variant: i });
         if (cityLayout) mesh.scale.setScalar(scaleForRadius(biteTier.kind, biteTier.baseRadius));
         const pos = randomRingPos(50, 130, biteTier.baseRadius * 1.3 + 20);
         mesh.position.set(pos.x, 0, pos.z);
@@ -435,6 +683,9 @@ export function main() {
     const nGold = 1 + (Math.random() < 0.5 ? 1 : 0);
     for (let i = 0; i < nGold; i += 1) {
       const tier = midTiers[Math.floor(Math.random() * midTiers.length)];
+      // Deliberately NOT metro-flavored: a jackpot has to read as gold from
+      // across the map, and metro variants carry fixed real-world palettes
+      // (a black cab is black) that would swallow the recolor.
       const mesh = createPropMesh(tier.kind, THREE, '#ffd54a');
       if (cityLayout) mesh.scale.setScalar(scaleForRadius(tier.kind, tier.baseRadius));
       const pos = randomGroundPos(level.world, tier.baseRadius * 1.3 + 20);
@@ -523,6 +774,14 @@ export function main() {
     } else {
       state.stormCtl = null;
     }
+
+    // Selective bloom: one traversal over the finished level, marking every
+    // genuinely emissive mesh (streetlight lamp heads, rooftop beacons, landmark
+    // neon, the portal, rival cores) so it renders into the bloom buffer. Lit
+    // building windows sit below the emissive threshold and stay out, which is
+    // what keeps white buildings from turning into blobs. Done once here rather
+    // than per-prop so anything src/content/ adds later is picked up for free.
+    markBloomEmissive(root, THREE);
   }
 
   function spawnStormDrop(event) {
@@ -532,11 +791,17 @@ export function main() {
     const dropTier = state.level.template[0];
     for (let i = 0; i < event.count; i += 1) {
       const golden = !!event.goldenFlags[i];
-      const mesh = createPropMesh(dropTier.kind, THREE, golden ? '#ffd54a' : state.level.metro.accent);
+      // Same rule as the level's golden spawns: gold drops stay generic so the
+      // jackpot recolor reads; ordinary drops take the metro's variant.
+      const mesh = createPropMesh(
+        dropTier.kind, THREE, golden ? '#ffd54a' : state.level.metro.accent,
+        golden ? undefined : { metro: state.level.metro.id, variant: i }
+      );
       const ax = avatar.position.x + (Math.random() - 0.5) * 500;
       const az = avatar.position.z + (Math.random() - 0.5) * 500;
       const half = state.level.world / 2 - 40;
       mesh.position.set(Math.max(-half, Math.min(half, ax)), 0, Math.max(-half, Math.min(half, az)));
+      markBloomEmissive(mesh, THREE);
       state.levelRoot.add(mesh);
       state.propObjects.push({
         object3D: mesh,
@@ -571,6 +836,37 @@ export function main() {
     state.levelN = n;
     state.level = generateLevel(n);
     showLevelIntro();
+  }
+
+  // Skyline-opedia: the collection album screen, reached from the world map.
+  // One card per CITY_QUIPS entry (the collection registry), with the
+  // generated pixel-art icon from the manifest. Locked (never-swallowed)
+  // entries render the icon dimmed to a silhouette with a '???' label — same
+  // locked-state idiom as the shop's skin rows.
+  function openOpedia() {
+    hideOverlay('worldMapScreen');
+    const collection = state.saveData.collection || {};
+    const entries = Object.keys(CITY_QUIPS).map((id) => {
+      const rec = collection[id];
+      const unlocked = !!(rec && typeof rec === 'object' && rec.count > 0);
+      return {
+        id,
+        name: displayNameForKind(id),
+        unlocked,
+        count: unlocked ? rec.count : 0,
+        iconSrc: iconPath(artManifest, 'collection', id),
+        // First quip, deterministically, so an entry's album line is stable
+        // across visits rather than rerolling every open.
+        flavor: unlocked ? (CITY_QUIPS[id] || [])[0] || '' : '',
+      };
+    });
+    renderCollection(document.getElementById('opediaGrid'), entries);
+    const summary = document.getElementById('opediaSummary');
+    if (summary) {
+      const found = entries.filter((e) => e.unlocked).length;
+      summary.textContent = `${found} / ${entries.length} catalogued. Everything the flywheel has ever swallowed, lovingly logged.`;
+    }
+    showOverlay('opediaScreen');
   }
 
   function tierTip(tier) {
@@ -663,6 +959,8 @@ export function main() {
     state.saveData.unlockedLevel = Math.max(state.saveData.unlockedLevel, Math.min(LEVEL_COUNT, level.n + 1));
     state.saveData.bestCombo = Math.max(state.saveData.bestCombo, state.peakCombo);
     saveSave(state.saveData);
+    // Stars/collection just moved — a milestone skin may now be earned.
+    syncSkinUnlocks();
 
     const titleEl = document.getElementById('doneTitle');
     if (titleEl) titleEl.textContent = `${level.metro.name} — ${level.districtName} swallowed!`;
@@ -703,6 +1001,9 @@ export function main() {
         id: key,
         name: track.label,
         icon: icons[key] || '',
+        // Generated pixel-art icon (renders instead of the emoji glyph when
+        // the manifest has one; emoji fallback otherwise).
+        iconSrc: iconPath(artManifest, 'upgrades', key),
         description: track.description,
         maxTier: track.maxTier,
         costs: Array.from({ length: track.maxTier }, (_, i) => upgradeCost(key, i)),
@@ -710,6 +1011,34 @@ export function main() {
     });
     const container = document.getElementById('shopTracks');
     renderShop(container, upgradeDefs, state.saveData, onBuyUpgrade, onShopContinue);
+
+    // Skins share the shop's coin balance and row idiom. Ownership is
+    // re-evaluated first so a milestone crossed on the level just finished is
+    // already unlocked by the time the shop opens.
+    syncSkinUnlocks();
+    const owned = state.saveData.ownedSkins || [];
+    const equipped = resolveEquippedSkinId(state.saveData.equippedSkin, owned);
+    const progress = progressSnapshot(state.saveData);
+    const skinDefs = SKIN_IDS.map((id) => {
+      const skin = SKINS[id];
+      const price = skinPrice(id);
+      const isOwned = owned.includes(id);
+      return {
+        id,
+        name: skin.name,
+        icon: skin.icon,
+        description: skin.description,
+        coreColor: hexToCss(skin.core.emissive),
+        rimColor: hexToCss(skin.rim.color),
+        owned: isOwned,
+        equipped: id === equipped,
+        price,
+        affordable: price != null && state.saveData.coins >= price,
+        unlockText: isOwned ? '' : describeUnlock(id, progress),
+      };
+    });
+    renderSkins(document.getElementById('shopSkins'), skinDefs, onBuySkin, onEquipSkin);
+
     showOverlay('shopScreen');
   }
 
@@ -797,6 +1126,7 @@ export function main() {
       const x = Math.max(-half, Math.min(half, avatar.position.x + (Math.random() - 0.5) * 500));
       const z = Math.max(-half, Math.min(half, avatar.position.z + (Math.random() - 0.5) * 500));
       mesh.position.set(x, 0, z);
+      markBloomEmissive(mesh, THREE);
       state.levelRoot.add(mesh);
       state.propObjects.push({
         object3D: mesh, position: mesh.position, radius: 22, mass: 20, kind: 'breeze-drone', golden: false,
@@ -935,6 +1265,12 @@ export function main() {
       }
 
       for (const obj of eaten) {
+        // Demolition burst for tier-5+ structures, BEFORE the mesh is disposed
+        // — the debris takes its colors from that mesh's own materials, so
+        // sampling has to happen while they still exist.
+        if (isDebrisWorthy(obj)) {
+          debris.burst({ object3D: obj.object3D, position: obj.position, radius: obj.radius });
+        }
         if (obj.object3D) disposeObject3D(obj.object3D);
         state.lastEatenKind = obj.kind;
 
@@ -1051,6 +1387,10 @@ export function main() {
     if (state.mode === 'play') {
       updatePlay(dt);
     }
+    // Debris keeps settling outside play mode too, so a level-ending swallow's
+    // rubble finishes falling under the "level complete" overlay instead of
+    // freezing mid-air.
+    debris.update(dt);
     // DOF focus rides the camera->avatar distance every frame (also outside
     // play mode, so menus over the scene keep a sensible focal plane).
     engine.setFocus(engine.camera.position.distanceTo(avatar.position));
@@ -1084,6 +1424,17 @@ export function main() {
     retryBtn.addEventListener('click', () => {
       hideOverlay('failScreen');
       showLevelIntro();
+    });
+  }
+
+  const opediaBtn = document.getElementById('opediaBtn');
+  if (opediaBtn) opediaBtn.addEventListener('click', openOpedia);
+
+  const opediaBackBtn = document.getElementById('opediaBackBtn');
+  if (opediaBackBtn) {
+    opediaBackBtn.addEventListener('click', () => {
+      hideOverlay('opediaScreen');
+      openWorldMap();
     });
   }
 

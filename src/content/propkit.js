@@ -17,6 +17,15 @@
 // 'speed-bump' | 'apartment' | 'office'. These use fixed real-world palettes
 // (a hydrant is red, a mailbox is blue) rather than the metro accent, so the
 // level-1 city reads as a real city; the 7 template kinds stay accent-tinted.
+//
+// METRO VARIANTS: createPropMesh() takes an optional 4th argument (a metro id
+// string, or an options object) and resolves METRO-FIRST — see
+// src/content/metroprops.js. When the given metro has an authored variant for
+// that kind it is built instead; in every other case (no 4th argument, unknown
+// metro, metro with no variant for that slot, or a variant builder that
+// throws) this file's generic builder runs and behavior is byte-identical to
+// before variants existed. The 3-argument call signature is untouched.
+import { createMetroVariantMesh, hasMetroVariant } from './metroprops.js';
 
 const DEFAULT_ACCENT = '#9aa3ad';
 
@@ -37,17 +46,31 @@ export function setPropTextures(textures) {
 // window reads ~3 world units regardless of building size; top/bottom get a
 // plain darker cap so the roof doesn't smear the facade. With no texture,
 // returns the flat wall material on every face (original behavior).
+//
+// Per-metro facade textures (assets/textures/metro/<id>/facade-*.png) are
+// authored as complete cornice-to-cornice PANELS, not endless tileables —
+// main.js marks them with `userData.facadePanel = true`, and they map at
+// exactly ONE vertical repeat per face so the top/bottom cornice lands at the
+// roof/street line instead of slicing through mid-facade. Horizontal repeats
+// keep the generic density (the panels tile fine sideways). Unmarked
+// (generic) textures keep the original repeat math untouched.
 function buildingBoxMaterials(THREE, baseColor, texture, dim, opts = {}) {
   const cap = standardMat(THREE, shade(THREE, baseColor, -0.12), opts);
   if (!texture) {
     const flat = standardMat(THREE, baseColor, opts);
     return [flat, flat, cap, cap, flat, flat];
   }
+  const facadePanel = !!(texture.userData && texture.userData.facadePanel);
   const map = texture.clone();
   map.needsUpdate = true;
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.RepeatWrapping;
-  map.repeat.set(Math.max(0.25, dim.w / 26), Math.max(0.25, dim.h / 30));
+  map.repeat.set(
+    // Panels: whole repeats only (never a partial slice of a designed facade);
+    // generic tileables keep the original fractional density.
+    facadePanel ? Math.max(1, Math.round(dim.w / 26)) : Math.max(0.25, dim.w / 26),
+    facadePanel ? 1 : Math.max(0.25, dim.h / 30)
+  );
   const side = standardMat(THREE, baseColor, opts);
   side.map = map;
   return [side, side, cap, cap, side, side];
@@ -251,9 +274,11 @@ function buildBuilding(THREE, accent, dim, opts = {}) {
   // Template buildings stay accent-tinted per metro; the neutral concrete
   // facade texture (when registered) multiplies with that tint, so each
   // metro keeps its palette but gains real windows instead of a flat slab.
+  // Small buildings (kiosks/shops) use the storefront texture if available.
+  const facadeTex = TEXTURES && (opts.storefront ? (TEXTURES.storefront || TEXTURES.concrete) : TEXTURES.concrete);
   const base = new THREE.Mesh(
     new THREE.BoxGeometry(dim.w, dim.h, dim.d),
-    buildingBoxMaterials(THREE, accent, TEXTURES && TEXTURES.concrete, dim, wallOpts)
+    buildingBoxMaterials(THREE, accent, facadeTex, dim, wallOpts)
   );
   base.position.set(0, dim.h / 2, 0);
   group.add(base);
@@ -598,7 +623,10 @@ function buildOffice(THREE) {
 //     (streetlights), where footprint-matching would blow the pole up to a
 //     30-unit-wide column.
 const SCALE_FILL = 0.85;
-const SCALE_MODE = { streetlight: 'height' };
+// Exported so callers/tests can reason about which mesh dimension a kind's
+// on-screen size is derived from — a metro variant must match the generic
+// prop on THAT axis or it renders at the wrong size for its swallow radius.
+export const SCALE_MODE = { streetlight: 'height' };
 
 export function scaleForRadius(kind, radius) {
   const dim = DIMENSIONS[kind] || { w: 2, h: 2, d: 2 };
@@ -607,8 +635,59 @@ export function scaleForRadius(kind, radius) {
   return target / basis;
 }
 
-export function createPropMesh(kind, THREE, accentColorHex) {
+// Read-only view of the footprint/height envelope every prop (generic or metro
+// variant) is authored against. Cloned so a caller can't mutate the table that
+// scaleForRadius() depends on.
+export function dimensionsFor(kind) {
+  const dim = DIMENSIONS[kind];
+  return dim ? { ...dim } : null;
+}
+
+export function propKinds() {
+  return Object.keys(DIMENSIONS);
+}
+
+// The material/color toolkit a metroprops.js builder needs, bound to the
+// caller's THREE instance and this prop's slot. Handing the builders a `ctx`
+// instead of letting them import from here keeps the dependency one-way
+// (propkit -> metroprops) with no import cycle, and keeps DIMENSIONS the single
+// source of truth for prop size.
+function variantContext(THREE, kind, accent) {
+  return {
+    dim: DIMENSIONS[kind] || { w: 2, h: 2, d: 2 },
+    accent,
+    mat: (color, opts) => standardMat(THREE, color, opts),
+    shade: (color, deltaL, deltaS) => shade(
+      THREE,
+      color && color.isColor ? color : new THREE.Color(color),
+      deltaL,
+      deltaS
+    ),
+    color: (hex) => new THREE.Color(hex),
+  };
+}
+
+/**
+ * @param {string} kind - one of the DIMENSIONS keys (see the header contract).
+ * @param {object} THREE - the injected THREE namespace.
+ * @param {string|number} [accentColorHex] - metro accent / per-instance paint.
+ * @param {string|object} [metroOrOpts] - OPTIONAL. A metro id string (e.g.
+ *   'neon-district') or `{ metro, variant }`. Resolves metro-first with a
+ *   guaranteed fall-through to the generic prop; omitting it reproduces the
+ *   pre-variant behavior exactly.
+ */
+export function createPropMesh(kind, THREE, accentColorHex, metroOrOpts) {
   const accent = resolveColor(THREE, accentColorHex);
+
+  const opts = typeof metroOrOpts === 'string' ? { metro: metroOrOpts } : (metroOrOpts || {});
+  const metroId = opts.metro || opts.metroId || null;
+  if (metroId && hasMetroVariant(metroId, kind)) {
+    const variant = createMetroVariantMesh(metroId, kind, THREE, variantContext(THREE, kind, accent), opts.variant);
+    if (variant) return variant;
+    // Variant builder failed -> deliberately fall through to the generic prop
+    // below rather than throwing. One bad prop must never take a level down.
+  }
+
   switch (kind) {
     case 'trash':
       return buildTrash(THREE, accent);

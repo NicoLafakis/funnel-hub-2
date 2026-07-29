@@ -2,35 +2,175 @@
 // brand mascot (logo-mark.png / hero-vortex.png), given a 3D body a chase
 // camera can frame. No browser-only API is touched at module top level — only
 // inside createAvatar(), so a bare `import` of this file never throws in Node.
-export function createAvatar(scene, THREE) {
+//
+// SKINS (src/meta/skins.js). The avatar's LOOK is a swappable recipe; its
+// gameplay contract is not. radius(), mass, radiusCap, massDivisor,
+// speedMultiplier, setMoveInput, update, position and the growth-drag /
+// facing-tilt math are all completely blind to which skin is applied — no code
+// path below reads a skin field to compute a number that reaches gameplay. The
+// one structural guarantee behind that: CORE_RADIUS is a constant, NOT a skin
+// field, so no skin can make the avatar look bigger or smaller than the radius
+// it actually swallows with. Tests pin both halves.
+import { getSkin } from '../meta/skins.js';
+
+// The core sphere is authored at radius 1 and the whole group is scaled by
+// radius() each frame, so the rendered core radius IS the swallow radius. This
+// is deliberately not skinnable — see the note above.
+const CORE_RADIUS = 1;
+
+/**
+ * @param {THREE.Scene|{add:Function}} scene
+ * @param {object} THREE - the single injected THREE namespace (see scene.js).
+ * @param {object} [options]
+ * @param {string|object} [options.skin] - skin id (or skin object) to build
+ *   with. Anything unknown/missing resolves to the default skin, which is
+ *   byte-identical to the pre-skins avatar: two meshes, two materials, two
+ *   geometries, same values.
+ */
+export function createAvatar(scene, THREE, options = {}) {
   const object3D = new THREE.Group();
 
-  // Core: dark, emissive-purple sphere — the vortex body.
-  const coreGeo = new THREE.SphereGeometry(1, 32, 24);
-  const coreMat = new THREE.MeshStandardMaterial({
-    color: 0x120018,
-    emissive: 0x3a0a5c,
-    emissiveIntensity: 0.85,
-    roughness: 0.35,
-    metalness: 0.15,
-  });
-  const core = new THREE.Mesh(coreGeo, coreMat);
+  let activeSkin = getSkin(options.skin);
+
+  // Geometry identity keys. A skin swap only rebuilds a sphere when its
+  // radius/segment counts actually differ, so equipping a skin that shares the
+  // default's tessellation costs zero allocations.
+  function sphereKey(radius, w, h) {
+    return `${radius}|${w}|${h}`;
+  }
+
+  function makeSphere(radius, w, h) {
+    return new THREE.SphereGeometry(radius, w, h);
+  }
+
+  // Core: the solid vortex body (default skin: dark, emissive-purple).
+  let coreGeoKey = sphereKey(CORE_RADIUS, activeSkin.core.widthSegments, activeSkin.core.heightSegments);
+  const coreMat = new THREE.MeshStandardMaterial();
+  const core = new THREE.Mesh(
+    makeSphere(CORE_RADIUS, activeSkin.core.widthSegments, activeSkin.core.heightSegments),
+    coreMat
+  );
   object3D.add(core);
 
-  // Rim-light: a slightly larger additive-blended wireframe shell that spins
-  // independently of movement — reads as a swirling vortex without a full
-  // custom GLSL shader (spec calls that a nice-to-have, not required).
-  const rimGeo = new THREE.SphereGeometry(1.08, 16, 12);
-  const rimMat = new THREE.MeshBasicMaterial({
-    color: 0x00a4bd,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.55,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const rim = new THREE.Mesh(rimGeo, rimMat);
+  // Rim: a slightly larger shell that spins independently of movement — reads
+  // as a swirling vortex without a full custom GLSL shader (spec calls that a
+  // nice-to-have, not required). Default skin: additive-blended cyan wireframe.
+  let rimGeoKey = sphereKey(activeSkin.rim.radius, activeSkin.rim.widthSegments, activeSkin.rim.heightSegments);
+  const rimMat = new THREE.MeshBasicMaterial();
+  const rim = new THREE.Mesh(
+    makeSphere(activeSkin.rim.radius, activeSkin.rim.widthSegments, activeSkin.rim.heightSegments),
+    rimMat
+  );
   object3D.add(rim);
+
+  // Corona: OPTIONAL third layer some skins declare (Supernova, Golden Surge,
+  // Aurora Veil). Allocated lazily on first use and fully disposed when a skin
+  // without one is equipped, so skins that don't declare a corona — including
+  // the default — keep the original two-mesh allocation profile exactly.
+  let corona = null;
+  let coronaGeoKey = '';
+
+  // Writes a shell recipe (rim/corona) onto an existing MeshBasicMaterial.
+  // Always transparent + depthWrite:false: these are glow layers, not surfaces.
+  function writeShellMaterial(mat, shell) {
+    mat.color.set(shell.color);
+    mat.wireframe = !!shell.wireframe;
+    mat.transparent = true;
+    mat.opacity = shell.opacity;
+    mat.blending = shell.additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+    mat.depthWrite = false;
+    mat.needsUpdate = true;
+  }
+
+  function writeCoreMaterial(mat, coreDef) {
+    mat.color.set(coreDef.color);
+    mat.emissive.set(coreDef.emissive);
+    mat.emissiveIntensity = coreDef.emissiveIntensity;
+    mat.roughness = coreDef.roughness;
+    mat.metalness = coreDef.metalness;
+    mat.needsUpdate = true;
+  }
+
+  function disposeCorona() {
+    if (!corona) return;
+    object3D.remove(corona);
+    corona.geometry.dispose();
+    corona.material.dispose();
+    corona = null;
+    coronaGeoKey = '';
+  }
+
+  /**
+   * Applies a skin to the live avatar — at creation and at runtime, without
+   * rebuilding the avatar object.
+   *
+   * Leak discipline:
+   *   - materials are MUTATED IN PLACE (never replaced), so the core/rim
+   *     material instances live for the whole session;
+   *   - a geometry is only replaced when its radius/segment key changes, and
+   *     the outgoing geometry is disposed in the same statement;
+   *   - the optional corona mesh is disposed (geometry + material) and removed
+   *     from the group whenever the incoming skin has none.
+   *
+   * Bloom: every avatar mesh is reset to layer 0 only. scene.js's
+   * markBloomEmissive() only ever ENABLES the bloom layer, so without this
+   * reset a swap from a glowing skin to Void would keep glowing forever. The
+   * caller re-runs markBloomEmissive(avatar.object3D, THREE) after equipping;
+   * an avatar that is never re-marked simply doesn't bloom, which is the safe
+   * direction to fail in.
+   *
+   * @param {string|object} skinOrId
+   * @returns {object} the resolved skin definition actually applied.
+   */
+  function applySkin(skinOrId) {
+    const skin = getSkin(skinOrId);
+    activeSkin = skin;
+
+    const nextCoreKey = sphereKey(CORE_RADIUS, skin.core.widthSegments, skin.core.heightSegments);
+    if (nextCoreKey !== coreGeoKey) {
+      core.geometry.dispose();
+      core.geometry = makeSphere(CORE_RADIUS, skin.core.widthSegments, skin.core.heightSegments);
+      coreGeoKey = nextCoreKey;
+    }
+    writeCoreMaterial(coreMat, skin.core);
+
+    const nextRimKey = sphereKey(skin.rim.radius, skin.rim.widthSegments, skin.rim.heightSegments);
+    if (nextRimKey !== rimGeoKey) {
+      rim.geometry.dispose();
+      rim.geometry = makeSphere(skin.rim.radius, skin.rim.widthSegments, skin.rim.heightSegments);
+      rimGeoKey = nextRimKey;
+    }
+    writeShellMaterial(rimMat, skin.rim);
+
+    if (skin.corona) {
+      const nextCoronaKey = sphereKey(skin.corona.radius, skin.corona.widthSegments, skin.corona.heightSegments);
+      if (!corona) {
+        corona = new THREE.Mesh(
+          makeSphere(skin.corona.radius, skin.corona.widthSegments, skin.corona.heightSegments),
+          new THREE.MeshBasicMaterial()
+        );
+        coronaGeoKey = nextCoronaKey;
+        object3D.add(corona);
+      } else if (nextCoronaKey !== coronaGeoKey) {
+        corona.geometry.dispose();
+        corona.geometry = makeSphere(skin.corona.radius, skin.corona.widthSegments, skin.corona.heightSegments);
+        coronaGeoKey = nextCoronaKey;
+      }
+      writeShellMaterial(corona.material, skin.corona);
+    } else {
+      disposeCorona();
+    }
+
+    // Reset any leftover bloom-layer membership from the outgoing skin (see
+    // the note above). Layer 0 is three.js's default render layer.
+    core.layers.set(0);
+    rim.layers.set(0);
+    if (corona) corona.layers.set(0);
+
+    return skin;
+  }
+
+  applySkin(activeSkin);
 
   object3D.position.set(0, 0, 0);
   scene.add(object3D);
@@ -64,6 +204,7 @@ export function createAvatar(scene, THREE) {
   // pacing at every level. Base-budget math still lets the player eat every
   // landmark (max boundingRadius 74 needs r>=93 => ~1225 base, available
   // ~1427) and tier-6 props with combos. Default 1 = original behavior.
+  // NOTE: no skin field appears anywhere in this function, by design.
   function radius() {
     return Math.min(26 + Math.sqrt(_mass / _massDivisor) * 1.9, _radiusCap);
   }
@@ -102,10 +243,15 @@ export function createAvatar(scene, THREE) {
     const tiltTarget = Math.min(0.35, (speed / BASE_SPEED) * 0.35);
     core.rotation.x += (tiltTarget - core.rotation.x) * damp;
 
-    // Constant swirl spin on the rim wireframe — the vortex identity, always
-    // active regardless of movement.
-    rim.rotation.y += dt * 1.1;
-    rim.rotation.x += dt * 0.6;
+    // Constant swirl spin on the rim shell — the vortex identity, always
+    // active regardless of movement. Rates come from the equipped skin
+    // (the default skin's 1.1 / 0.6 are the original constants).
+    rim.rotation.y += dt * activeSkin.rim.spinY;
+    rim.rotation.x += dt * activeSkin.rim.spinX;
+    if (corona) {
+      corona.rotation.y += dt * activeSkin.corona.spinY;
+      corona.rotation.x += dt * activeSkin.corona.spinX;
+    }
   }
 
   return {
@@ -118,6 +264,9 @@ export function createAvatar(scene, THREE) {
     set massDivisor(v) { _massDivisor = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 1; },
     get speedMultiplier() { return _speedMultiplier; },
     set speedMultiplier(v) { _speedMultiplier = typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 1; },
+    get skinId() { return activeSkin.id; },
+    get skin() { return activeSkin; },
+    applySkin,
     radius,
     setMoveInput,
     update,

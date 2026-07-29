@@ -9,7 +9,16 @@
 //     collection: { [objectKey: string]: { count: number, firstSeenAt: number } },
 //     achievements: string[],                      // unlocked achievement ids
 //     bestCombo: number,
+//     ownedSkins: string[],                        // avatar skin ids owned
+//     equippedSkin: string,                        // avatar skin id equipped
 //   }
+//
+// SCHEMA EVOLUTION: the key is still `flywheel.save.v1` — ownedSkins/
+// equippedSkin were ADDED, nothing was renamed or removed, and normalizeSave()
+// fills any absent key from defaultSave(). So a save written before skins
+// existed loads with every byte of its coins/stars/upgrades/collection/
+// achievements progress intact and simply arrives owning (and wearing) the
+// default skin. A test pins that.
 //
 // CRITICAL (per city-3d-redesign-plan.md): this module must not touch
 // browser-only globals (localStorage/window/document) at module top level —
@@ -23,6 +32,14 @@ export const SAVE_KEY = 'flywheel.save.v1';
 
 const UPGRADE_KEYS = ['size', 'speed', 'magnet', 'time', 'growth'];
 
+// Duplicated (not imported) from src/meta/skins.js's DEFAULT_SKIN_ID, matching
+// how UPGRADE_KEYS above is duplicated from src/meta/upgrades.js: this module
+// stays dependency-free and type-safe only. Validating ids against the skin
+// REGISTRY is deliberately left to src/meta/skins.js's resolver (getSkin /
+// resolveEquippedSkinId), so a save carrying a skin id this build doesn't know
+// degrades to the default look instead of having its list silently rewritten.
+const DEFAULT_SKIN_ID = 'default';
+
 export function defaultSave() {
   return {
     coins: 0,
@@ -32,6 +49,8 @@ export function defaultSave() {
     collection: {},
     achievements: [],
     bestCombo: 0,
+    ownedSkins: [DEFAULT_SKIN_ID],
+    equippedSkin: DEFAULT_SKIN_ID,
   };
 }
 
@@ -92,6 +111,20 @@ function normalizeUpgrades(raw) {
   return out;
 }
 
+// Owned-skin ids: strings only, de-duplicated, and the default skin is always
+// present so there is never a save that owns nothing to wear. A missing or
+// corrupt (non-array / non-string-bearing) value degrades to exactly
+// [DEFAULT_SKIN_ID] rather than throwing or wiping the rest of the save.
+function normalizeOwnedSkinIds(raw) {
+  const out = [DEFAULT_SKIN_ID];
+  if (Array.isArray(raw)) {
+    for (const id of raw) {
+      if (typeof id === 'string' && id && !out.includes(id)) out.push(id);
+    }
+  }
+  return out;
+}
+
 // Defensive normalizer: given whatever JSON.parse produced (or a raw object
 // handed to saveSave), always returns a fully-shaped, type-safe save object.
 // Never throws.
@@ -106,6 +139,8 @@ function normalizeSave(raw) {
     collection: safePlainObject(raw.collection, defaults.collection),
     achievements: safeArray(raw.achievements, defaults.achievements),
     bestCombo: Math.max(0, safeNumber(raw.bestCombo, defaults.bestCombo)),
+    ownedSkins: normalizeOwnedSkinIds(raw.ownedSkins),
+    equippedSkin: typeof raw.equippedSkin === 'string' && raw.equippedSkin ? raw.equippedSkin : defaults.equippedSkin,
   };
 }
 
