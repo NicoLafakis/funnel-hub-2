@@ -200,6 +200,22 @@ export const PALETTE_BASE_KINDS = new Set([
 const PALETTE_GLASS_TINT = '#7190a1'; // readable blue-grey window glass
 const PALETTE_TRIM_TINT = '#72777a'; // neutral rooftop / facade trim
 
+// 0011 task 7 (Route A): the Blender-authored paint bands whose albedo
+// renders near-black (R1b), as the exact linear triples shipped in
+// assets/models/*.js, and their lift targets — the linear forms of
+// PALETTE_GLASS_TINT / PALETTE_TRIM_TINT above.
+const AUTHORED_BAND_LIFT = [
+  { from: [0.0396, 0.0666, 0.1119], to: [0.164, 0.278, 0.356] }, // DOOR_GLASS #38495e
+  { from: [0.114, 0.147, 0.195], to: [0.168, 0.185, 0.194] }, // TRIM #5f6b7a
+];
+function liftAuthoredBand(r, g, b) {
+  for (const band of AUTHORED_BAND_LIFT) {
+    if (Math.abs(r - band.from[0]) < 0.004 && Math.abs(g - band.from[1]) < 0.004
+      && Math.abs(b - band.from[2]) < 0.004) return band.to;
+  }
+  return null;
+}
+
 const CHICAGO_BUILDING_PALETTE = Object.freeze([
   '#b97860', // sunlit red Chicago brick
   '#c9906b', // warm masonry
@@ -223,6 +239,11 @@ const CHICAGO_IDENTITY_COLORS = Object.freeze({
   cityobj_chicago_tribune_tower: '#bbb19b',
   cityobj_chicago_chicago_theatre: '#b87861',
 });
+
+export function chicagoIdentityColor(THREE, visualId) {
+  const hex = CHICAGO_IDENTITY_COLORS[visualId];
+  return hex ? new THREE.Color(hex) : null;
+}
 
 export function cityPalette(THREE, cityId, kind, fallback = null, visualId = null) {
   if (cityId !== 'chicago-loop') return fallback;
@@ -1185,9 +1206,18 @@ function bakeModelPart(THREE, modelGeo, targetBox, tintHex, facade = null) {
         colors[i * 3 + 1] = r * tint.g;
         colors[i * 3 + 2] = r * tint.b;
       } else {
-        colors[i * 3] = r;
-        colors[i * 3 + 1] = g;
-        colors[i * 3 + 2] = b;
+        // 0011 task 7 (Route A, delete when build_props.py is fixed at
+        // source and regenerated on a machine with Blender): bounded albedo
+        // lift for the two authored paint bands that render near-black —
+        // DOOR_GLASS ground-floor glazing and TRIM roof/balcony trim —
+        // keyed on their exact shipped linear triples so nothing else can
+        // match. Targets are the linear forms of PALETTE_GLASS_TINT /
+        // PALETTE_TRIM_TINT, the range the procedural fallback already
+        // paints for the same job.
+        const lifted = liftAuthoredBand(r, g, b) || [r, g, b];
+        colors[i * 3] = lifted[0];
+        colors[i * 3 + 1] = lifted[1];
+        colors[i * 3 + 2] = lifted[2];
       }
     } else {
       colors[i * 3] = tint.r;

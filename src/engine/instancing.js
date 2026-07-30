@@ -105,6 +105,12 @@ const TOO_BIG_DIM = 0.62;
 // carry the signal. Untextured props keep the full dim.
 const TOO_BIG_DIM_TEXTURED = 0.78;
 
+// 0011 task 6: identity-colour multiply on textured Chicago groups is
+// softened toward white so it differentiates the named towers without
+// muddying their photographic facades the way a raw palette pick would.
+const IDENTITY_TINT_WHITE = new THREE.Color(1, 1, 1);
+const IDENTITY_TINT_SOFTEN = 0.4;
+
 // Kinds that get Hole.io-style per-instance pastel hue variety (propkit's
 // metroPalette). These kinds bake their instanced geometry with a neutral
 // white accent (propkit.PALETTE_BASE_KINDS), so the instance color IS the
@@ -323,14 +329,23 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       // multiplied by a brick/glass palette tint muddies it, so they keep
       // propkit's neutral grey jitter (a near-identity multiply). Vehicles
       // have no facade map and keep the palette either way.
+      // Named exception (0011 task 6): a textured Chicago group whose
+      // visualId carries a CHICAGO_IDENTITY_COLORS entry still gets that
+      // authored identity colour — a gentle multiply (lerped toward white)
+      // rather than a raw pastel pick, so Willis/CNA/Marina/Wrigley/Tribune/
+      // Theatre stay differentiated without muddying the photo art.
+      const identityColor = photorealFacades && group.facadeMap
+        && typeof propkit.chicagoIdentityColor === 'function'
+        ? propkit.chicagoIdentityColor(THREE, group.visualId) : null;
       if (palette && !group.golden && paletteKinds.has(group.kind)
-        && !(photorealFacades && group.facadeMap)) {
-        const authoredPalette = typeof propkit.cityPalette === 'function'
+        && (!(photorealFacades && group.facadeMap) || identityColor)) {
+        const authoredPalette = identityColor ? [identityColor] : typeof propkit.cityPalette === 'function'
           ? propkit.cityPalette(THREE, cityId, group.kind, palette, group.visualId)
           : palette;
         const pick = authoredPalette[Math.floor(paletteRng() * authoredPalette.length)];
         const j = base.r; // propkit's neutral grey brightness jitter
         base.setRGB(pick.r * j, pick.g * j, pick.b * j);
+        if (identityColor) base.lerp(IDENTITY_TINT_WHITE, IDENTITY_TINT_SOFTEN);
         group.mesh.setColorAt(slot, base);
       }
       group.baseColors.push(base);

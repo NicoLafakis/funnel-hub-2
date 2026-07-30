@@ -188,10 +188,12 @@ const CURB_WIDTH = 20;
 const SLAB_PITCH = { pavement: 16, promenade: 18, plaza: 22, curb: 10 };
 const GRAIN_TILE_WORLD = 96;   // one surface-grain tile spans 96 world units
 const GRAIN_CELLS = 32;        // 3 world units per grain cell
-const LANE_EDGE_WIDTH = 2.2;
-const LANE_CENTRE_WIDTH = 3.0;
-const PARKING_PITCH = 24;      // kerbside bay spacing
+const LANE_EDGE_WIDTH = 1.6;
+const LANE_CENTRE_WIDTH = 1.5;
+const PARKING_PITCH = 66;      // kerbside bay spacing (6.0m at 11u/m — 0011 task 10)
 const CROSSWALK_BAND = 9;      // zebra band depth along the road
+const CENTRE_DASH = 24;        // centre-line dash length, 2.2m (0011 task 10)
+const CENTRE_GAP = 72;         // centre-line gap — real 1:3 rhythm (was 14/12)
 const MIN_STREET_FOR_MARKINGS = 26; // world units of carriageway width
 const MIN_STREET_FOR_PARKING = 52;  // bays only on genuinely wide carriageways
 
@@ -599,10 +601,10 @@ export function roadMarkingQuads(layout) {
       }
     }
 
-    // Dashed centre line, 14u dash / 12u gap.
-    for (let x = -end; x <= end - 14; x += 26) {
-      if (nearJunction(x + 7, 6)) continue;
-      push(st, x + 7, 0, 14, LANE_CENTRE_WIDTH, PAINT_BRIGHT);
+    // Dashed centre line, real 1:3 dash:gap rhythm (0011 task 10, was 14/12).
+    for (let x = -end; x <= end - CENTRE_DASH; x += CENTRE_DASH + CENTRE_GAP) {
+      if (nearJunction(x + CENTRE_DASH / 2, 6)) continue;
+      push(st, x + CENTRE_DASH / 2, 0, CENTRE_DASH, LANE_CENTRE_WIDTH, PAINT_BRIGHT);
     }
 
     // Kerbside parking bays.
@@ -1080,12 +1082,12 @@ export function bakeGroundTexture(layout, opts = {}) {
           ctx.stroke();
         }
 
-        // Dashed centre line — dash length in world units, so a dash is 14u
+        // Dashed centre line — dash length in world units, so a dash is 24u
         // long whatever the level size. (This is the marking the old bake
         // stretched worst.)
         ctx.strokeStyle = 'rgba(255,255,255,0.9)';
         ctx.lineWidth = Math.max(LANE_CENTRE_WIDTH, W1);
-        ctx.setLineDash([14, 12]);
+        ctx.setLineDash([CENTRE_DASH, CENTRE_GAP]);
         ctx.beginPath();
         ctx.moveTo(-end, 0);
         ctx.lineTo(end, 0);

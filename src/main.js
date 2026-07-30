@@ -634,8 +634,23 @@ export async function main() {
     // A real sky is brightest and least saturated at the horizon because you are
     // looking through the most air; that is the whole reason a flat clear colour
     // reads as a painted wall.
-    const skyZenith = skyColor.clone().multiplyScalar(0.82);
-    const skyHorizon = skyColor.clone().lerp(new THREE.Color(0xffffff), night ? 0.16 : 0.34);
+    //
+    // 0011 task 8 (Level 1 only): the reference sky is nearly flat and
+    // CLOUDLESS — a pale, drained blue at the zenith (measured
+    // rgb(153,202,230) = #99cae6) fading toward near-white haze at the
+    // horizon (#d6e4f0), where the generic derivation produces a deep
+    // saturated blue falling to a near-black band. The Loop gets these
+    // explicit measured targets; the other 99 levels keep the generic
+    // derivation byte-identical. skyHorizon is still the single value
+    // background/fog/skirt/dome-sub-horizon all resolve to (94f5383), so
+    // the seam identity holds while the shared colour moves.
+    const loopSky = level.authoredCity === 'chicago-loop' && !night;
+    const skyZenith = loopSky
+      ? new THREE.Color('#99cae6')
+      : skyColor.clone().multiplyScalar(0.82);
+    const skyHorizon = loopSky
+      ? new THREE.Color('#d6e4f0')
+      : skyColor.clone().lerp(new THREE.Color(0xffffff), night ? 0.16 : 0.34);
     engine.scene.background = skyHorizon;
     // FOG: EXPONENTIAL-SQUARED, NOT LINEAR (0005 atmosphere pass).
     //
@@ -1248,7 +1263,7 @@ export async function main() {
     //     1800 units.
     //   * fog:false — fogging the sky toward the fog colour, which IS the sky
     //     colour, is a no-op that costs a per-fragment mix.
-    const skyGeo = new THREE.SphereGeometry(SKY_DOME_RADIUS, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.62);
+    const skyGeo = new THREE.SphereGeometry(SKY_DOME_RADIUS, 24, loopSky ? 24 : 12, 0, Math.PI * 2, 0, Math.PI * 0.62);
     {
       const pos = skyGeo.attributes.position;
       const col = new Float32Array(pos.count * 3);

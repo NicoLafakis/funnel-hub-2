@@ -60,9 +60,9 @@ CAR_TRIM = srgb('#5f6b7a')
 # Building-only fixed colors. Deliberately the same swatches propkit's
 # procedural bake uses (PALETTE_GLASS_TINT / PALETTE_TRIM_TINT) so a Blender
 # building and a procedural one read as the same city under any metro accent.
-WINDOW = srgb('#a8c4d4')         # fixed, glazing (== PALETTE_GLASS_TINT)
-TRIM = srgb('#5f6b7a')           # fixed, roof plant / canopies (== PALETTE_TRIM_TINT)
-DOOR_GLASS = srgb('#38495e')     # fixed, dark ground-floor entrance glass
+WINDOW = srgb('#a8c4d4')         # fixed, glazing (light sky-reflecting glass)
+TRIM = srgb('#72777a')           # fixed, roof plant / canopies (== PALETTE_TRIM_TINT; lifted 0011 task 7 from #5f6b7a)
+DOOR_GLASS = srgb('#7190a1')     # fixed, ground-floor glazing (== PALETTE_GLASS_TINT; lifted 0011 task 7 from #38495e — propkit.js liftAuthoredBand remaps old bakes until this is regenerated on a Blender machine)
 ROOF = srgb('#8b93a2')           # fixed, roof deck — a distinct slate value
 AWNING = srgb('#e2725b')         # fixed, shopfront awning pop (Hole.io refs)
 BEACON = srgb('#ff3b30')         # fixed, mast-tip aviation light (matches propkit)
