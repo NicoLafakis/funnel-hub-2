@@ -44,6 +44,7 @@ implemented in the current worktree. No deployment is implied by this plan.
 ## Playtest findings and proposed remediation
 
 - [`0010-chicago-level1-playtest/00-findings.md`](0010-chicago-level1-playtest/00-findings.md) — three-persona scripted playtest of Level 1 (The Loop — Chicago): graphics + keyboard-control findings synthesis, with `requirements.md`, `design.md`, `tasks.md`, persona reports in `personas/`, and evidence in `shots/playtest/` (capture rig: `scripts/playtest-capture.cjs`). Status: findings complete; remediation proposed, not yet approved or implemented.
+- [`0011-level1-city-realism-review/00-findings.md`](0011-level1-city-realism-review/00-findings.md) — live post-`c0e8568` city-realism review of Level 1: ranked illusion-breakers (dark/black-cutout towers, clashing art directions, oversized road markings, flat sky, a ground-plane defect, board-game parks, flat water, flat roofs) plus what already reads well, with evidence in `shots/l1-realism-review/`. Status: findings recorded; no remediation implemented.
 
 ## Implemented remediation records
 
