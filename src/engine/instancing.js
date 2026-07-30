@@ -284,8 +284,11 @@ export function createInstancedWorld({ scene, propkit, accent = '#9aa3ad', textu
       const facadeMap = Array.isArray(facadeEntry)
         ? facadeEntry[hashKey(key) % facadeEntry.length]
         : facadeEntry;
+      const detailMap = !facadeMap && photorealFacades
+        && textures && textures.propAtlases ? textures.propAtlases[kind] || null : null;
       const mesh = propkit.createInstancedPropField(kind, count, THREE, accent, {
-        visualId, materialVariant, golden, map: facadeMap || undefined,
+        visualId, materialVariant, golden, map: facadeMap || undefined, detailMap: detailMap || undefined,
+        desaturateProps: detailMap ? 0.35 : 0,
       });
       scene.add(mesh);
       // propkit's instanced geometries are CENTERED on their local origin

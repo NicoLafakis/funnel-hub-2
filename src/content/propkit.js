@@ -20,7 +20,7 @@
 import {
   DISTRICT_CATALOGS, VISUAL_ARCHETYPES, resolveVisualArchetype,
 } from './archetypes.js';
-import { TRIM_UV } from './textures.js';
+import { TRIM_UV, PROP_ATLAS_REGIONS } from './textures.js';
 import { PROP_MODELS } from './modelkit.js';
 import { mulberry32, hashStr } from '../data/seeds.js';
 
@@ -226,7 +226,9 @@ const CHICAGO_BUILDING_PALETTE = Object.freeze([
   '#87989d', // steel-grey glass
 ]);
 const CHICAGO_VEHICLE_PALETTE = Object.freeze([
-  '#d9d9d3', '#d2a229', '#b94337', '#3f7398', '#4f765c', '#756585',
+  // 0011 task 18: muted toward the photographic reference's range (was
+  // '#d9d9d3', '#d2a229', '#b94337', '#3f7398', '#4f765c', '#756585').
+  '#d9d9d3', '#b8942f', '#a34a40', '#4a6f8a', '#55705f', '#6e6378',
 ]);
 
 // City identity may replace the generic accent-derived candy palette without
@@ -434,10 +436,12 @@ function buildCar(THREE, accent, opts = {}) {
   const wheelRadius = dim.h * 0.26;
   const body = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h * 0.55, dim.d), bodyMat);
   body.position.set(0, wheelRadius + dim.h * 0.275, 0);
+  body.userData.uvRegion = PROP_ATLAS_REGIONS.car.body;
   group.add(body);
 
   const cabin = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 0.82, dim.h * 0.5, dim.d * 0.45), cabinMat);
   cabin.position.set(0, wheelRadius + dim.h * 0.55 + dim.h * 0.25, -dim.d * 0.05);
+  cabin.userData.uvRegion = PROP_ATLAS_REGIONS.car.glass;
   group.add(cabin);
 
   const wheelPositions = [
@@ -468,10 +472,12 @@ function buildBus(THREE, accent, opts = {}) {
   const wheelRadius = dim.h * 0.16;
   const body = new THREE.Mesh(new THREE.BoxGeometry(dim.w, dim.h - wheelRadius, dim.d), bodyMat);
   body.position.set(0, wheelRadius + (dim.h - wheelRadius) / 2, 0);
+  body.userData.uvRegion = PROP_ATLAS_REGIONS.bus.body;
   group.add(body);
 
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(dim.w * 1.01, dim.h * 0.18, dim.d * 1.01), stripeMat);
   stripe.position.set(0, wheelRadius + dim.h * 0.5, 0);
+  stripe.userData.uvRegion = PROP_ATLAS_REGIONS.bus.glass;
   group.add(stripe);
 
   const wheelZs = [dim.d * 0.34, dim.d * 0.02, -dim.d * 0.34];
@@ -614,6 +620,14 @@ function buildTree(THREE, accent, flavor) {
 
     const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.7, 7, 5), canopyLightMat);
     tuft.position.set(0.55, 2.35, 0.3);
+    // 0011 task 17: bark/foliage atlas regions for the Level 1 detail map
+    // (the blob tuft added below keeps the white swatch — the identity
+    // multiply, same as untextured).
+    for (const mesh of group.children) {
+      mesh.userData.uvRegion = mesh.material === trunkMat
+        ? PROP_ATLAS_REGIONS.tree.bark
+        : PROP_ATLAS_REGIONS.tree.foliage;
+    }
     group.add(tuft);
   }
 
@@ -634,6 +648,7 @@ function buildPerson(THREE, accent) {
 
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.3, 0.26), shirtMat);
   torso.position.set(0, 0.43, 0);
+  torso.userData.uvRegion = PROP_ATLAS_REGIONS.person.cloth;
   group.add(torso);
 
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 7, 6), headMat);
@@ -1374,7 +1389,17 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
     const geo = node.geometry;
     const posAttr = geo.attributes.position;
     const normAttr = geo.attributes.normal;
-    const color = (node.material && node.material.color) || white;
+    const color0 = (node.material && node.material.color) || white;
+    // 0011 task 18 (Level 1 only, gated by instancing.js): the canopy /
+    // shirt / panel base colours move toward the photographic set's range.
+    // A lerp toward the colour's OWN luminance preserves value exactly, so
+    // the edibility brightness ratio is arithmetically unchanged.
+    const color = opts.desaturateProps && node.userData.uvRegion
+      ? color0.clone().lerp(new THREE.Color(
+        color0.r * 0.2126 + color0.g * 0.7152 + color0.b * 0.0722,
+        color0.r * 0.2126 + color0.g * 0.7152 + color0.b * 0.0722,
+        color0.r * 0.2126 + color0.g * 0.7152 + color0.b * 0.0722), opts.desaturateProps)
+      : color0;
     // Facade-textured builds (textures.js): the tagged base box keeps its box
     // UVs on the SIDE faces (roof/ground faces and every other part sample
     // the texture's trim swatch) and its vertex color stays white so the
@@ -1396,7 +1421,12 @@ function mergedKindGeometry(THREE, kind, accentColorHex, visualId, opts = {}) {
       }
       if (isFacade || (region && n.y > 0.7)) colors.push(1, 1, 1);
       else colors.push(color.r, color.g, color.b);
-      if (isFacade && uvAttr && Math.abs(n.y) < 0.7) {
+      if (opts.detailMap && node.userData.uvRegion && uvAttr) {
+        // 0011 task 17: tagged parts (bark/foliage, panel/glass, cloth)
+        // sample their atlas rect; everything else keeps TRIM_UV's white.
+        const rg = node.userData.uvRegion;
+        uvs.push(rg[0] + uvAttr.getX(i) * (rg[2] - rg[0]), rg[1] + uvAttr.getY(i) * (rg[3] - rg[1]));
+      } else if (isFacade && uvAttr && Math.abs(n.y) < 0.7) {
         const fu = region ? uvAttr.getX(i) * region.u : uvAttr.getX(i);
         uvs.push(fu, uvAttr.getY(i));
       } else if (region && n.y > 0.7) {
@@ -1506,6 +1536,8 @@ export function createInstancedPropField(kind, count, THREE, accentColorHex, opt
   const geometry = mergedKindGeometry(THREE, kind, bakeAccent, descriptor.id, {
     facadeTextured: !!opts.map,
     facadeRegion: (opts.map && opts.map.userData && opts.map.userData.facadeRegion) || null,
+    detailMap: opts.detailMap || null,
+    desaturateProps: opts.desaturateProps || 0,
     paletteBase,
   });
   // White base material: the real per-part colors live in the vertex colors;
@@ -1536,6 +1568,11 @@ export function createInstancedPropField(kind, count, THREE, accentColorHex, opt
   // and everything else onto its trim swatch. Instance colors (jitter /
   // edibility / golden) still multiply on top, unchanged.
   if (opts.map) material.map = opts.map;
+  // 0011 task 17: near-white detail atlas for tree/car/bus/person kinds
+  // (Level 1's photoreal set). Separate from the facade path on purpose —
+  // it must not trip the palette skip or the textured edibility dim, both
+  // of which key on the building facade map.
+  if (!opts.map && opts.detailMap) material.map = opts.detailMap;
 
   const mesh = new THREE.InstancedMesh(geometry, material, safeCount);
   mesh.name = `props-${descriptor.id}${opts.golden ? '-golden' : ''}`;

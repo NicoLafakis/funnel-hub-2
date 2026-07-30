@@ -466,6 +466,75 @@ function cropGroundSource(img, size) {
   return canvas;
 }
 
+// --- Prop detail atlases (0011 task 17) -----------------------------------
+// One near-white detail map per merged street/vehicle kind — bark + foliage,
+// vehicle panel + glass, clothing weave. Near-white because every vertex
+// colour multiplies the map: the atlas adds surface detail while the palette
+// pick and the edibility value multiplies stay arithmetically untouched.
+// TRIM_UV still lands on a pure-white swatch, so untagged parts render
+// byte-identically to the untextured build. propkit's builders tag their
+// parts with these UV rects ([u0, v0, u1, v1]).
+export const PROP_ATLAS_REGIONS = Object.freeze({
+  tree: { foliage: [0.125, 0, 1, 1], bark: [0, 0, 0.125, 0.875] },
+  car: { body: [0.125, 0, 1, 1], glass: [0, 0, 0.125, 0.875] },
+  bus: { body: [0.125, 0, 1, 1], glass: [0, 0, 0.125, 0.875] },
+  person: { cloth: [0.125, 0, 1, 1] },
+});
+
+function bakePropDetailAtlas(THREE, kind) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const rng = mulberry32(0xA71A5 + kind.length);
+  // Near-white base everywhere — the identity multiplier.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 128, 128);
+  const mottle = (x0, y0, w, h, color, count, rMin, rMax, alpha) => {
+    ctx.fillStyle = color;
+    for (let i = 0; i < count; i += 1) {
+      ctx.globalAlpha = alpha * (0.6 + rng() * 0.4);
+      ctx.beginPath();
+      ctx.arc(x0 + rng() * w, y0 + rng() * h, rMin + rng() * (rMax - rMin), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  };
+  if (kind === 'tree') {
+    mottle(16, 0, 112, 128, '#cfe6c8', 260, 2, 7, 0.5);
+    mottle(16, 0, 112, 128, '#9cc49a', 200, 1.5, 5, 0.4);
+    for (let i = 0; i < 26; i += 1) {
+      ctx.fillStyle = i % 2 ? '#c9b6a2' : '#b39a83';
+      ctx.globalAlpha = 0.5 + rng() * 0.3;
+      ctx.fillRect(rng() * 15, 16 + rng() * 40, 1.5, 60 + rng() * 60);
+    }
+    ctx.globalAlpha = 1;
+  } else if (kind === 'car' || kind === 'bus') {
+    ctx.fillStyle = '#e9e9e9';
+    ctx.fillRect(16, 0, 112, 128);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(16, 12, 112, 30);
+    ctx.strokeStyle = '#c7c7c7';
+    ctx.lineWidth = 1;
+    for (const y of [34, 66, 98]) { ctx.beginPath(); ctx.moveTo(16, y); ctx.lineTo(128, y); ctx.stroke(); }
+    for (const x of [44, 82]) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 128); ctx.stroke(); }
+    ctx.fillStyle = '#dcebf4';
+    ctx.fillRect(0, 16, 16, 112);
+    ctx.fillStyle = '#b9d2e2';
+    for (let i = 0; i < 12; i += 1) ctx.fillRect(rng() * 15, 16 + rng() * 90, 2, 30 + rng() * 40);
+  } else if (kind === 'person') {
+    mottle(16, 0, 112, 128, '#e4e4e4', 220, 1, 3, 0.35);
+    mottle(16, 0, 112, 128, '#ffffff', 160, 1, 3, 0.3);
+  }
+  // The TRIM_UV swatch (top-left 8%) must be pure white.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 16, 16);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 /**
  * The photographic set: per-tier facades composed at their real face aspect
  * plus ground zone pattern sources for groundtex.js. Null when not a single
@@ -523,7 +592,15 @@ async function loadPhotorealSet(THREE, opts = {}) {
   const facades = Object.fromEntries(facadeEntries.filter(Boolean));
   const ground = Object.fromEntries(groundEntries.filter(Boolean));
   if (!Object.keys(facades).length && !Object.keys(ground).length) return null;
-  return { facades, ground };
+  // 0011 task 17: procedural near-white detail maps for the merged
+  // tree/car/bus/person kinds (Level 1 only — this set is Chicago-gated).
+  const propAtlases = {};
+  if (typeof document !== 'undefined') {
+    for (const kind of ['tree', 'car', 'bus', 'person']) {
+      propAtlases[kind] = bakePropDetailAtlas(THREE, kind);
+    }
+  }
+  return { facades, ground, propAtlases };
 }
 
 async function loadRecoveredMetroSet(THREE, metroId, opts = {}) {

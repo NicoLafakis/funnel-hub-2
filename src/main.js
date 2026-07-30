@@ -1344,7 +1344,7 @@ export async function main() {
     state.world = createInstancedWorld({
       scene: engine.scene, propkit, accent: metro.accent,
       textures: photoreal
-        ? { ...cityTextures, facades: photoreal.facades }
+        ? { ...cityTextures, facades: photoreal.facades, propAtlases: photoreal.propAtlases }
         : metroArt
           ? { ...cityTextures, facades: metroArt.facades, ground: metroArt.ground }
           : cityTextures,
