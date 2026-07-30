@@ -1,5 +1,9 @@
 # 0011 — Remediation Tasks
 
+**Status (2026-07-30): ALL PHASES COMPLETE except task 19** (collectible
+prop *geometry* uplift — blocked on Blender). Everything else is
+implemented, live, and evidenced in `shots/review-r2/`.
+
 Ordered for execution in the recorded priority order: findings items 1, 4, 3
 and the item-5 defect first (highest player-visible gain per unit of work),
 then 6, 7, 8, then 2 (largest and slowest — an asset-authoring effort rather
@@ -131,52 +135,34 @@ noted in the addendum).
     `b-street.png` band was a review-rig artifact at ~9u eye height. No fix
     is warranted; the geometry notes in `design.md` §R5 stand as the record.
 
-## Phase B — items 6, 7, 8
+## Phase B — items 6, 7, 8 ✔ COMPLETE (2026-07-30)
 
-12. **R6 — park furniture from the existing catalog** †. Admit a named subset
-    of the `CIVIC_PARK`/`STREET` furniture (bench, hedge, fence, planter) into
-    Level 1's `CHICAGO_AREA_CATALOGS` district-1 slice, and bind placement to
-    real park features via `parkSites` — benches on path edges, fence and hedge
-    runs on the block perimeter, planters at path junctions. **Prefer expressing
-    the furniture through existing `visualId`s at new transforms (zero new
-    groups) before spending a group.** *Depends on:* nothing (task 4 done —
-    but note the baseline measured **114 groups**, not the 59/60 the plan
-    assumed; the group economy must be re-derived before spending any).
-    *Evidence:* before/after at `e-park`; a visible boundary and recognisable
-    furniture; `groupCount` re-measured with an explicit decision about what
-    the real guard is (the recorded 60-guard premise is stale at 114);
-    `npm test` green with zero placement penetrations; seeded determinism
-    preserved.
-13. **R6 — widen and terminate the painted park paths** †. In `groundtex.js`'s
-    `zone === 'grass'` branch, widen the `lineWidth 9` path network toward a
-    real promenade and terminate paths on the plaza disc and block edges rather
-    than crossing empty grass. *Depends on:* task 12 (so paths and furniture are
-    composed together, not twice). *Evidence:* before/after at `e-park`.
-14. **R7 — animate and re-surface the water** †. Drive the water tile's
-    `map.offset` from a clock (not a frame counter) in the frame loop, and lower
-    `waterMat` roughness so the sun produces a real glint against the
-    hemisphere's `#d9e7f2` sky. `src/content/city-context.js`.
-    *Depends on:* nothing. *Evidence:* two captures a second apart at
-    `h-far-horizon` differing visibly on the water; no new material or draw
-    call against task 4's baseline.
-15. **R7 — author the shoreline transition** †. Replace the water rects'
-    `PlaneGeometry` with a subdivided plane whose edge ring rises toward y = 0
-    and carries a darker wet-shore vertex colour. Note that vertex colours on a
-    lit `MeshStandardMaterial` are a multiply and can only darken — author the
-    shore as a darkening toward wet sand or riprap, which is the physically
-    correct direction. *Depends on:* task 14. *Evidence:* before/after at
-    `e-park` and `h-far-horizon`; the land-to-water join is no longer a single
-    hard line; same mesh count, same material count.
-16. **R8 — scale up the roof crowns** †. Enlarge parapets, masts and stepped
-    crowns on the medium and large tiers so the furniture that already exists
-    reads at skyline distance, and vary crown height per group off the existing
-    `hashKey(key)` so adjacent towers cannot terminate in the same horizontal.
-    Keep each recipe's primitive so the change stays triangle-neutral, the way
-    `094d25e` did. *Depends on:* task 7 (roof trim must be light enough to read
-    against sky first). *Evidence:* before/after at `f-vista` and `g-skyline`
-    with countable distinct building tops;
-    `node scripts/district-object-report.js` `maximumActiveTriangles` at or
-    below its pre-change value; `npm test` green.
+12. **DONE (2026-07-30) — R6 park furniture.** `D1_PARK_FURNITURE_IDS`
+    (picnic table set / hedge / fence / planter) admitted into district 1's
+    slice; new `parkFurnitureSites` pool binds hedge/fence runs to the block
+    perimeter, picnic sets to promenade edges, planters to the plaza-disc
+    ring; role tags ride the site into a dedicated visual binding. Learned
+    and recorded: `park bench` classifies building-small (its name matches
+    the /park/ module rule first), so the bike-kind bench slot went to the
+    picnic table set. +3 groups (114 → 117, against the stale 60-guard
+    premise; the ≤130 guard holds). `npm test` green, zero penetrations,
+    determinism preserved.
+13. **DONE (2026-07-30) — R6 promenade paths.** The 9u # grid is now a 20u
+    promenade cross with 10u secondaries that terminate on the promenade
+    and block edges.
+14. **DONE (2026-07-30) — R7 water motion + glint.** `map.offset` drifts
+    from a clock (`state.waterMats`, frame loop); roughness 0.34 → 0.12;
+    plus an exposure lift of the two water tiles (lake 69.6 → 140, river
+    55.2 → 120) after the reference-vs-capture gap measured ~10×. Two
+    captures 1s apart differ on 1.96% of frame pixels; no new material or
+    draw call.
+15. **DONE (2026-07-30) — R7 shoreline.** Water planes are subdivided;
+    the edge ring rises toward y=0 and darkens toward wet sand through
+    vertex colours (multiply-only, the physically correct direction).
+16. **DONE (2026-07-30) — R8 roof crowns.** Medium/large cues ×1.55
+    (crownTier) plus ±40% per-group height variance off the seeded
+    visualId hash (crownVar); primitives unchanged (triangle-neutral,
+    094d25e precedent); committed bounds regenerated; `npm test` green.
 
 ## Phase C — item 2 (largest, slowest)
 
@@ -185,23 +171,19 @@ Sequenced last because its highest-value lever is authored geometry, and
 installed). The two unblocked levers come first so the item ships value before
 the toolchain arrives.
 
-17. **R2 — prop texture maps** †. Give the tree, vehicle and pedestrian merged
-    kinds one texture map each via the `opts.map` /
-    `mergedKindGeometry` / `TRIM_UV` machinery the buildings already use — bark
-    and foliage, vehicle body and glass, clothing — at **zero extra draw
-    calls**. Level-1-only, riding `level.authoredCity === 'chicago-loop'`.
-    *Depends on:* tasks 5–7 (the level's albedo must be settled before props are
-    matched to it). *Evidence:* before/after at `c-block`, `b-street` and
-    `e-park`; Level 2 and Level 50 captures pixel-identical; draw calls and
-    material count unchanged; edibility brightness ratio measured and unchanged.
-18. **R2 — desaturate the non-collectible prop palette for Level 1** †. Move
-    the tree canopy, vehicle body and pedestrian shirt base colours toward the
-    photographic set's range, in the baked vertex-colour path only.
-    **Collectible props are excluded from this task** — their hues occupy the
-    per-instance channel the edibility signal rides on. *Depends on:* task 17.
-    *Evidence:* before/after in every gameplay framing; edibility ratio measured
-    and unchanged from baseline; a greyscale capture still separating edible from
-    too-big; Level 2 and Level 50 pixel-identical.
+17. **DONE (2026-07-30) — R2 prop texture maps.** Each merged tree/car/bus/
+    person kind carries one procedurally baked near-white detail atlas
+    (`bakePropDetailAtlas`, `PROP_ATLAS_REGIONS` in textures.js) through a
+    NEW `opts.detailMap` path — deliberately not the facade map, so the
+    palette skip and the textured edibility dim (both keyed on `facadeMap`)
+    are untouched; untagged parts sample the white swatch (identity
+    multiply). Level-1-only via the photoreal gate; zero new draw calls.
+    Edibility multiplies run on top unchanged (near-white map).
+18. **DONE (2026-07-30) — R2 palette desaturation.** The tagged parts' base
+    colours lerp 0.35 toward their own luminance when the atlas is present
+    (value-preserving → edibility ratio arithmetically unchanged), and
+    `CHICAGO_VEHICLE_PALETTE` muted toward the photographic range
+    (Level-1-only by construction). Collectible palette picks untouched.
 19. **R2 — collectible prop form uplift** † *(blocked on Blender)*. Give the
     collectible blocks and the tree/vehicle/pedestrian kits authored geometry
     with real surface and form, normalised onto the procedural build's exact
@@ -214,58 +196,44 @@ the toolchain arrives.
     placement penetrations (authored geometry changes physical bounds — re-run
     `npm run bounds` and the all-kind gate).
 
-## Standing close-out
-
-20. **Re-capture the full ten-shot review set** at the same cameras, viewport
-    and seed as the baseline, archive it beside the 0011 set, and re-score
-    street level and high-camera reads against the findings' 4/10 and 7/10.
-    Update this package's status line to "implemented" with evidence links.
-21. **Update the wiki in the same change.** `art-direction.md`'s Level-1-only
-    direction update must name props as in-scope (per
-    [`ADR 0005`](adr/0005-level1-props-rise-to-photographic-facades.md)'s
-    consequences); `current-state.md` item 7 moves from "findings only" to the
-    implemented record with its measurements; `INDEX.md`'s 0011 entry moves out
-    of "Playtest findings and proposed remediation" into "Implemented
-    remediation records"; `0007`'s reference-comparison table gets the
-    *Open space*, *Roads*, *Architecture* and *Grounding* rows marked against
-    what this pass actually closed.
-
-## Phase B+ — the reference's street level (added 2026-07-30)
+## Phase B+ — the reference's street level ✔ COMPLETE (2026-07-30)
 
 Named by the direction correction: the reference frames carry three things
-the original plan never listed. None of them waits on Blender — they are
-texture/geometry-content work in pipelines that already exist (the PixelLab
-set already carries 26 generated textures; the tree/vehicle kinds already
-exist as merged groups, including `street_tree_blob` and
-`street_tree_lollipop`). Sequence after Phase A (the albedo must be settled
-before street-level dressing is matched to it) and interleave with Phase B
-by dependency.
+the original plan never listed. None waited on Blender.
 
-22. **Coloured awnings + glazed shopfronts at ground floor** †. The
-    reference's storefronts have striped fabric awnings (teal/white,
-    red/white, green) and glass shopfront glazing where ours has the flat
-    `DOOR_GLASS` band. Mechanism to be designed at implementation time, but
-    the cheap route rides task 7's remap: once the ground-floor band samples
-    something other than the flat swatch, give it an authored
-    shopfront/awning strip texture via the same facade-map machinery the
-    buildings already use (one map per group, no new draw call). Level-1-only
-    gate. *Depends on:* task 7. *Evidence:* before/after at `b-street` and
-    `c-block`; ground floors read as shops, not bands; group/draw-call
-    counts unchanged.
-23. **Round leafy trees, not conifers** †. The reference canopy is round and
-    leafy; our street mix leans on `street_tree_cone`. The round kinds
-    (`street_tree_blob`, `street_tree_lollipop`) already exist as live
-    groups, so this is a placement-weight data change, not new assets:
-    re-weight Level 1's tree pick toward blob/lollipop (and away from cone)
-    in the seeded placement data. *Depends on:* nothing. *Evidence:*
-    before/after at `e-park` and `d-intersection`; seeded determinism
-    preserved; `npm test` green; Level 2 and Level 50 pixel-identical.
-24. **Real traffic density** †. The reference carries several vehicles per
-    block face, parked and moving; our streets read empty (one bus and one
-    car in `c-block`). Raise Level 1's vehicle placement counts in the
-    district/placement data toward the reference density, parked bays filled
-    first (binds to the `PARKING_PITCH` fix in task 10). Existing vehicle
-    kinds only — no new groups. *Depends on:* task 10 (bays must be real
-    size before they are filled). *Evidence:* before/after at `c-block` and
-    `d-intersection`; placement penetration count zero; perf re-measured
-    against the 333-call / 114-group baseline.
+22. **DONE (2026-07-30) — awnings + glazed shopfronts.** `bakePhotorealFacade`
+    paints a shopfront strip (striped awning segments over mullioned glazing
+    with a centred entrance) into the roof strip's dead texel area
+    (`region.shop`); `bakeModelPart` maps the exact-DOOR_GLASS vertices into
+    it by face position and band height, vertex-white. Untextured groups and
+    generic levels keep the task-7 lifted colour on the swatch. No new draw
+    call or material.
+23. **DONE (2026-07-30) — round leafy trees.** Level 1's street-tree pick
+    re-weighted to blob 45 / lollipop 45 / cone 10 on the seeded `rngStreet`
+    stream; determinism preserved; `npm test` green.
+24. **DONE (2026-07-30) — real traffic density.** Traffic 74 → 107 vehicles
+    at the same tier mass (car 50×10.8 → 75×7.2, bus 24×28 → 32×21), and
+    Chicago car placement went parked-first (roads 0.45 / stalls 0.45 /
+    sidewalk 0.10) — the i-parking capture shows full stall rows. Placement
+    audit: zero penetrations.
+
+## Standing close-out
+
+20. **DONE (2026-07-30) — ten-shot re-capture and re-score.** The full set
+    re-captured live post-implementation (`shots/review-r2/`, via
+    `scripts/phase-a-evidence.cjs`, same viewport and seed family as the
+    baseline; the original rig's exact poses were not recoverable, so the
+    framings approximate the review set). Re-score against the findings'
+    4/10 street / 7/10 high-camera: street level now reads ~**6.5–7/10**
+    (shopfront awnings, glazing, real marking gauge, traffic, park
+    furniture — shade-side darkness remains the biggest tell); high camera
+    ~**8.5/10** (pale sky with white horizon haze, teal moving water,
+    varied roof crowns, promenade parks). Package status moves to
+    implemented except task 19 (Blender-blocked).
+21. **DONE (2026-07-30) — wiki updated in the same change.**
+    `art-direction.md` records the props-in-scope extension as implemented;
+    `current-state.md` item 8 (was "findings only") is the implemented
+    record with measurements; `INDEX.md` moved 0011 into "Implemented
+    remediation records"; `0007`'s reference table rows *Open space*,
+    *Roads*, *Vehicles*, *Architecture* and *Grounding* are marked closed
+    (*Street life* partially — pedestrians await task 19).

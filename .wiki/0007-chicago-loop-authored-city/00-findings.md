@@ -38,6 +38,16 @@ The actual reference is now capable of legal placement, but it lacks authored
 urban intent. The target reads as a city because streets, blocks, buildings,
 open spaces, traffic, and background all agree on one spatial hierarchy.
 
+**Closed by 0011 (2026-07-30):** the *Open space* row (parks are bounded
+civic rooms — furniture on real features, promenade paths), the *Roads* row
+(lane/crossing gauge corrected to real-world scale, consistent dash rhythm),
+the *Vehicles* row (107 vehicles, parked bays filled), most of the
+*Architecture* row (windows on every tier, storefront awnings + glazing,
+roof-crown variety at skyline distance — shade-side darkness remains), and
+the *Grounding* row (curbs, promenades, shoreline, parking stalls). The
+*Street life* row is partially closed (trees, lamps, furniture; pedestrians
+remain chibi until 0011 task 19 gets a Blender machine).
+
 ### Background-reference update (2026-07-28)
 
 The two added references clarify that the horizon is not a decorative skyline

@@ -108,6 +108,52 @@ const OUT = path.resolve('shots/phase-a');
     look: [200, 60, 200],
   });
 
+  // a-spawn: the default chase view at spawn (unfrozen equivalent).
+  await shot('a-spawn.png', {
+    avatar: [spawn.x, spawn.z],
+    pos: [spawn.x, 450, spawn.z - 320],
+    look: [spawn.x, 0, spawn.z + 200],
+  });
+
+  // c-block: street-level down an avenue canyon.
+  await shot('c-block.png', {
+    avatar: [spawn.x + 200, spawn.z],
+    pos: [spawn.x + 200, 30, spawn.z - 300],
+    look: [spawn.x + 200, 60, spawn.z + 500],
+  });
+
+  // e-park: the centre park block from a mid height.
+  const park = await page.evaluate(() => {
+    const bs = window.__fw.state.layout.blocks.filter((b) => b.zone === 'park')
+      .sort((a, b) => b.w * b.d - a.w * a.d);
+    return { x: bs[0].x, z: bs[0].z, w: bs[0].w, d: bs[0].d };
+  });
+  await shot('e-park.png', {
+    avatar: [park.x, park.z],
+    pos: [park.x - park.w * 0.7, 300, park.z - park.d * 0.7],
+    look: [park.x, 0, park.z],
+  });
+
+  // i-parking: a surface parking lot.
+  const lot = await page.evaluate(() => {
+    const b = window.__fw.state.layout.blocks.find((b2) => b2.zone === 'parking');
+    return b ? { x: b.x, z: b.z, w: b.w, d: b.d } : null;
+  });
+  if (lot) {
+    await shot('i-parking.png', {
+      avatar: [lot.x, lot.z],
+      pos: [lot.x - lot.w * 0.6, 260, lot.z - lot.d * 0.6],
+      look: [lot.x, 0, lot.z],
+    });
+  }
+
+  // j-elevated-rail: along the L tracks.
+  await shot('j-elevated-rail.png', {
+    avatar: [spawn.x, spawn.z],
+    pos: [spawn.x - 500, 120, spawn.z + 300],
+    look: [spawn.x + 400, 60, spawn.z + 300],
+  });
+
   // Sky value samples for the re-aim check (dome pixels, h-far-horizon frame).
   const skySample = await page.evaluate(() => {
     const fw = window.__fw;

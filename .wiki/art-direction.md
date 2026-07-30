@@ -49,7 +49,14 @@ Chicago-only mechanism, so no new per-level override exists to leak. As of
 2026-07-29 this is a design decision and a proposed task sequence
 ([`tasks.md`](0011-level1-city-realism-review/tasks.md) tasks 17-19), not yet
 implemented — the geometry-led lever is additionally blocked on the
-Blender-not-installed caveat below.
+Blender-not-installed caveat below. **Implemented 2026-07-30** (except the
+geometry lever): tasks 17–18 shipped the near-white detail atlases
+(bark/foliage, panel/glass, cloth) and the luminance-preserving
+desaturation; task 19 (authored prop geometry) remains Blender-blocked.
+The same pass also landed the pale drained sky, water, parks, shopfront
+awnings, traffic, and roof-crown items — full record in
+[`0011`](0011-level1-city-realism-review/00-overview.md) and
+`shots/review-r2/`.
 
 ## 1. Districts, not scatter
 

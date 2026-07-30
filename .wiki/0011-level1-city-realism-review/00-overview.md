@@ -1,9 +1,11 @@
 # 0011 — Level 1 City Realism: Objective Overview
 
-**Tier:** 2 — **Date:** 2026-07-29 — **Status:** Phase-0 measurements and
-**Phase A implemented** (2026-07-30, `91eeee9` — tasks 5–8, 10 live, task 9
-dropped, task 11 cancelled; evidence in `shots/phase-a/` and `tasks.md`).
-Phases B, B+, C not started.
+**Tier:** 2 — **Date:** 2026-07-29 — **Status:** **implemented** (2026-07-30)
+except task 19 (collectible prop *geometry* uplift — blocked on Blender, the
+only remaining item). Phases 0, A, B, B+ and C's unblocked levers (tasks
+5–8, 10, 12–18, 22–24) are live; evidence in `shots/review-r2/` and on each
+task in `tasks.md`. Re-scored: street level ~6.5–7/10 (was 4/10), high
+camera ~8.5/10 (was 7/10).
 
 ## What was asked
 
