@@ -944,14 +944,19 @@ export function bakeGroundTexture(layout, opts = {}) {
           const insetX = hw * 0.48;
           const insetZ = hd * 0.48;
           ctx.strokeStyle = patterns.parkPath || cssOf.sand;
-          ctx.lineWidth = 9;
+          ctx.lineWidth = 20; // 0011 task 13: promenade cross, was a 9u board-game line
           ctx.beginPath();
           ctx.moveTo(-hw, 0); ctx.lineTo(hw, 0);
           ctx.moveTo(0, -hd); ctx.lineTo(0, hd);
-          ctx.moveTo(-insetX, -hd); ctx.lineTo(-insetX, hd);
-          ctx.moveTo(insetX, -hd); ctx.lineTo(insetX, hd);
-          ctx.moveTo(-hw, -insetZ); ctx.lineTo(hw, -insetZ);
-          ctx.moveTo(-hw, insetZ); ctx.lineTo(hw, insetZ);
+          ctx.stroke();
+          // Secondary paths terminate on the promenade and the block edges
+          // instead of crossing empty grass end to end (0011 task 13).
+          ctx.lineWidth = 10;
+          ctx.beginPath();
+          ctx.moveTo(-insetX, -hd); ctx.lineTo(-insetX, 0);
+          ctx.moveTo(insetX, 0); ctx.lineTo(insetX, hd);
+          ctx.moveTo(-hw, -insetZ); ctx.lineTo(0, -insetZ);
+          ctx.moveTo(0, insetZ); ctx.lineTo(hw, insetZ);
           ctx.stroke();
 
           const plazaRadius = Math.min(hw, hd) * 0.20;

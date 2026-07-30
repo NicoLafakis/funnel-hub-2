@@ -587,6 +587,56 @@ function parkSites(blocks, rng) {
   return sites;
 }
 
+// 0011 task 12: park-feature sites for Chicago's civic parks. Instead of the
+// jittered scatter grid, furniture binds to the features groundtex paints:
+// hedge/fence runs on the block perimeter, benches on the promenade edges,
+// planters around the plaza disc. The role tag rides the site so the visual
+// pass can bind the right object to each feature.
+function parkFurnitureSites(blocks, rng) {
+  const sites = [];
+  for (const b of blocks) {
+    if (b.zone !== 'park') continue;
+    const hw = b.w / 2;
+    const hd = b.d / 2;
+    // Perimeter runs, inset ~10-14u from the block edge at a ~30u pitch.
+    for (const [alongX, sign] of [[true, -1], [true, 1], [false, -1], [false, 1]]) {
+      const len = alongX ? b.w : b.d;
+      const n = Math.max(2, Math.floor(len / 30));
+      for (let i = 0; i < n; i += 1) {
+        const t = (i + 0.5) / n - 0.5;
+        const inset = 10 + rng() * 4;
+        const lx = alongX ? t * len : sign * (hw - inset);
+        const lz = alongX ? sign * (hd - inset) : t * len;
+        sites.push({ ...rectPoint(b, lx, lz), rotY: alongX ? 0 : Math.PI / 2, block: b, parkRole: 'perimeter' });
+      }
+    }
+    // Promenade-edge points: the main cross paths (block centrelines, painted
+    // 20u wide), benches offset just past the painted edge, ~44u pitch.
+    for (const axisX of [true, false]) {
+      const len = axisX ? b.w : b.d;
+      const n = Math.max(2, Math.floor(len / 44));
+      for (let i = 0; i < n; i += 1) {
+        const t = (i + 0.5) / n - 0.5;
+        for (const side of [-1, 1]) {
+          if (rng() < 0.4) continue;
+          const off = 14 + rng() * 3;
+          const lx = axisX ? t * len * 0.9 : side * off;
+          const lz = axisX ? side * off : t * len * 0.9;
+          sites.push({ ...rectPoint(b, lx, lz), rotY: axisX ? 0 : Math.PI / 2, block: b, parkRole: 'path' });
+        }
+      }
+    }
+    // Junction ring: planters around the plaza disc (radius matches the
+    // groundtex grass branch's disc at min(hw,hd)*0.20).
+    const ring = Math.min(hw, hd) * 0.2 + 8;
+    for (let i = 0; i < 6; i += 1) {
+      const a = (i / 6) * Math.PI * 2 + rng() * 0.3;
+      sites.push({ ...rectPoint(b, Math.cos(a) * ring, Math.sin(a) * ring), rotY: a + Math.PI / 2, block: b, parkRole: 'junction' });
+    }
+  }
+  return sites;
+}
+
 // Sparse points on plaza interiors, kept clear of the landmark's footprint.
 function plazaSites(blocks, rng, landmarkPlaza) {
   const sites = [];
@@ -1022,6 +1072,7 @@ export function generateDistrict(level, opts = {}) {
   // Site pools (shuffled once, then consumed).
   const sidewalks = shuffle(sidewalkSites(blocks, rngProps), rngProps);
   const parks = shuffle(parkSites(blocks, rngProps), rngProps);
+  const parkFurniture = chicagoPilot ? shuffle(parkFurnitureSites(blocks, rngProps), rngProps) : [];
   const plazas = shuffle(plazaSites(blocks, rngProps, landmarkPlaza), rngProps);
   const roads = shuffle(roadSites(streets, rngProps), rngProps);
   const parkingStalls = chicagoPilot ? shuffle(buildParkingStallSites(blocks), rngProps) : [];
@@ -1100,7 +1151,9 @@ export function generateDistrict(level, opts = {}) {
   // buildings on block corners facing streets (art-direction.md §1).
   const PLACEMENT = {
     trash: [{ sites: parks, share: 0.45, zone: 'park' }, { sites: sidewalks, share: 0.45, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }],
-    bike: [{ sites: parks, share: 0.35, zone: 'park' }, { sites: sidewalks, share: 0.55, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }],
+    bike: chicagoPilot
+      ? [{ sites: parkFurniture, share: 0.35, zone: 'park' }, { sites: sidewalks, share: 0.55, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }]
+      : [{ sites: parks, share: 0.35, zone: 'park' }, { sites: sidewalks, share: 0.55, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }],
     car: chicagoPilot
       ? [{ sites: roads, share: 0.55, zone: 'road' }, { sites: parkingStalls, share: 0.30, zone: 'parking' }, { sites: sidewalks, share: 0.15, zone: 'sidewalk' }]
       : [{ sites: roads, share: 0.75, zone: 'road' }, { sites: sidewalks, share: 0.25, zone: 'sidewalk' }],
@@ -1159,6 +1212,7 @@ export function generateDistrict(level, opts = {}) {
         mega: false,
         scaleMult: 1,
         spawnFeast: false,
+        parkRole: site.parkRole || null,
         streetIndex: typeof site.streetIndex === 'number' ? site.streetIndex : undefined,
         lane: typeof site.lane === 'number' ? site.lane : undefined,
       });
@@ -1187,6 +1241,25 @@ export function generateDistrict(level, opts = {}) {
     p.visualId = descriptor.id;
     p.collectionKey = descriptor.collectionKey;
   }
+  // 0011 task 12: bind Chicago park furniture to the feature role its site
+  // carried — picnic sets on promenade edges ('park bench' itself classifies
+  // building-small via the module rule, so the bike-kind bench slot goes to
+  // the picnic table set), hedge/fence runs on the block perimeter, planters
+  // around the plaza disc. These props skip the generic authored-id spread
+  // below.
+  if (chicagoPilot) {
+    for (const p of props) {
+      if (!p.parkRole) continue;
+      const id = p.parkRole === 'perimeter'
+        ? (rngVisual() < 0.5 ? 'cityobj_shared_hedge_module' : 'cityobj_shared_fence_module')
+        : p.parkRole === 'junction'
+          ? 'cityobj_shared_planter_box'
+          : 'cityobj_shared_picnic_table_set';
+      const descriptor = resolveVisualArchetype(id, p.kind);
+      p.visualId = descriptor.id;
+      p.collectionKey = descriptor.collectionKey;
+    }
+  }
   // A city-authored first district may declare several reference-led IDs per
   // tier. Spread them deterministically across that tier instead of collapsing
   // the entire level to the legacy baseline. Later districts still use the
@@ -1195,7 +1268,7 @@ export function generateDistrict(level, opts = {}) {
     for (const kind of Object.keys(catalog.mixes)) {
       const ids = catalog.mixes[kind];
       if (!ids.length) continue;
-      const candidates = shuffle(props.filter((p) => p.kind === kind), rngVisual);
+      const candidates = shuffle(props.filter((p) => p.kind === kind && !p.parkRole), rngVisual);
       const authoredIds = ids.filter((id) => resolveVisualArchetype(id, kind).cityObject);
       const genericIds = ids.filter((id) => !resolveVisualArchetype(id, kind).cityObject);
       const architecturalIds = authoredIds.filter((id) => {

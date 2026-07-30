@@ -1042,7 +1042,11 @@ async function main() {
           // L1 also borrows shared-urban BUILDINGS so every building maps to
           // an authored archetype model (no flat legacy boxes downtown).
           || (id.startsWith('cityobj_shared_')
-            && archetypesMod.VISUAL_ARCHETYPES[id].gameplayKind.startsWith('building')))
+            && (archetypesMod.VISUAL_ARCHETYPES[id].gameplayKind.startsWith('building')
+              // 0011 task 12: the four park-furniture pieces admitted into
+              // district 1's slice (benches/hedges/fences/planters bound to
+              // real park features).
+              || archetypesMod.D1_PARK_FURNITURE_IDS.has(id))))
         && laterChicagoObjects.size === 0);
     // Group budget is a measured-target guard, not an art ceiling (owner
     // directive; .claude 3d-pipeline-contract §1). Desktop budget is <=150

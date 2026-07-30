@@ -325,10 +325,21 @@ export const DISTRICT_CATALOGS = Object.freeze(allCatalogs);
 // are authored.
 const chicagoSpecific = CITY_OBJECTS.filter((entry) => entry.cityId === 'chicago');
 const sharedUrban = CITY_OBJECTS.filter((entry) => entry.scope === 'shared');
+// 0011 task 12: Level 1's parks read as board-game squares partly because the
+// shared street/park furniture was round-robined away to districts 2-10.
+// Admit the four pieces the park design binds to real features (benches,
+// hedges, fences, planters) into district 1's slice.
+export const D1_PARK_FURNITURE_IDS = new Set([
+  'cityobj_shared_picnic_table_set',
+  'cityobj_shared_hedge_module',
+  'cityobj_shared_fence_module',
+  'cityobj_shared_planter_box',
+]);
 const CHICAGO_AREA_CATALOGS = Object.freeze(Object.fromEntries(Array.from({ length: 10 }, (_, offset) => {
   const district = offset + 1;
   const slice = district === 1
-    ? chicagoSpecific.filter((entry) => entry.sheet === 'icon')
+    ? [...chicagoSpecific.filter((entry) => entry.sheet === 'icon'),
+      ...sharedUrban.filter((entry) => D1_PARK_FURNITURE_IDS.has(entry.id))]
     // Round-robin the shared sheets so every neighborhood gets a balanced
     // mix of buildings, vehicles, civic modules, people, and street detail;
     // sequential slicing would make the final level almost entirely shops.
