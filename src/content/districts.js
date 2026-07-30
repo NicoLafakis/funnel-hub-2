@@ -1155,7 +1155,7 @@ export function generateDistrict(level, opts = {}) {
       ? [{ sites: parkFurniture, share: 0.35, zone: 'park' }, { sites: sidewalks, share: 0.55, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }]
       : [{ sites: parks, share: 0.35, zone: 'park' }, { sites: sidewalks, share: 0.55, zone: 'sidewalk' }, { sites: plazas, share: 0.10, zone: 'plaza' }],
     car: chicagoPilot
-      ? [{ sites: roads, share: 0.55, zone: 'road' }, { sites: parkingStalls, share: 0.30, zone: 'parking' }, { sites: sidewalks, share: 0.15, zone: 'sidewalk' }]
+      ? [{ sites: roads, share: 0.45, zone: 'road' }, { sites: parkingStalls, share: 0.45, zone: 'parking' }, { sites: sidewalks, share: 0.10, zone: 'sidewalk' }]
       : [{ sites: roads, share: 0.75, zone: 'road' }, { sites: sidewalks, share: 0.25, zone: 'sidewalk' }],
     bus: [{ sites: roads, share: 1.0, zone: 'road' }],
     // Shares moved toward FRONTAGE with the built-out blocks change (§18).
@@ -1463,9 +1463,25 @@ export function generateDistrict(level, opts = {}) {
     for (const { site, zone, overlapped } of picks) {
       if (overlapped) keptOverlapping[tier.kind] = (keptOverlapping[tier.kind] || 0) + 1;
       occupancy.add(occupancyRect(tier.kind, tier.baseRadius, site.x, site.z, 0, true));
-      const descriptor = resolveVisualArchetype(
-        variants[Math.floor(rngStreet() * variants.length)], tier.kind,
-      );
+      // 0011 task 23: Level 1's canopy should be round and leafy like the
+      // reference, not conifer. The cone stays in the mix (10%) so the
+      // skyline keeps a little species variety; the pick stays on rngStreet.
+      const CHICAGO_TREE_WEIGHTS = chicagoPilot && tier.kind === 'tree'
+        ? [['street_tree_blob', 0.45], ['street_tree_lollipop', 0.45], ['street_tree_cone', 0.10]]
+        : null;
+      let variantId;
+      if (CHICAGO_TREE_WEIGHTS) {
+        const roll = rngStreet();
+        let acc = 0;
+        variantId = CHICAGO_TREE_WEIGHTS[CHICAGO_TREE_WEIGHTS.length - 1][0];
+        for (const [id, w] of CHICAGO_TREE_WEIGHTS) {
+          acc += w;
+          if (roll < acc) { variantId = id; break; }
+        }
+      } else {
+        variantId = variants[Math.floor(rngStreet() * variants.length)];
+      }
+      const descriptor = resolveVisualArchetype(variantId, tier.kind);
       // Draw the random yaw UNCONDITIONALLY even where it is discarded below:
       // rngStreet is a shared stream and skipping a draw for one kind would
       // reshuffle every placement after it.

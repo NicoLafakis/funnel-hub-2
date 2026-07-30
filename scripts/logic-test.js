@@ -507,7 +507,9 @@ async function main() {
       const count = (kinds) => loop.filter((tier) => kinds.includes(tier.kind))
         .reduce((sum, tier) => sum + tier.baseCount, 0);
       return massPreserved
-        && count(['car', 'bus']) === 74
+        // 0011 task 24: traffic raised 74 -> 107 toward the reference's
+        // density, same tier mass (more, individually lighter vehicles).
+        && count(['car', 'bus']) === 107
         && count(['building-small', 'building-medium', 'building-large']) === 194;
     })());
     check('the Loop steps from low-rise park frontage to an outer tall skyline', (() => {
