@@ -27,6 +27,30 @@ levels keep the procedural premium-stylized path above; the call is unchanged
 for them. The full tile expansion plan lives in
 [`texture-map-manifest.md`](texture-map-manifest.md).
 
+**Direction extended (2026-07-29), Level 1 props included:**
+[`0011-level1-city-realism-review`](0011-level1-city-realism-review/00-overview.md)'s
+review found Level 1's photographic facades standing directly beside cartoon
+trees, toy vehicles, chibi pedestrians, and pastel collectible blocks — two art
+directions in conflict, ranked second of eight illusion-breakers.
+[`ADR 0005`](0011-level1-city-realism-review/adr/0005-level1-props-rise-to-photographic-facades.md)
+settles which side moves: **for Level 1 only, the props rise to meet the
+photographic facades**, not the other way around — the facades stay, and
+trees, vehicles, pedestrians, and collectible blocks gain fidelity through
+authored geometry, baked vertex colour, and one texture map per merged kind
+(the same three levers `mergedKindGeometry` already permits; per-part
+materials are not available at any price short of breaking the instanced-group
+budget). The collectible props' edibility signal — a scalar value multiply on
+the per-instance colour, §3 below — is a hard constraint on how far the
+pastel palette can move; it is not renegotiated by this decision. The other 99
+levels' premium-stylized path, including their own trees, vehicles, and
+pedestrians, is explicitly untouched — this rides the same
+`level.authoredCity === 'chicago-loop'` flag that already gates every other
+Chicago-only mechanism, so no new per-level override exists to leak. As of
+2026-07-29 this is a design decision and a proposed task sequence
+([`tasks.md`](0011-level1-city-realism-review/tasks.md) tasks 17-19), not yet
+implemented — the geometry-led lever is additionally blocked on the
+Blender-not-installed caveat below.
+
 ## 1. Districts, not scatter
 
 **Authored-city pilot (2026-07-28):** Level 1 now proves the next step beyond
@@ -262,6 +286,16 @@ instead of uniform scatter:**
   correction below for why. Do not read the "flat dark roofs" screenshots
   across this workstream as missing Blender work; the roof kit was there and
   occluded by a placement bug one layer up.
+  **This warning was tested and held (2026-07-29):**
+  [`0011-level1-city-realism-review/00-findings.md`](0011-level1-city-realism-review/00-findings.md)
+  item 8 read a fresh set of live screenshots and asserted exactly this
+  misreading — "every roof is flat," roofs have no geometry. It was wrong and
+  this page was right: the review's own remediation design confirms the roof
+  kit ships (`BUILDING_ROOF`/`buildingRoofCue`, `build_props.py:371-497`) and
+  corrects item 8 to a silhouette-*scale* defect at skyline distance, plus
+  dark roof-trim colour removing contrast against the sky — not absent
+  geometry. See the errata block on item 8 in that findings doc and
+  [`design.md`](0011-level1-city-realism-review/design.md) §R8.
 
 **Acceptance:** a screenshot of any level is identifiable as "a city
 district" (not "objects on a plane") by someone who has never seen the

@@ -46,6 +46,23 @@ Scope, architecture, acceptance criteria, and checkpoints:
 - iOS and Android device sessions meet the agreed usability and performance floor;
 - approved UI surfaces remain reachable at 360×640 and 800×450.
 
+## Proposed — Level 1 city realism remediation (not approved)
+
+[`0011-level1-city-realism-review`](0011-level1-city-realism-review/00-overview.md)
+carries a full implementation-ready plan for the eight illusion-breakers its
+live review ranked (dark/black-cutout towers, clashing photographic-vs-cartoon
+art direction, road-marking scale, sky flatness, a ground-plane clip, flat
+parks, flat water, flat roof silhouettes), plus
+[`ADR 0005`](0011-level1-city-realism-review/adr/0005-level1-props-rise-to-photographic-facades.md)
+(Level 1 props rise to meet the photographic facades; the other 99 levels are
+unaffected). Sequenced measurement-first, then the four highest value-per-cost
+items, then parks/water/roofs, then the largest item (prop art uplift) last
+because its highest-value lever needs a machine with Blender, which this one
+is not. Like Phase 5 above, this is proposed and design-complete, not approved
+or scheduled — every look-and-feel task needs Nico's per-element sign-off
+before it ships. Scope, requirements, mechanism, and task order:
+[`0011-level1-city-realism-review/tasks.md`](0011-level1-city-realism-review/tasks.md).
+
 ## Deferred product decisions
 
 - Prestige/New Game+ requires retention evidence from playtests.

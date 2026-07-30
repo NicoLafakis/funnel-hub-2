@@ -123,7 +123,41 @@ The nine gameplay invariants and hard placement gate are green, and `npm test` e
 4. **Mobile performance:** real-device phone/tablet frame time remains unmeasured; headless `requestAnimationFrame` figures are not valid performance evidence.
 5. **Mobile UI:** Nico approved all seven named surfaces on 2026-07-28. The shorter title, pause/sound controls, safe areas, mobile typography, persisted quality selector, and direct Level Complete actions are implemented; live viewport and assistive-technology evidence remains open.
 6. **Desktop UX debt (proposed):** the [`0010-chicago-level1-playtest`](0010-chicago-level1-playtest/00-findings.md) package (2026-07-29) documents mouse-only menu traversal, tall-building camera occlusion, the fresh-boot intro-card skip, a static coins counter, ~13px HUD counters, untaught keyboard controls, and dark street-level reads (in tension with the Loop brightness fill noted above — revisit together). Remediation is specified in that package but not yet approved or implemented.
-7. **City realism debt (findings only):** the [`0011-level1-city-realism-review`](0011-level1-city-realism-review/00-findings.md) package (2026-07-29, captured live post-`c0e8568`) ranks eight illusion-breakers ahead of item 6's dark-street finding, worst first: black-cutout tall buildings, a clashing photographic-vs-cartoon art direction, oversized road markings, a flat featureless sky, a ground-plane defect visible at pedestrian eye height, board-game-flat parks, flat water, and flat roof silhouettes. No remediation is specified or implemented.
+7. **City realism debt (findings plus proposed remediation):** the [`0011-level1-city-realism-review`](0011-level1-city-realism-review/00-overview.md) package (2026-07-29, captured live post-`c0e8568`) ranks eight illusion-breakers ahead of item 6's dark-street finding, worst first: black-cutout tall buildings, a clashing photographic-vs-cartoon art direction, oversized road markings, a flat featureless sky, a ground-plane defect visible at pedestrian eye height, board-game-flat parks, flat water, and flat roof silhouettes. The package now also carries a full `requirements.md`/`design.md`/`tasks.md`/`test-strategy.md` remediation plan plus [`ADR 0005`](0011-level1-city-realism-review/adr/0005-level1-props-rise-to-photographic-facades.md) (Level 1 props rise to meet the photographic facades). **Nothing is implemented or approved** — every look-and-feel task still needs Nico's per-element sign-off.
+   **Corrected causes, do not act on the findings doc's original framing:**
+   reading the code overturned the stated cause of three items. Item 1
+   ("too dark", read as lighting) is actually two albedo defects — a
+   facade-variant lottery landing on the darkest glass art for the tallest
+   tower, and a baked near-black ground-floor paint band
+   (`DOOR_GLASS = '#38495e'`, `scripts/blender/build_props.py:65`) that
+   `bakeModelPart` cannot whiten for tinting — not a light-rig problem; the
+   Loop rig is already brightened and three's `HemisphereLight` cannot reach
+   zero irradiance. Item 3 ("streets 3x too wide") does not survive
+   arithmetic: the computed street width is an ordinary 7.03m two-lane
+   carriageway and the crosswalk stripe is correct; the real defects are a
+   ~2x-too-wide centre line and a dash rhythm ~3x too frequent. Item 8
+   ("every roof is flat") is contradicted by the code and by this page's own
+   `art-direction.md` warning against exactly that misreading — roof
+   geometry ships; the defect is silhouette scale at skyline distance. Full
+   errata with file paths and measurements is in
+   [`00-findings.md`](0011-level1-city-realism-review/00-findings.md) inline
+   on each affected item.
+   **Recorded, unresolved draw-call contradiction:** this page (above, item
+   9 of the product-and-runtime list) records `scripts/perf-probe.cjs`
+   measuring Level 1 at **~390 draw calls / ~1.0M triangles**, while
+   `scene.js`'s own code comment claims "~25 draw calls / 205k triangles,"
+   and the pipeline contract's desktop target is **≤150**. The three numbers
+   cannot all be right and this page does not resolve which one is.
+   [`0011`'s task 4](0011-level1-city-realism-review/tasks.md) re-baselines
+   this on the live deploy before any later task in that package spends
+   against the budget; R6's park-furniture group budget (task 12) is blocked
+   on the answer.
+   **Blocking constraint carried from `art-direction.md` §1:** Blender is
+   not installed on this machine, so `npm run models` cannot regenerate
+   `assets/models/*.js`. This is why 0011's item-2 authored-geometry prop
+   uplift (task 19) is sequenced last in that package's plan, and why its
+   near-term prop-albedo fix (task 7) is a vertex-colour remap in
+   `propkit.js` rather than a source-model edit.
 
 The implementation-ready plan for items 1–5 is [`0006-mobile-readiness-and-placement/00-overview.md`](0006-mobile-readiness-and-placement/00-overview.md).
 

@@ -70,6 +70,30 @@ what gives it away.
    `j-elevated-rail.png`). Player-facing consequence: it reads as dusk with
    the sun misplaced rather than as a daytime city, and the authored facade
    art is invisible where it matters most.
+
+   > **Errata (2026-07-29, remediation design pass):** the observation stands
+   > — the tower does render near-black on screen — but "reads as dusk with
+   > the sun misplaced" is the wrong cause. The Loop rig is already the
+   > brightened one (`setMood`: ambient 0.26 / hemisphere 1.12 / sun 1.60,
+   > `src/engine/scene.js`), and three.js `HemisphereLight` means no surface
+   > in this scene can reach zero irradiance — no light-rig change can reach
+   > this defect. Two real causes, both albedo: (a) a facade-variant lottery —
+   > `src/engine/instancing.js:279` picks by `hashKey(key) % facadeEntry.length`,
+   > and `cityobj_chicago_marina_city_tower_pair` lands on
+   > `facade-large-glass-dark.png` (measured mean 40.2/255 against a sibling at
+   > 185.5); because the group carries a facade map, the palette pick is
+   > skipped (`instancing.js:326-327`), so `CHICAGO_IDENTITY_COLORS` is dead
+   > for that tower, and `TOO_BIG_DIM_TEXTURED = 0.78` (`instancing.js:106`,
+   > applied at `:535`) multiplies on top, netting ~0.12 effective albedo.
+   > (b) the black ground floors are a baked paint band, not shadow:
+   > `DOOR_GLASS = srgb('#38495e')` in `scripts/blender/build_props.py:65`
+   > occupies the bottom 0–8% of medium/large building models and 0–24% of
+   > small ones, is non-greyscale so `bakeModelPart` never whitens it for
+   > tinting, and is aimed at the flat white `TRIM_UV` swatch so it receives
+   > no facade art at all. This paragraph is left as-written above; treat it
+   > as historical record of the observation at review time, not current
+   > fact. Full mechanism in [`design.md`](design.md) §R1, remediation in
+   > [`tasks.md`](tasks.md) tasks 5-7.
 2. **Two art directions are in conflict.** Photographic facades stand
    directly beside cartoon conifer trees, toy low-poly cars, and pastel
    candy-colored prop blocks. Each is acceptable alone; together the eye
@@ -79,6 +103,21 @@ what gives it away.
    stripe reads about as wide as a car (`d-intersection.png`,
    `j-elevated-rail.png`) — and streets read roughly 3x too wide and too
    empty. Consequence: the city reads as a scale model with oversized decals.
+
+   > **Errata (2026-07-29, remediation design pass):** the "3x too wide" figure
+   > does not survive arithmetic. `streetWidth(2415) = 77.28u` = 7.03m at the
+   > canonical `WORLD_UNITS_PER_METRE = 11.0` — an ordinary two-lane street —
+   > and `CURB_WIDTH = 20` (`src/content/groundtex.js:178`) is 1.8m of
+   > pavement, i.e. narrow rather than wide. The crosswalk stripe — the
+   > specific thing called out above as "about as wide as a car" — computes to
+   > 0.57m, the top of the real-world 0.30–0.60m range, so it is correct as
+   > authored. The genuine defects are narrower and in the opposite direction
+   > from this item's framing: the centre line is roughly 2x too wide and the
+   > dash rhythm roughly 3x too frequent. This paragraph is left as-written
+   > above; treat it as historical record of the observation at review time,
+   > not current fact. The remediation gates any constant change on a live
+   > pixel measurement first, not on this desk estimate — see
+   > [`design.md`](design.md) §R3, [`tasks.md`](tasks.md) tasks 3 and 10.
 4. **The sky is a flat blue wall:** one near-uniform blue, a hard horizon
    line, no clouds, no haze gradient, no near-ground light shift. Present in
    all 10 shots. This is the single fastest "this is a video game" tell in
@@ -88,6 +127,18 @@ what gives it away.
    a thin dark-green strip above it — background shows through beneath the
    road surface (`b-street.png`). This is a defect, not a styling issue, and
    it is in the render, not the capture path.
+
+   > **Note (2026-07-29, remediation design pass):** the geometry cause is
+   > confirmed — `camera.near = 20` (`src/engine/scene.js`) clips the finite
+   > y=0 ground plane at this eye height and exposes the camera-locked sky
+   > dome behind it, and the perimeter skirt's inner radius sits at 1159.2u,
+   > too far out to catch the ray under the play area. But this band was
+   > produced at a ~9-unit review-camera eye height, and the chase camera the
+   > player actually uses sits at ~14.3x avatar radius — about 370 world units
+   > at spawn, forty times higher. Whether any reachable camera configuration
+   > reproduces this is unverified and is now a proof task
+   > ([`tasks.md`](tasks.md) task 2) that can cancel the fix outright if no
+   > reachable camera reaches it. See [`design.md`](design.md) §R5.
 6. **Parks read as board-game squares:** a flat green rectangle with tan
    cross-paths and no benches, fences, railings, planting beds, or authored
    edges (`e-park.png`, `h-far-horizon.png`). This contradicts
@@ -99,6 +150,19 @@ what gives it away.
    row of identical rectangles and no tower reads as individual
    (`f-vista.png`, `g-skyline.png`). Roof art is painted on upward faces but
    contributes no silhouette.
+
+   > **Errata (2026-07-29, remediation design pass):** "every roof is flat" is
+   > contradicted by the code and this is already flagged as a misreading risk
+   > in `art-direction.md` §1. Roof geometry exists and ships:
+   > `BUILDING_ROOF`/`buildingRoofCue` (`propkit.js`) and
+   > `scripts/blender/build_props.py:371-497` author parapets, decks, water
+   > tanks and masts on all three building tiers. The real defect is silhouette
+   > *scale* at skyline distance — the authored deck furniture subtends almost
+   > nothing against a 50u-tall tower at the review camera's distance — plus
+   > dark roof-trim colour (`TRIM = '#5f6b7a'`) that removes value contrast
+   > against the sky. This paragraph is left as-written above; treat it as
+   > historical record of the observation at review time, not current fact.
+   > See [`design.md`](design.md) §R8, [`tasks.md`](tasks.md) task 16.
 
 ## Recommendation (not implemented)
 

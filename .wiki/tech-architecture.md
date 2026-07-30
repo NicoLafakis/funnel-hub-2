@@ -253,6 +253,33 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
   playable square, so there is no far field on screen at all. It is an
   at-the-edge and shallow-pitch effect by construction.
 
+- **Instancing facade-variant selection is a known trap for photoreal groups
+  (documented 2026-07-29, `0011-level1-city-realism-review`).**
+  `src/engine/instancing.js:274` resolves a group's facade *map* by gameplay
+  kind (`textures.facades[kind]`), but which *variant* array entry a specific
+  group gets is a separate, per-group pick:
+  `facadeEntry[hashKey(key) % facadeEntry.length]` (`:278-280`), where
+  `key = "<visualId>|<materialVariant>|<golden>"`. A group can therefore hash
+  onto the darkest art in its tier's variant set with no signal anywhere else
+  in the pipeline — the 0011 review traced Marina City's near-black render to
+  exactly this (`facade-large-glass-dark.png`, measured mean 40.2/255 against
+  a 185.5 sibling). Compounding it: `instancing.js:326-327` skips the pastel
+  palette multiply whenever `photorealFacades && group.facadeMap`, so a named
+  Chicago identity colour in `CHICAGO_IDENTITY_COLORS` (`propkit.js:200-224`)
+  is silently dead for any textured group even though the table claims to
+  cover it. `TOO_BIG_DIM_TEXTURED = 0.78` (`:106`, applied at `:535`) then
+  multiplies on top of whatever the variant pick and the (possibly-skipped)
+  identity colour produced — the three effects compound multiplicatively, not
+  additively, so a dark-variant pick plus a too-big multiply can land well
+  under half the intended albedo with no single constant that looks wrong in
+  isolation. Anyone adding a new photoreal-textured group or a new
+  `CHICAGO_IDENTITY_COLORS` entry should check the variant-hash outcome and
+  the `photorealFacades` palette-skip together, not either alone. Remediation
+  mechanism (re-level the dark variant art; add a bounded identity-colour
+  exception for textured groups) is in
+  [`0011-level1-city-realism-review/design.md`](0011-level1-city-realism-review/design.md)
+  §R1a — proposed, not yet implemented.
+
 ## 2. World representation — the spatial hash is the world
 
 V1 re-derives "what's near X" by scanning the prop array per agent per
