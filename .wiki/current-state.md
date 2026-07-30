@@ -123,6 +123,16 @@ The nine gameplay invariants and hard placement gate are green, and `npm test` e
 4. **Mobile performance:** real-device phone/tablet frame time remains unmeasured; headless `requestAnimationFrame` figures are not valid performance evidence.
 5. **Mobile UI:** Nico approved all seven named surfaces on 2026-07-28. The shorter title, pause/sound controls, safe areas, mobile typography, persisted quality selector, and direct Level Complete actions are implemented; live viewport and assistive-technology evidence remains open.
 6. **Desktop UX debt (proposed):** the [`0010-chicago-level1-playtest`](0010-chicago-level1-playtest/00-findings.md) package (2026-07-29) documents mouse-only menu traversal, tall-building camera occlusion, the fresh-boot intro-card skip, a static coins counter, ~13px HUD counters, untaught keyboard controls, and dark street-level reads (in tension with the Loop brightness fill noted above — revisit together). Remediation is specified in that package but not yet approved or implemented.
+7. **e2e gate condition (pre-existing, measured 2026-07-30):**
+   `npm run test:e2e`'s android-mid profile fails `touchBotCompleted` — the
+   greedy nearest-edible touch bot does not win Level 1 within the level
+   clock. Verified **not a 0011 Phase A regression**: the identical failure
+   reproduces on the pre-Phase-A build (`a740979`, probed via a git worktree
+   on a local port with the repo script unmodified in behaviour), with GPU
+   on and a doubled timeout. Movement, orbit, role and console-error checks
+   pass on all four profiles; the other three profiles are `ok`. The bot's
+   win-rate predates the Chicago Loop landing and needs its own
+   investigation (bot steering, not rendering).
 7. **City realism debt (findings plus proposed remediation):** the [`0011-level1-city-realism-review`](0011-level1-city-realism-review/00-overview.md) package (2026-07-29, captured live post-`c0e8568`) ranks eight illusion-breakers ahead of item 6's dark-street finding, worst first: black-cutout tall buildings, a clashing photographic-vs-cartoon art direction, oversized road markings, a flat featureless sky, a ground-plane defect visible at pedestrian eye height, board-game-flat parks, flat water, and flat roof silhouettes. The package now also carries a full `requirements.md`/`design.md`/`tasks.md`/`test-strategy.md` remediation plan plus [`ADR 0005`](0011-level1-city-realism-review/adr/0005-level1-props-rise-to-photographic-facades.md) (Level 1 props rise to meet the photographic facades). **Nothing is implemented or approved** — every look-and-feel task still needs Nico's per-element sign-off.
    **Corrected causes, do not act on the findings doc's original framing:**
    reading the code overturned the stated cause of three items. Item 1

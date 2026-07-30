@@ -1,8 +1,9 @@
 # 0011 — Level 1 City Realism: Objective Overview
 
-**Tier:** 2 — **Date:** 2026-07-29 — **Status:** Phase-0 measurements
-complete (2026-07-30, see `00-findings.md` addendum); no visible change
-implemented, nothing approved.
+**Tier:** 2 — **Date:** 2026-07-29 — **Status:** Phase-0 measurements and
+**Phase A implemented** (2026-07-30, `91eeee9` — tasks 5–8, 10 live, task 9
+dropped, task 11 cancelled; evidence in `shots/phase-a/` and `tasks.md`).
+Phases B, B+, C not started.
 
 ## What was asked
 

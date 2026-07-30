@@ -22,6 +22,12 @@ and `PARKING_PITCH` (crosswalk correct as authored); the budget contradiction
 is resolved (real: 333 calls / 987k tris / **114 groups** — the "59 groups,
 guard 60" premise is stale and every task written against it was re-read).
 
+**Phase A is COMPLETE (2026-07-30, deployed `91eeee9`)** — tasks 5, 6, 7, 8
+and 10 are implemented and live, with before/after evidence in
+`shots/phase-a/` (capture script `scripts/phase-a-evidence.cjs`) and results
+recorded inline on each task below. Task 9 was dropped and task 11 cancelled
+per the direction correction and Phase-0 findings.
+
 Gate: nothing marked † merges without Nico's explicit per-element approval
 (working agreements, `INDEX.md`). Each task is independently shippable, lists
 its dependencies, and lists its acceptance evidence — no task is done without
@@ -60,67 +66,63 @@ noted in the addendum).
 
 ## Phase A — items 1, 4, 3, 5 (the P0 batch)
 
-5. **R1a — re-expose the dark-glass facade art** †. Lift
-   `facade-large-glass-dark.png` in `assets/textures/photoreal/` so the tallest
-   towers show their windows, keeping it the darkest of the four large-tier
-   variants. Measure all four variants first (including the three base tier
-   files that are JPEGs carrying a `.png` extension, per `design.md` open
-   question 5) so the target is chosen against real numbers.
-   *Depends on:* nothing. *Evidence:* before/after pair at the fixed
-   `g-skyline` camera; the tower's window grid countable in the after shot.
-6. **R1a — restore the Chicago identity colours on textured groups** †. Add the
-   bounded exception at `src/engine/instancing.js:326-327` so
-   `CHICAGO_IDENTITY_COLORS[visualId]` still applies to textured Chicago groups
-   while the pastel palette pick stays skipped. Scoped to ids present in that
-   table and to `photorealFacades === true`, so it cannot reach the 99 generic
-   levels. *Depends on:* task 5 (so the two changes are evaluated in order, not
-   as one indistinguishable diff). *Evidence:* before/after at `g-skyline` and
-   `f-vista`; Willis, CNA, Marina, Wrigley, Tribune and the Theatre visibly
-   differentiated; Level 2 and Level 50 captures pixel-identical.
-7. **R1b — lift the ground-floor and roof-trim albedo** †. Route A from
-   `design.md`: a bounded vertex-colour remap in `propkit.js` `bakeModelPart`
-   keyed on the exact authored linear triples for `DOOR_GLASS` (`#38495e`) and
-   `TRIM` (`#5f6b7a`), lifting them toward the range the procedural fallback
-   already uses for the same job. Pure JS, ships without Blender, reversible in
-   one line. *Depends on:* task 1. *Evidence:* before/after at `b-street`,
-   `d-intersection` and `j-elevated-rail`; no building ground floor is a
-   featureless black band; `npm test` green.
-   *Follow-up, not blocking:* file the same fix in
-   `scripts/blender/build_props.py` for whenever a machine with Blender is
-   available, then delete the remap.
-8. **R4 — lighten and drain the sky** † *(re-aimed 2026-07-30)*. The
-   reference sky is nearly flat and cloudless — pale, drained blue at the
-   zenith (measured rgb(153,202,230) against ours at rgb(35,103,223)) fading
-   toward near-white haze at the horizon, where ours brightens to
-   rgb(84,144,250) and then drops to a near-black sub-horizon band
-   rgb(5,21,34). So: lift and desaturate `skyZenith` (much less than the old
-   "deepen" plan — the reference is flatter than our dome), push the
-   near-horizon band toward the reference's pale haze, and re-aim
-   `skyHorizon` itself at the pale value — the `94f5383` identity between
-   dome sub-horizon, `scene.background` and fog colour must be *preserved
-   while the shared colour changes*, since all three resolve to
-   `skyHorizon`. Raise the dome's latitude segment count from 12 so the ramp
-   stops reading as bands. *Depends on:* nothing.
-   *Evidence:* before/after at `h-far-horizon` and `f-vista`; the zenith and
-   horizon values re-measured against the reference numbers above; the
-   horizon-seam measurement re-run and still in its 1–3 target band; a fixed
-   `f-vista` capture confirming the furthest in-play building is still crisp
-   (`NR4`).
+5. **DONE (2026-07-30) — R1a re-exposed the dark-glass facade art.** All
+   four large variants measured first (`scripts/facade-exposure.cjs`:
+   117.3 / 185.5 / **40.2** / 45.2 — and the three base tier files are
+   confirmed JPEGs with `.png` extensions, closing design open question 5).
+   `facade-large-glass-dark.png` lifted gamma 1.882, mean 40.2 → 92.2 —
+   windows countable, still the darkest variant. *Live evidence
+   (`shots/phase-a/g-skyline.png` vs review):* Marina face rgb(3,5,8) →
+   rgb(23,32,38); window grid countable at native res on the shade side.
+   Remaining shade-side darkness is irradiance, not albedo — mechanism 3
+   (`TOO_BIG_DIM_TEXTURED` for the tallest tier) stays available but is not
+   required and was not spent (it rides the edibility signal).
+6. **DONE (2026-07-30) — R1a Chicago identity colours restored on textured
+   groups.** Bounded exception at `src/engine/instancing.js`: textured groups
+   whose `visualId` carries a `CHICAGO_IDENTITY_COLORS` entry (new
+   `propkit.chicagoIdentityColor` export) get that authored colour as a
+   multiply softened 0.4 toward white (`IDENTITY_TINT_SOFTEN`), instead of
+   the blanket skip. *Level 2/50 pixel-identical by construction, not just by
+   capture:* the exception requires `photorealFacades && group.facadeMap &&
+   CHICAGO_IDENTITY_COLORS[visualId]`; `photorealFacades` requires
+   `authoredCity === 'chicago-loop'` (Level 1 only, `levels.js:275`), so the
+   multiply cannot fire on any generic level. CNA red and the named-tower
+   differentiation read in `shots/phase-a/f-vista.png` / `g-skyline.png`.
+7. **DONE (2026-07-30) — R1b ground-floor and roof-trim albedo lifted.**
+   Route A landed: `propkit.js` `bakeModelPart` remaps the exact authored
+   linear triples (`AUTHORED_BAND_LIFT`) — `DOOR_GLASS #38495e` →
+   `PALETTE_GLASS_TINT #7190a1`, `TRIM #5f6b7a` → `PALETTE_TRIM_TINT
+   #72777a`, keyed with a 0.004/channel tolerance so nothing else can match.
+   Source fix also filed in `scripts/blender/build_props.py` (with the remap
+   tagged for deletion after the next Blender regen). *Live evidence
+   (`shots/phase-a/b-street.png`):* ground floors read as detailed
+   bases/shopfronts, not featureless black bands; `npm test` green.
+8. **DONE (2026-07-30) — R4 sky lightened and drained** *(re-aimed
+   2026-07-30)*. Explicit measured targets gated on `authoredCity ===
+   'chicago-loop' && !night` in `main.js`: zenith `#99cae6` (reference
+   rgb(153,202,230)), horizon haze `#d6e4f0`; dome latitude segments 12 → 24
+   gated the same way, so the 99 generic levels are byte-identical. The
+   `94f5383` identity holds: background, fog, skirt and dome sub-horizon all
+   still resolve to the one `skyHorizon` — the shared colour moved, the
+   binding did not. *Live evidence (`shots/phase-a/h-far-horizon.png`,
+   `f-vista.png`):* pale drained sky, near-white haze at the horizon where
+   the old build fell to a near-black band; dome mid-band measured
+   rgb(97,159,205) against the old rgb(35,103,223); furthest in-play
+   buildings still crisp (fog density untouched, `NR4`).
 9. ~~**R4 — cloud on the existing dome**~~ **DROPPED (2026-07-30).** The
    reference sky is cloudless; adding cloud would move *away* from the
    target. The `design.md` §R4 mechanism-2 notes stand as the record of the
    considered approach.
-10. **R3 — correct the road-marking rhythm and gauge** †. Move exactly the
-    four constants the Phase-0 measurement indicted, in
-    `src/content/groundtex.js`: `LANE_CENTRE_WIDTH` (3.0 → ~1.5),
-    `LANE_EDGE_WIDTH` (2.2 → ~1.6), the dash/gap pair (14/12 → a real ~1:3
-    rhythm at scale), `PARKING_PITCH` (24 → ~66). The crosswalk band stays as
-    authored (measured correct). *Depends on:* nothing (task 3 done).
-    *Evidence:* before/after at `d-intersection` and `j-elevated-rail`, with the
-    stripe visibly narrower than a car; `MIN_STREET_FOR_MARKINGS = 26` and
-    `MIN_STREET_FOR_PARKING = 52` still satisfied at every street width the
-    100-level campaign generates (these constants are shared, so run the full
-    campaign, not just Level 1); `npm test` green at 100/100.
+10. **DONE (2026-07-30) — R3 road-marking rhythm and gauge corrected.**
+    Exactly the four measured constants moved in `src/content/groundtex.js`:
+    `LANE_CENTRE_WIDTH` 3.0 → 1.5 (0.14m), `LANE_EDGE_WIDTH` 2.2 → 1.6
+    (0.145m), dash/gap 14/12 → `CENTRE_DASH`/`CENTRE_GAP` 24/72 (real 1:3
+    rhythm, 2.2m dash), `PARKING_PITCH` 24 → 66 (6.0m bays). Crosswalk band
+    untouched (measured correct). *Evidence:* `shots/phase-a/d-intersection.png`
+    — stripe visibly narrower than vehicles, real dash rhythm; full 100-level
+    campaign green (`npm test` — invariants + placement audit, zero
+    penetrations); `MIN_STREET_FOR_MARKINGS`/`MIN_STREET_FOR_PARKING`
+    untouched.
 11. ~~**R5 — close the ground-plane clip**~~ **CANCELLED (2026-07-30).**
     Phase-0 check 2 proved no reachable camera configuration comes within an
     order of magnitude of the eye height where the band appears (measured
