@@ -30,10 +30,35 @@ export function createCityContext(THREE, descriptor, opts = {}) {
   const waterCanvases = { river: opts.waterRiver || null, lake: opts.waterLake || null };
   const WATER_TILE_WORLD = 96;
   const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x397e9f, roughness: 0.34, metalness: 0.05,
+    color: 0x397e9f, roughness: 0.12, metalness: 0.05, vertexColors: true,
   });
+  const waterAnimMats = [];
   for (const [i, rec] of (descriptor.water || []).entries()) {
-    const geo = new THREE.PlaneGeometry(rec.w, rec.d);
+    // 0011 tasks 14+15: subdivided plane with a graded shore — the edge ring
+    // rises toward y=0 and darkens toward wet sand (vertex colours can only
+    // multiply, so the shore darkens, which is the physically right
+    // direction). map.offset drifts from the frame loop (main.js); the low
+    // roughness lets the sun produce a real glint off the hemisphere sky.
+    const segX = Math.max(1, Math.round(rec.w / 48));
+    const segY = Math.max(1, Math.round(rec.d / 48));
+    const geo = new THREE.PlaneGeometry(rec.w, rec.d, segX, segY);
+    {
+      const pos = geo.attributes.position;
+      const col = new Float32Array(pos.count * 3);
+      const SHORE_BAND = 40;
+      for (let v = 0; v < pos.count; v += 1) {
+        const ex = rec.w / 2 - Math.abs(pos.getX(v));
+        const ey = rec.d / 2 - Math.abs(pos.getY(v));
+        const shore = Math.max(0, 1 - Math.min(ex, ey) / SHORE_BAND);
+        pos.setZ(v, shore * 0.33); // edge ring rises toward y=0 (mesh at -0.35)
+        const wet = 1 - shore * 0.45;
+        col[v * 3] = wet;
+        col[v * 3 + 1] = wet * (1 - shore * 0.04);
+        col[v * 3 + 2] = wet * (1 - shore * 0.02);
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.computeVertexNormals();
+    }
     const src = waterCanvases[rec.lake ? 'lake' : 'river'];
     let mat = waterMat;
     if (src && typeof document !== 'undefined') {
@@ -44,8 +69,9 @@ export function createCityContext(THREE, descriptor, opts = {}) {
       tex.repeat.set(rec.w / WATER_TILE_WORLD, rec.d / WATER_TILE_WORLD);
       tex.anisotropy = 4;
       mat = new THREE.MeshStandardMaterial({
-        color: 0xffffff, roughness: 0.34, metalness: 0.05, map: tex,
+        color: 0xffffff, roughness: 0.12, metalness: 0.05, map: tex, vertexColors: true,
       });
+      waterAnimMats.push(mat);
     }
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = rec.lake ? 'lake-michigan-context' : `chicago-river-${i}`;
@@ -269,6 +295,7 @@ export function createCityContext(THREE, descriptor, opts = {}) {
   });
   group.add(stationGroup);
 
+  group.userData.waterMats = waterAnimMats;
   group.userData.dispose = () => {
     const geometries = new Set();
     const materials = new Set();

@@ -712,11 +712,14 @@ export async function main() {
     // Authored-city pilot background: low-detail, non-interactive context
     // outside the playable square plus the Loop elevated rail cue inside it.
     // The root owns teardown; gameplay hashes and mass budgets never see it.
+    state.waterMats = null;
     if (layout.context) {
-      root.add(createCityContext(THREE, layout.context, {
+      const cityContext = createCityContext(THREE, layout.context, {
         waterRiver: photoreal && photoreal.ground ? photoreal.ground.waterRiver : null,
         waterLake: photoreal && photoreal.ground ? photoreal.ground.waterLake : null,
-      }));
+      });
+      root.add(cityContext);
+      state.waterMats = cityContext.userData.waterMats || null;
     }
 
     // Ground: the seeded district layout baked into a real texture (streets,
@@ -2373,6 +2376,15 @@ export async function main() {
     // dome would visibly tip its horizon over a run. Copying the camera position
     // costs three float writes and makes the gradient invariant.
     if (state.sky) state.sky.position.copy(engine.camera.position);
+    // 0011 task 14: drift the water tile from a clock (not a frame counter),
+    // so the surface reads as moving water at any frame rate.
+    if (state.waterMats) {
+      const wt = performance.now() * 0.001;
+      for (const m of state.waterMats) {
+        m.map.offset.x = (wt * 0.006) % 1;
+        m.map.offset.y = (wt * 0.004) % 1;
+      }
+    }
     // Tide twists shrink the playable water-line as the clock runs down:
     // rising-tide floods every edge; high-tide only advances from the south.
     let half = level.world / 2;
