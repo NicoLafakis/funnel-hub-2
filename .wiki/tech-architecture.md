@@ -224,6 +224,34 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
   fragment. Updates the stale "no post-processing composer" claim in
   `0007-chicago-loop-authored-city/00-findings.md:50` — see the errata note
   there.
+- **Far-field DOF strength re-tuned after playtest (2026-07-29, follow-up to
+  `5b2bf02`).** The shape above was right and the strength was not: as first
+  shipped the effect was imperceptible ("it went from 100 to 0"). The cause is
+  measured, not guessed, and it is a permanent constraint on this effect rather
+  than a one-off miss. Depth histogram of a real level-1 frame (1280×720, hole
+  at the south play bound, pitch 42°, looking out over the map edge — the
+  framing most generous to far-field DOF): **76.6% of the frame sits inside the
+  playable square** and is sharp by invariant, and the off-map band that remains
+  carries **~6× less local detail than the city** (mean adjacent-pixel luma
+  delta 0.8 against 5.3) because it is skirt, haze and simplified context
+  silhouettes. So coverage is capped by the invariant and cannot be bought, and
+  the only axis left is radius. Three constants moved:
+  `BLUR_RADIUS_FRAME_WIDTH` 0.0024 → 0.0080 (0.8% of frame width, 10.2px at
+  1280 — 3.3× the *old* BokehPass peak, but over ~11% of the frame instead of
+  all of it), `SHARP_PAD_OF_HAZE_RUN` 0.05 → 0.01, and the ramp end from the
+  full haze run to `RAMP_END_OF_HAZE_RUN` = 0.45, which takes the share of the
+  frame reaching *full* blur from 0.6% to ~11%. Picked from a four-way visual
+  comparison (0/25/50/75 against the old pass as 100) captured off the real
+  game; 25 was still near-invisible, 75 needs a ramp short enough that one
+  400u context building spans sharp-to-full across its own height. **The hard
+  invariant is unchanged and was re-verified on real game frames:** all four
+  variants produced a byte-identical fingerprint over the near-foreground
+  quarter of the frame at full resolution, while the reconstructed old
+  `BokehPass` produced a different one. Note for anyone tuning this again: the
+  effect can never be prominent in the general case, because at the default 55°
+  pitch mid-map the camera's own top ray lands on the ground *inside* the
+  playable square, so there is no far field on screen at all. It is an
+  at-the-edge and shallow-pitch effect by construction.
 
 ## 2. World representation — the spatial hash is the world
 

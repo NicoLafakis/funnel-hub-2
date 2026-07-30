@@ -53,26 +53,59 @@
 // what it replaces rather than picked: the old kernel took 41 colour taps at
 // EVERY pixel of every frame. This one takes 12 + 1, and only for fragments
 // outside the playable map. The disk it has to cover has radius
-// BLUR_RADIUS_FRAME_WIDTH * frameWidth = 4.6px at a 1920px-wide buffer, i.e.
-// ~66px^2 of area for 13 samples = ~2.3px between samples, which is inside the
-// ~3px scale at which the horizon band's content (fogged, flat, low-frequency
-// context silhouettes) has any detail left to alias. The residual 12-fold
-// pattern is broken up per pixel by the IGN rotation below, so what is left of
-// it is screen-pinned dither rather than a visible rosette.
+// BLUR_RADIUS_FRAME_WIDTH * frameWidth = 15.4px at a 1920px-wide buffer, i.e.
+// ~745px^2 of area for 13 samples = ~7.6px between samples. That is coarser than
+// the content scale, and it is affordable anyway for one specific reason: the
+// band this runs on is the horizon, whose content is fogged, flat and
+// low-frequency by construction (measured local contrast 0.8 against the city's
+// 5.3 — see BLUR_RADIUS_FRAME_WIDTH), so there is almost no high-frequency
+// detail for the undersampling to alias against. What residual 12-fold rosette
+// there is gets broken up per pixel by the IGN rotation below into screen-pinned
+// dither. If a future change ever puts real detail out past the map edge, this
+// is the number to raise first, and it costs one texture fetch pair per tap.
 const DOF_TAPS = 12;
 
 // Peak blur radius, as a fraction of the render buffer's WIDTH in pixels.
 //
-// Derived from the pass it replaces so the change is a strict reduction. The
-// old kernel's furthest tap was at 0.4 of `dofblur`, whose ceiling was
-// maxblur = 0.007, i.e. 0.0028 of the frame in x-uv; BokehShader multiplies the
-// y offset by `aspect` = W/H, so 0.0028 * aspect * H = 0.0028 * W and the peak
-// radius was isotropic at 0.28% of frame WIDTH (5.4px at 1920, 10.8px at 1920
-// CSS px with dprCap 2). This ships 0.24%: 14% gentler than the old PEAK, and
-// gentler by construction everywhere else, since the old pass held that peak
-// across essentially the entire frame (see point 2 above) while this one only
-// reaches it at the horizon.
-const BLUR_RADIUS_FRAME_WIDTH = 0.0024;
+// THIS SHIPPED AT 0.0024 AND THAT WAS WRONG, for a reason worth recording
+// because the reasoning was plausible and the measurement contradicted it.
+// 0.0024 was derived to be a strict reduction against the old pass: the old
+// kernel's furthest tap was 0.4 of `dofblur`, whose ceiling was maxblur = 0.007,
+// i.e. 0.0028 of the frame in x-uv, and since BokehShader scales the y offset by
+// aspect = W/H the old peak was isotropic at 0.28% of frame WIDTH. Shipping
+// 0.24% was therefore 14% under the old peak and far under it everywhere else.
+//
+// Measured on a real level-1 frame (1280x720, hole at the south play bound,
+// pitch 42, looking out over the map edge — the framing most GENEROUS to a
+// far-field effect), the result was invisible. The depth histogram says why:
+//
+//   view depth   share of frame   local contrast   fog
+//   0 -  500       76.6%            2.9 - 5.3      <1%     <- playable map
+//   500 - 1000     20.7%            0.8 - 0.9      2-6%    <- off-map band
+//   1000+           0.7%            1.5 - 3.2      6-13%
+//
+// Two facts kill a subtle radius. First, three quarters of the frame is inside
+// the playable map and MUST stay sharp, so the effect can only ever touch the
+// remaining quarter. Second, that remaining quarter carries ~6x LESS local
+// detail than the city does (0.8 against 5.3) — it is skirt, haze and simplified
+// context silhouettes. A 3px blur on already-flat pixels is a no-op you can
+// measure but not see. Strength here has to come from the RADIUS, because the
+// coverage is capped by the invariant and cannot be bought.
+//
+// 0.0080 = 0.80% of frame width: 10.2px at 1280, 15.4px at 1920. That is 3.3x
+// the old pass's PEAK radius and it is deliberately NOT a reduction on that
+// axis — the reduction is in coverage, which is the axis that was the actual
+// complaint. The old pass held its peak across essentially the whole frame
+// including the near foreground; this one holds a bigger peak across ~11% of the
+// frame, none of it inside the playable map. Net effect on the near field is
+// still exactly zero, which is the invariant and is asserted in logic-test.js.
+//
+// Chosen from a four-way visual comparison (0 / 25 / 50 / 75 against the old
+// pass as 100). 25 (0.0050) was still too close to invisible to answer the
+// complaint; 75 (0.0115) reads well but needs a ramp so short that a single
+// context building can go sharp-to-full-blur across its own height. 50 is the
+// setting that reads as distance rather than as a filter.
+const BLUR_RADIUS_FRAME_WIDTH = 0.0080;
 
 /**
  * Full-screen far-field depth blur. `tDepth` is bound per frame by the pass
@@ -202,11 +235,38 @@ export const FAR_FIELD_BLUR_RADIUS_UV = BLUR_RADIUS_FRAME_WIDTH;
 // 0.069 world units (scene.js NEAR/FAR derivation) — a guard band smaller than
 // that guarantees nothing.
 //
-// 5% of the haze run: 42u on level 1 (0.05 * 0.35 * 2415), 84u at level 100.
-// That is 1.7% of the map's own width at either end — visually "just past the
-// edge", ~600x the depth resolution out there, and it costs 5% of a ramp whose
-// far end is already invisible under fog.
-const SHARP_PAD_OF_HAZE_RUN = 0.05;
+// This shipped at 0.05 and is now 0.01, cut for the same reason the radius went
+// up: the off-map band is only ~20% of the frame to begin with, so spending 5%
+// of the haze run before the ramp even starts was giving away visible band for a
+// margin far larger than anything needed it. 1% of the haze run is 8.4u on level
+// 1 (0.01 * 0.35 * 2415) and 16.8u at level 100. Projected onto the view axis
+// that is ~6.3u of guard at the level-1 framing, which is still ~90x the depth
+// buffer's resolution out there and ~4 orders of magnitude above float32 rounding
+// on a plane equation of this magnitude. logic-test.js asserts the exact-zero
+// property directly across 1080 camera configurations, so this margin is checked
+// rather than assumed.
+const SHARP_PAD_OF_HAZE_RUN = 0.01;
+
+// Where the ramp reaches full blur, as a fraction of the haze run past the map
+// edge.
+//
+// This was 1.0 — full blur exactly where main.js's horizon stack becomes flat
+// sky colour — on the reasoning that blur past that point is a no-op so the ramp
+// may as well use the whole run. True but backwards: it means the ramp is still
+// only PARTWAY up across the entire band that has any content in it, and it
+// saturates precisely where saturating stops mattering. Measured on the level-1
+// frame described in BLUR_RADIUS_FRAME_WIDTH, a full-length ramp put 22.7% of the
+// frame at PARTIAL blur and only 0.6% at full.
+//
+// 0.45 saturates the ramp inside the band that is actually visible: same frame,
+// ~11% at full blur and ~12% partial, i.e. an 18x increase in the share of the
+// frame that reaches peak, with no change whatsoever to the sharp region. The
+// ramp still spans 277 view-space units at that framing, which is what keeps it
+// reading as a distance falloff — the 75-strength candidate shortened it to ~200u
+// and at that length a single 400u-tall context building can span sharp to
+// fully-blurred across its own height, which reads as a filter edge rather than
+// as depth.
+const RAMP_END_OF_HAZE_RUN = 0.45;
 
 /**
  * The distance band over which blur ramps up, in view depth (world units along
@@ -233,13 +293,13 @@ const SHARP_PAD_OF_HAZE_RUN = 0.05;
  * blurNear = that bound (plus the SHARP_PAD_OF_HAZE_RUN guard band) makes coc
  * identically 0 for every fragment of it.
  *
- * WHERE THE RAMP ENDS. Not a taste value either: main.js's horizon stack
+ * WHERE THE RAMP ENDS. Not a taste value either. main.js's horizon stack
  * (skirt + haze band + sky dome) is fully opaque horizon colour at radius
- * world/2 + HAZE_RUN, and past that every pixel is exactly one flat colour, on
- * which blur is a no-op. So full blur is reached at the corner bound of the
- * square of half-extent (world/2 + HAZE_RUN) — the ramp spends its entire
- * length on the only band where it can be seen: the faux context city between
- * the map edge and the horizon.
+ * world/2 + HAZE_RUN, so HAZE_RUN bounds the band that can carry any detail at
+ * all; the ramp saturates at RAMP_END_OF_HAZE_RUN of the way across it, which is
+ * where the measured local contrast has already collapsed. Both ends therefore
+ * sit on the faux context city between the map edge and the horizon, which is
+ * the only band the effect is permitted to touch.
  *
  * HOW IT SCALES. Everything here is derived per frame from the live camera
  * matrix and the level's own world size, so it tracks both ladders on its own:
@@ -278,7 +338,7 @@ export function farFieldBlurBand(camera, playableHalfExtent, hazeRun, out = { ne
   const lateral = Math.abs(fx) + Math.abs(fz);
 
   const nearEdge = base + (playableHalfExtent + SHARP_PAD_OF_HAZE_RUN * hazeRun) * lateral;
-  const farEdge = base + (playableHalfExtent + hazeRun) * lateral;
+  const farEdge = base + (playableHalfExtent + RAMP_END_OF_HAZE_RUN * hazeRun) * lateral;
 
   // EVERY degenerate input lands on the same sentinel: a band parked a hundred
   // thousand units past the 12000-unit far clip plane, i.e. coc identically 0

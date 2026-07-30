@@ -1899,11 +1899,17 @@ async function main() {
       collapsed.nearEdge >= 1e9
         && farFieldBlurBand(frameCamera(26, 55, 0, 0, 0), NaN, 845.25, { nearEdge: 0, farEdge: 0 }).nearEdge >= 1e9);
 
-    // Strength: strictly gentler at the peak than the BokehPass it replaces,
-    // whose furthest tap sat at maxblur * 0.4 = 0.007 * 0.4 = 0.0028 of frame
-    // width — and which held that peak across nearly the whole frame.
-    check('peak blur radius is below the old pass peak of 0.28% of frame width',
-      FAR_FIELD_BLUR_RADIUS_UV > 0 && FAR_FIELD_BLUR_RADIUS_UV < 0.007 * 0.4);
+    // Strength. This assertion used to pin the peak radius BELOW the old pass's
+    // 0.0028-of-frame-width peak, on the theory that a strict reduction on that
+    // axis was the safe choice. It was measured wrong: the invariant already caps
+    // the effect at ~20% of the frame, and that band carries ~6x less local
+    // detail than the city, so a sub-old-peak radius came out invisible. The peak
+    // is now deliberately ABOVE the old peak; what must stay bounded is the
+    // ceiling, so that is what is checked. 1% of frame width is the restraint
+    // limit for a stylized toy-city look — past it the horizon reads as smeared
+    // rather than distant.
+    check('peak blur radius is positive and under the 1%-of-frame-width restraint ceiling',
+      FAR_FIELD_BLUR_RADIUS_UV > 0 && FAR_FIELD_BLUR_RADIUS_UV <= 0.01);
 
     // The shader itself: the two clauses that make "no near blur" structural
     // rather than tuned. A future edit that reintroduces a symmetric CoC or
