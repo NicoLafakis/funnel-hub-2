@@ -13,7 +13,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 67.10801696777344,
     "maxZ": 7.650000095367432
   },
   "capital_prime_campus_block": {
@@ -21,7 +21,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 40.611019134521484,
     "maxZ": 5.610000133514404
   },
   "capital_prime_campus_pod": {
@@ -133,7 +133,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 74.07176971435547,
     "maxZ": 7.650000095367432
   },
   "capital_prime_holo_kiosk": {
@@ -309,7 +309,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 67.01427459716797,
     "maxZ": 7.650000095367432
   },
   "carnival_coast_compact_car": {
@@ -349,7 +349,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 43.53270721435547,
     "maxZ": 5.610000133514404
   },
   "carnival_coast_drum": {
@@ -469,7 +469,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 71.05047607421875,
     "maxZ": 7.650000095367432
   },
   "carnival_coast_taxi": {
@@ -2381,7 +2381,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 75.39981079101562,
     "maxZ": 7.650000095367432
   },
   "coliseum_city_arena_shuttle": {
@@ -2445,7 +2445,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 68.91259002685547,
     "maxZ": 7.650000095367432
   },
   "coliseum_city_fountain_bowl": {
@@ -2533,7 +2533,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 41.28136444091797,
     "maxZ": 5.610000133514404
   },
   "coliseum_city_senate_car": {
@@ -2629,7 +2629,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 66.25651550292969,
     "maxZ": 7.650000095367432
   },
   "desert_spires_golf_cart": {
@@ -2645,7 +2645,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 44.44968795776367,
     "maxZ": 5.610000133514404
   },
   "desert_spires_hotel_shuttle": {
@@ -2789,7 +2789,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 71.78089904785156,
     "maxZ": 7.650000095367432
   },
   "desert_spires_supercar": {
@@ -2901,7 +2901,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 40.28217315673828,
     "maxZ": 5.610000133514404
   },
   "harbor_metropolis_glass_tower": {
@@ -2909,7 +2909,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 65.45187377929688,
     "maxZ": 7.650000095367432
   },
   "harbor_metropolis_hatchback": {
@@ -2981,7 +2981,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 74.5587158203125,
     "maxZ": 7.650000095367432
   },
   "harbor_metropolis_plaza_office": {
@@ -3157,7 +3157,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 68.23294830322266,
     "maxZ": 7.650000095367432
   },
   "harbor_opera_bay_harbor_bin": {
@@ -3205,7 +3205,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 79.2511215209961,
     "maxZ": 7.650000095367432
   },
   "harbor_opera_bay_picnic_table": {
@@ -3221,7 +3221,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 44.266292572021484,
     "maxZ": 5.610000133514404
   },
   "harbor_opera_bay_quay_bollard": {
@@ -3357,7 +3357,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 40.19995880126953,
     "maxZ": 5.610000133514404
   },
   "neon_district_courier_bike": {
@@ -3437,7 +3437,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 68.96727752685547,
     "maxZ": 7.650000095367432
   },
   "neon_district_night_bus": {
@@ -3469,7 +3469,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 73.08680725097656,
     "maxZ": 7.650000095367432
   },
   "neon_district_robot_garage": {
@@ -3557,7 +3557,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 70.4196548461914,
     "maxZ": 7.650000095367432
   },
   "old_fog_town_black_cab": {
@@ -3645,7 +3645,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 69.56098937988281,
     "maxZ": 7.650000095367432
   },
   "old_fog_town_lamp_post": {
@@ -3789,7 +3789,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 43.90582275390625,
     "maxZ": 5.610000133514404
   },
   "red_square_heights_boulevard_block": {
@@ -3797,7 +3797,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 41.793609619140625,
     "maxZ": 5.610000133514404
   },
   "red_square_heights_city_bus": {
@@ -3933,7 +3933,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 78.52069854736328,
     "maxZ": 7.650000095367432
   },
   "red_square_heights_palace_tower": {
@@ -3997,7 +3997,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 71.88896179199219,
     "maxZ": 7.650000095367432
   },
   "red_square_heights_taxi": {
@@ -4245,7 +4245,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 62.4900016784668,
+    "maxY": 65.60811614990234,
     "maxZ": 7.650000095367432
   },
   "vieux_continent_lamp_post": {
@@ -4293,7 +4293,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": -1.9073486612342094e-7,
     "minZ": -7.650000095367432,
     "maxX": 7.650000095367432,
-    "maxY": 65.0999984741211,
+    "maxY": 73.72869110107422,
     "maxZ": 7.650000095367432
   },
   "vieux_continent_promenade_bike": {
@@ -4309,7 +4309,7 @@ export const GENERATED_PHYSICAL_BOUNDS = Object.freeze({
     "minY": 0,
     "minZ": -5.610000133514404,
     "maxX": 5.610000133514404,
-    "maxY": 37.040000915527344,
+    "maxY": 43.35563659667969,
     "maxZ": 5.610000133514404
   },
   "vieux_continent_service_bus": {

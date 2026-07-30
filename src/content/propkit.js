@@ -814,44 +814,52 @@ const ROOF_CUE_CORNER = [0.55, -0.52];
 // Rooftop cue for a building tier — real roof plant on the real roof deck,
 // sized off the deck rather than the building, so it reads as a mast/vent/
 // housing at every tier instead of as an overhang. Returns [geometry, position].
-function buildingRoofCue(THREE, recipe, kind, phase) {
+function buildingRoofCue(THREE, recipe, kind, phase, visualId = '') {
   const deck = BUILDING_ROOF[kind];
   const half = deck.half;
   const h = DIMENSIONS[kind].h; // vertical scale reference — cue height only
+  // 0011 task 16: the authored deck furniture subtends almost nothing at
+  // skyline distance. Medium/large cues grow (crownTier), and each group's
+  // crown height varies off the seeded visualId hash so adjacent towers
+  // cannot terminate in the same horizontal. Primitives unchanged —
+  // triangle-neutral, the way 094d25e kept its roof-cue change neutral.
+  const crownVar = kind === 'building-small' ? 1
+    : 0.85 + ((hashStr(String(visualId)) >>> 0) % 1000) / 1000 * 0.5;
+  const crownTier = kind === 'building-small' ? 1 : 1.55;
   const cx = half * ROOF_CUE_CORNER[0];
   const cz = half * ROOF_CUE_CORNER[1];
   switch (recipe) {
     case 'cap': {
-      const capH = h * (0.075 + phase * 0.03);
+      const capH = h * (0.075 + phase * 0.03) * crownTier * crownVar;
       return [new THREE.ConeGeometry(half * (0.30 + phase * 0.06), capH, 6),
         [cx, deck.y + capH / 2, cz]];
     }
     case 'bar': {
-      const barH = Math.max(0.2, h * 0.030);
+      const barH = Math.max(0.2, h * 0.030 * crownTier);
       // Sign gantry across the deck: raised clear of it, never past the rim.
       return [new THREE.BoxGeometry(half * 1.50, barH, half * 0.20),
         [0, deck.y + h * 0.055 + barH / 2, -half * 0.42]];
     }
     case 'mast': {
-      // Kept just under the large tier's own crown antenna (62.49) so the
-      // archetype mast reads as secondary plant, not a second spire.
-      const mastH = h * (0.22 + phase * 0.05);
+      // 0011 task 16: deliberately grown past the authored crown antenna
+      // (62.49) on some groups — the skyline wants the silhouette variety.
+      const mastH = h * (0.22 + phase * 0.05) * crownTier * crownVar;
       return [new THREE.CylinderGeometry(half * 0.055, half * 0.085, mastH, 6),
         [cx, deck.y + mastH / 2, cz]];
     }
     case 'canopy': {
-      const slabH = Math.max(0.16, h * 0.022);
+      const slabH = Math.max(0.16, h * 0.022 * crownTier);
       return [new THREE.BoxGeometry(half * 1.30, slabH, half * 0.82),
         [0, deck.y + h * 0.055 + slabH / 2, -half * 0.42]];
     }
     case 'spire': {
-      const spireH = h * (0.26 + phase * 0.10);
+      const spireH = h * (0.26 + phase * 0.10) * crownTier * crownVar;
       return [new THREE.ConeGeometry(half * 0.26, spireH, 7),
         [cx, deck.y + spireH / 2, cz]];
     }
     case 'box':
     default: {
-      const boxH = h * (0.055 + phase * 0.025);
+      const boxH = h * (0.055 + phase * 0.025) * crownTier * crownVar;
       return [new THREE.BoxGeometry(half * (0.55 + phase * 0.14), boxH, half * 0.52),
         [cx, deck.y + boxH / 2, cz]];
     }
@@ -875,7 +883,7 @@ function applyVisualRecipe(group, THREE, descriptor, accent, opts = {}) {
   let geometry;
   let position;
   if (BUILDING_ROOF[kind]) {
-    [geometry, position] = buildingRoofCue(THREE, descriptor.recipe, kind, phase);
+    [geometry, position] = buildingRoofCue(THREE, descriptor.recipe, kind, phase, descriptor.id);
   } else {
     switch (descriptor.recipe) {
       case 'cap':
