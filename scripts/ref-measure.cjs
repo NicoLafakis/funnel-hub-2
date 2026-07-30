@@ -24,6 +24,11 @@ const IMAGES = {
   'ours-vista': 'shots/l1-realism-review/f-vista.png',
   'ours-skyline': 'shots/l1-realism-review/g-skyline.png',
   'ours-horizon': 'shots/l1-realism-review/h-far-horizon.png',
+  'after-skyline': 'shots/phase-a/g-skyline.png',
+  'after-street': 'shots/phase-a/b-street.png',
+  'after-horizon': 'shots/phase-a/h-far-horizon.png',
+  'after-intersection': 'shots/phase-a/d-intersection.png',
+  'after-vista': 'shots/phase-a/f-vista.png',
 };
 
 // Sky sample columns (fraction of width) and row fractions to report.
@@ -50,31 +55,10 @@ const SCANLINES = [
 
 // Rect region means: { img, x, y, w, h, label }
 const RECTS = [
-  // b-street right building (orig coords, from crop offset x=990,y=140):
-  { img: 'ours-street', x: 1150, y: 470, w: 120, h: 50, label: 'b-street right GROUND band A' },
-  { img: 'ours-street', x: 1380, y: 480, w: 100, h: 40, label: 'b-street right GROUND band B' },
-  { img: 'ours-street', x: 1120, y: 285, w: 80, h: 15, label: 'b-street right black balcony band' },
-  { img: 'ours-street', x: 1120, y: 200, w: 60, h: 40, label: 'b-street right upper window box' },
-  { img: 'ours-street', x: 240, y: 200, w: 80, h: 60, label: 'b-street left bldg dark face' },
-  { img: 'ours-street', x: 40, y: 300, w: 60, h: 40, label: 'b-street left black band' },
-  // c-block brick wall (sun-lit red brick) vs its dark window boxes
-  { img: 'ours-block', x: 1180, y: 470, w: 40, h: 60, label: 'c-block brick column (lit)' },
-  { img: 'ours-block', x: 1240, y: 500, w: 30, h: 50, label: 'c-block window box' },
-  // d-intersection hole interior (true black reference)
-  { img: 'ours-intersection', x: 760, y: 460, w: 50, h: 30, label: 'd-intersection hole interior (black ref)' },
-  // target-city building palette patches (orig coords)
-  { img: 'ref-target-city', x: 460, y: 130, w: 60, h: 80, label: 'target purple tower' },
-  { img: 'ref-target-city', x: 610, y: 140, w: 50, h: 50, label: 'target red brick' },
-  { img: 'ref-target-city', x: 710, y: 120, w: 50, h: 60, label: 'target teal glass' },
-  { img: 'ref-target-city', x: 680, y: 280, w: 50, h: 40, label: 'target tan lowrise roof' },
-  { img: 'ref-target-city', x: 610, y: 255, w: 40, h: 15, label: 'target awning stripes' },
-  { img: 'ref-target-city', x: 850, y: 150, w: 60, h: 40, label: 'target asphalt' },
-  { img: 'ref-target-city', x: 662, y: 212, w: 25, h: 20, label: 'target tree canopy' },
-  { img: 'ref-target-city', x: 40, y: 300, w: 60, h: 40, label: 'target water (left)' },
-  // our building patches for the same table
-  { img: 'ours-skyline', x: 700, y: 300, w: 80, h: 100, label: 'ours marina tower (g-skyline)' },
-  { img: 'ours-park', x: 300, y: 350, w: 60, h: 40, label: 'ours park grass' },
-  { img: 'ref-target-bg02', x: 400, y: 300, w: 80, h: 60, label: 'target bg02 park grass' },
+  // Marina face, crop-verified coords
+  { img: 'after-skyline', x: 730, y: 520, w: 100, h: 80, label: 'AFTER marina face (crop-verified)' },
+  { img: 'after-skyline', x: 700, y: 340, w: 120, h: 60, label: 'AFTER sky at marina crown' },
+  { img: 'ours-skyline', x: 720, y: 400, w: 120, h: 150, label: 'BEFORE marina face (crop-verified)' },
 ];
 
 (async () => {
