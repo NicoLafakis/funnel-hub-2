@@ -363,6 +363,36 @@ function autoTrimFacade(img) {
   return out;
 }
 
+// 0011 task 22: ground-floor shopfront strip, painted into the dead area of
+// the appended roof strip (below the roof square) that no other UV samples.
+// Bottom 60% glazing with mullions and a centred entrance, top 40%
+// alternating striped awning segments — so the DOOR_GLASS band can sample
+// real storefront art (propkit maps it here when region.shop exists) instead
+// of the flat trim swatch.
+function paintShopfrontStrip(ctx, x0, y0, px) {
+  const glazH = px * 0.6;
+  const awnH = px - glazH;
+  // Awnings first (they sit at the top of the strip): four segments, each
+  // striped against white the way the reference storefronts read.
+  const awnings = ['#2e8b8b', '#b94a3c', '#3f7f4f', '#3a6f9f'];
+  const segW = px / awnings.length;
+  awnings.forEach((c, i) => {
+    const ax = x0 + i * segW;
+    ctx.fillStyle = c;
+    ctx.fillRect(ax, y0, segW, awnH);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    for (let s = 0; s < 4; s += 1) ctx.fillRect(ax + s * segW / 4 + segW / 8, y0, segW / 8, awnH);
+  });
+  // Glazing: pale glass, vertical mullions, transom bar, centred entrance.
+  ctx.fillStyle = '#aec6d2';
+  ctx.fillRect(x0, y0 + awnH, px, glazH);
+  ctx.fillStyle = '#8fb0c0';
+  for (let m = 0; m <= 8; m += 1) ctx.fillRect(x0 + m * px / 8 - 1, y0 + awnH, 3, glazH);
+  ctx.fillRect(x0, y0 + awnH, px, 4);
+  ctx.fillStyle = '#4a5c66';
+  ctx.fillRect(x0 + px * 0.42, y0 + awnH + glazH * 0.45, px * 0.16, glazH * 0.55);
+}
+
 /**
  * Composes one photoreal facade at its tier's real face aspect. The merged
  * building geometry hands every side face a 0..1 UV square (propkit.js), so a
@@ -402,12 +432,21 @@ function bakePhotorealFacade(img, kind, entry, size, roofImg) {
   let region = null;
   if (roofImg) {
     // Roof strip: top ROOF_STRIP_PX square of the appended width. The rest of
-    // the strip is dead texels no UV ever samples.
+    // the strip is dead texels no UV ever samples — except the shopfront
+    // band, which claims the square directly beneath the roof square (0011
+    // task 22) and is exposed as region.shop for propkit's door-glass remap.
     ctx.drawImage(roofImg, size, 0, ROOF_STRIP_PX, ROOF_STRIP_PX);
+    paintShopfrontStrip(ctx, size, ROOF_STRIP_PX, ROOF_STRIP_PX);
     region = {
       u: size / canvas.width,
       vSpan: ROOF_STRIP_PX / facadeH,
       tileWorld: ROOF_TILE_WORLD,
+      shop: {
+        u0: size / canvas.width,
+        u1: 1,
+        v0: 1 - (ROOF_STRIP_PX * 2) / facadeH,
+        v1: 1 - ROOF_STRIP_PX / facadeH,
+      },
     };
   }
   ctx.fillStyle = TRIM_SWATCH_COLOR;

@@ -205,13 +205,13 @@ const PALETTE_TRIM_TINT = '#72777a'; // neutral rooftop / facade trim
 // assets/models/*.js, and their lift targets — the linear forms of
 // PALETTE_GLASS_TINT / PALETTE_TRIM_TINT above.
 const AUTHORED_BAND_LIFT = [
-  { from: [0.0396, 0.0666, 0.1119], to: [0.164, 0.278, 0.356] }, // DOOR_GLASS #38495e
-  { from: [0.114, 0.147, 0.195], to: [0.168, 0.185, 0.194] }, // TRIM #5f6b7a
+  { from: [0.0396, 0.0666, 0.1119], to: [0.164, 0.278, 0.356], band: 'doorGlass' }, // DOOR_GLASS #38495e
+  { from: [0.114, 0.147, 0.195], to: [0.168, 0.185, 0.194], band: 'trim' }, // TRIM #5f6b7a
 ];
 function liftAuthoredBand(r, g, b) {
   for (const band of AUTHORED_BAND_LIFT) {
     if (Math.abs(r - band.from[0]) < 0.004 && Math.abs(g - band.from[1]) < 0.004
-      && Math.abs(b - band.from[2]) < 0.004) return band.to;
+      && Math.abs(b - band.from[2]) < 0.004) return band;
   }
   return null;
 }
@@ -1204,6 +1204,7 @@ function bakeModelPart(THREE, modelGeo, targetBox, tintHex, facade = null) {
     normals[i * 3 + 1] = ny;
     normals[i * 3 + 2] = nz;
     let greyscale = true;
+    let liftedBand = null;
     if (col) {
       const r = col[i * 3];
       const g = col[i * 3 + 1];
@@ -1222,7 +1223,9 @@ function bakeModelPart(THREE, modelGeo, targetBox, tintHex, facade = null) {
         // match. Targets are the linear forms of PALETTE_GLASS_TINT /
         // PALETTE_TRIM_TINT, the range the procedural fallback already
         // paints for the same job.
-        const lifted = liftAuthoredBand(r, g, b) || [r, g, b];
+        const liftMatch = liftAuthoredBand(r, g, b);
+        liftedBand = liftMatch ? liftMatch.band : null;
+        const lifted = liftMatch ? liftMatch.to : [r, g, b];
         colors[i * 3] = lifted[0];
         colors[i * 3 + 1] = lifted[1];
         colors[i * 3 + 2] = lifted[2];
@@ -1243,7 +1246,24 @@ function bakeModelPart(THREE, modelGeo, targetBox, tintHex, facade = null) {
     // massing; this box projection is the defensive equivalent for authored
     // geometry whose UVs sit wherever the Blender export left them.
     let uv = TRIM_UV;
-    if (facade && greyscale) {
+    // 0011 task 22: the DOOR_GLASS band samples the shopfront strip (painted
+    // into the roof strip's dead area, textures.js) instead of the flat
+    // swatch — glazing low, awnings above — and goes vertex-white so the art
+    // shows true. Photoreal set only (region.shop), so generic levels keep
+    // the task-7 lifted colour on the swatch.
+    if (facade && facade.shop && liftedBand === 'doorGlass' && Math.abs(ny) < 0.7) {
+      const across = Math.abs(nx) >= Math.abs(nz)
+        ? (positions[i * 3 + 2] - targetBox.min.z) / spanZ
+        : (positions[i * 3] - targetBox.min.x) / spanX;
+      const bandT = Math.min(1, (positions[i * 3 + 1] - targetBox.min.y) / spanY / 0.25);
+      uv = [
+        facade.shop.u0 + (facade.shop.u1 - facade.shop.u0) * across,
+        facade.shop.v0 + (facade.shop.v1 - facade.shop.v0) * bandT,
+      ];
+      colors[i * 3] = 1;
+      colors[i * 3 + 1] = 1;
+      colors[i * 3 + 2] = 1;
+    } else if (facade && greyscale) {
       if (facade.tileWorld && ny > 0.7) {
         uv = [
           facade.u + (1 - facade.u) * frac1(positions[i * 3] / facade.tileWorld),
