@@ -18,6 +18,10 @@ desktop; it will not hold 60fps on mobile at the tripled prop counts
   59 groups (guarded at 60) because all 48 Loop-specific types coexist;
   Chicago Levels 2-10 measure at most 38. Transforms update
   per-frame via instance matrices (tumble, vacuum pull, squash).
+  **Stale (2026-07-30):** live `state.world.groupCount` measures **114**
+  (0011 Phase 0, `shots/reachability/reachability.json`) — the 59/60 figure
+  predates the full Chicago catalog landing. The guard needs re-deriving;
+  see `current-state.md`'s resolved draw-call entry.
 - **Pooling and reuse on hot paths:** props, particles, floaters, and rival
   crumbs reuse bounded storage. Treat zero frame-loop allocation as a target
   requiring profiling evidence, not an already-proven global property.

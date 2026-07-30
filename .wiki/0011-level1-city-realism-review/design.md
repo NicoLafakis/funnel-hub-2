@@ -688,18 +688,55 @@ inherit it.
 
 ## Open questions this design cannot close from the code
 
-1. **Is R5's blue band reachable by a player?** Static geometry says the chase
-   camera never descends near 9 units. Settle live before spending.
-2. **Which draw-call number is real?** `current-state.md` says ~390,
-   `scene.js`'s comment says ~25, the desktop target is ≤150. R6's budget
-   decision depends on the answer.
+1. **Is R5's blue band reachable by a player?** ~~Static geometry says the
+   chase camera never descends near 9 units. Settle live before spending.~~
+   **ANSWERED 2026-07-30: no.** Live sweep minimum eye height 315.4u;
+   analytic pull-in floor 157.7u (~70u at the theoretical smallest radius)
+   against `camera.near = 20`. Closes as a capture-rig artifact; task 11
+   cancelled. Evidence: `00-findings.md` addendum.
+2. **Which draw-call number is real?** ~~`current-state.md` says ~390,
+   `scene.js`'s comment says ~25, the desktop target is ≤150.~~ **ANSWERED
+   2026-07-30: ~333 calls / ~987k tris / 114 groups** (live, auto-reset
+   artifact corrected). ~390/~1.0M confirmed in substance; the ~25/205k
+   comment was stale; ≤150 is already exceeded. Evidence: `00-findings.md`
+   addendum.
 3. **Do the black regions in `b-street.png` correspond to the `DOOR_GLASS`
-   band?** Strong static evidence, not confirmed on a live frame.
-4. **What is the true on-screen stripe-to-car ratio?** R3 does not move a
-   constant until this is measured.
+   band?** ~~Strong static evidence, not confirmed on a live frame.~~
+   **ANSWERED 2026-07-30: yes.** Band interior rgb(23,32,36) with zero
+   luminance variance, identical across orientations — flat-swatch paint,
+   not shadow. Evidence: `00-findings.md` addendum.
+4. **What is the true on-screen stripe-to-car ratio?** ~~R3 does not move a
+   constant until this is measured.~~ **ANSWERED 2026-07-30:** crosswalk
+   stripe correct (0.57m, ~0.3 ratio vs adjacent car); indicted instead:
+   `LANE_CENTRE_WIDTH` (~2x), `LANE_EDGE_WIDTH` (~1.5x), dash/gap (~3x too
+   frequent), `PARKING_PITCH` (2.2m vs 6.0–6.7m real). Evidence:
+   `00-findings.md` addendum.
 5. **What is the base facade art's exposure?** `facade-large.png`,
    `facade-medium.png` and `facade-small.png` are **JPEGs carrying a `.png`
    extension**, so their luminance was not measured alongside the variants.
    Irrelevant to Marina (which picks variant index 1) but it means the base
    tier art may differ in exposure from the variants, and R1a's re-levelling
    should measure all four before choosing a target.
+
+## Direction correction (2026-07-30): the reference screenshots are the target
+
+Nico's steering, measured and recorded in `00-findings.md`'s addendum: the
+bar for Level 1 is the reference set in `assets/references/`, not an
+abstract "photoreal". Consequences for this design:
+
+- **§R4 is re-aimed.** The reference sky is nearly flat and cloudless —
+  paler and more drained than ours (zenith rgb(153,202,230) vs our
+  rgb(35,103,223)), fading to near-white haze where ours falls to a
+  near-black band (rgb(5,21,34)). Mechanism 1 stands but the direction
+  inverts: lift and desaturate, do not deepen. Mechanism 2 (cloud) is
+  **dropped** — the target has no cloud. The `94f5383` seam identity must be
+  preserved *while the shared `skyHorizon` colour itself moves* to the pale
+  value, since dome sub-horizon, `scene.background` and fog all resolve to
+  it.
+- **Three reference elements enter scope** as `tasks.md` tasks 22–24:
+  coloured awnings + glazed shopfronts at ground floor, round leafy trees
+  (re-weight to the existing blob/lollipop kinds, no new assets), and real
+  traffic density (existing vehicle kinds, parked bays first). None waits on
+  Blender.
+- **Item 1 (brightness) is unaffected** and remains P0: our frames measure
+  46% of the reference's mean luminance (54.1 vs 117.7).

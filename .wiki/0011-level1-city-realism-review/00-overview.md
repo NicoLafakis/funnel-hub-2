@@ -1,7 +1,8 @@
 # 0011 — Level 1 City Realism: Objective Overview
 
-**Tier:** 2 — **Date:** 2026-07-29 — **Status:** proposed; nothing implemented,
-nothing approved.
+**Tier:** 2 — **Date:** 2026-07-29 — **Status:** Phase-0 measurements
+complete (2026-07-30, see `00-findings.md` addendum); no visible change
+implemented, nothing approved.
 
 ## What was asked
 
@@ -75,7 +76,9 @@ Binding budgets, from `.claude/agents/_shared/3d-pipeline-contract.md` §1 and
 
 - draw calls ≤150 desktop / **≤60 mobile**; triangles in view ≤1.5M / ≤400K;
   distinct materials ≤25 / **≤12**;
-- Level 1 measures **59 instanced prop groups, guarded at 60**;
+- Level 1's group count was recorded here as 59 against a guard of 60 —
+  **measured stale 2026-07-30: 114 groups live** (see the resolution note
+  below);
 - only `.color` survives `propkit.mergedKindGeometry` — per-part roughness and
   metalness are silently discarded and an entire merged prop kit renders with
   ONE `MeshStandardMaterial`. Per-part material variety is not available
@@ -87,13 +90,17 @@ Consequence: every item in this package is either a **texture-content change**
 Nothing here adds a material or a group. Any proposal that would is named and
 rejected in [`design.md`](design.md).
 
-**Recorded budget contradiction, not resolved by this package:**
-`current-state.md` records `scripts/perf-probe.cjs` measuring Level 1 at
-**~390 draw calls / ~1.0M triangles**, while `scene.js`'s own comment claims
-"~25 draw calls / 205k triangles" and the pipeline contract's desktop target
-is ≤150. The three numbers cannot all be right. This package does not raise
-draw calls, so it is not blocked on the reconciliation — but the next pass
-that wants headroom must re-measure before assuming any exists.
+**Budget contradiction — RESOLVED 2026-07-30 (Phase 0, check 4):**
+re-measured live with the `renderer.info` auto-reset artifact corrected
+(naive reads see only the composer's final quad, `calls=1 tris=1`). Real
+baseline: **333 draw calls / 987,291 triangles / 114 instanced groups** at a
+quiet spot; `current-state.md`'s ~390/~1.0M is confirmed in substance;
+`scene.js`'s "~25 draw calls / 205k triangles" comment was stale and has
+been corrected. Two consequences every later task must honour: the ≤150
+desktop budget is **already exceeded** (333 calls), so nothing may add a
+pass; and the "59 groups against a guard of 60" premise below is stale at
+**114 groups** — the group economy has to be re-derived, not assumed. Full
+evidence in `00-findings.md`'s measurement addendum.
 
 ## Scope line
 

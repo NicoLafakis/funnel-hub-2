@@ -142,16 +142,22 @@ The nine gameplay invariants and hard placement gate are green, and `npm test` e
    errata with file paths and measurements is in
    [`00-findings.md`](0011-level1-city-realism-review/00-findings.md) inline
    on each affected item.
-   **Recorded, unresolved draw-call contradiction:** this page (above, item
-   9 of the product-and-runtime list) records `scripts/perf-probe.cjs`
-   measuring Level 1 at **~390 draw calls / ~1.0M triangles**, while
-   `scene.js`'s own code comment claims "~25 draw calls / 205k triangles,"
-   and the pipeline contract's desktop target is **≤150**. The three numbers
-   cannot all be right and this page does not resolve which one is.
-   [`0011`'s task 4](0011-level1-city-realism-review/tasks.md) re-baselines
-   this on the live deploy before any later task in that package spends
-   against the budget; R6's park-furniture group budget (task 12) is blocked
-   on the answer.
+   **Draw-call contradiction — RESOLVED 2026-07-30** (0011 Phase 0, check 4;
+   full evidence in `0011`'s
+   [`00-findings.md`](0011-level1-city-realism-review/00-findings.md)
+   measurement addendum): this page's **~390 draw calls / ~1.0M triangles is
+   confirmed in substance** — re-measured live at **333 calls / 987,291
+   triangles / 163 geometries / 26 textures** at a quiet spot, with frame
+   times avg 9.4–14.5ms / p95 21–28ms. `scene.js`'s "~25 draw calls / 205k
+   triangles" comment was stale and is corrected. Instrumentation caveat now
+   on record: with the composer enabled, `renderer.info` auto-reset makes
+   naive `performanceSnapshot()` reads return `calls=1 tris=1` (the final
+   fullscreen quad) — any future probe must accumulate per-frame as
+   `scripts/reachability-sweep.cjs` does. Two hard consequences: the ≤150
+   desktop budget is **already exceeded** (333 calls), and
+   **`state.world.groupCount` is 114**, not the 59-guarded-at-60 this page
+   and `tech-architecture.md` §1 record — 0011's task 12 group economy was
+   re-scoped accordingly.
    **Blocking constraint carried from `art-direction.md` §1:** Blender is
    not installed on this machine, so `npm run models` cannot regenerate
    `assets/models/*.js`. This is why 0011's item-2 authored-geometry prop

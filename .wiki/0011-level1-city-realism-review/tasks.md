@@ -5,6 +5,23 @@ and the item-5 defect first (highest player-visible gain per unit of work),
 then 6, 7, 8, then 2 (largest and slowest — an asset-authoring effort rather
 than a settings change). That order is a decision, not a re-derivation.
 
+**Direction correction (2026-07-30, from Nico): the reference screenshots in
+`assets/references/` are the target, not "photoreal".** Measured consequences
+(evidence in `00-findings.md` addendum): their sky has no cloud and is nearly
+flat — paler than ours, fading to near-white haze where ours fades to a
+near-black band. Task 8 is re-aimed to "lighten and drain"; task 9 (clouds)
+is dropped. Three reference elements the original plan never named are added
+as tasks 22–24: coloured awnings + glazed shopfronts, round leafy trees,
+real traffic density.
+
+**Phase 0 is COMPLETE (2026-07-30)** — all four measurements are recorded in
+`00-findings.md`'s measurement addendum. Outcomes: task 7 unblocked (band is
+baked paint); task 11 CANCELLED (band unreachable by any player camera);
+task 10 scoped to `LANE_CENTRE_WIDTH`, `LANE_EDGE_WIDTH`, the dash/gap pair
+and `PARKING_PITCH` (crosswalk correct as authored); the budget contradiction
+is resolved (real: 333 calls / 987k tris / **114 groups** — the "59 groups,
+guard 60" premise is stale and every task written against it was re-read).
+
 Gate: nothing marked † merges without Nico's explicit per-element approval
 (working agreements, `INDEX.md`). Each task is independently shippable, lists
 its dependencies, and lists its acceptance evidence — no task is done without
@@ -17,39 +34,29 @@ test` green and `npm run build` clean before any push. This repo has **no**
 typecheck, lint, or format script (verified in `package.json`), so those two
 are the whole automated gate set.
 
-## Phase 0 — measurements that decide what the later tasks do
+## Phase 0 — measurements that decide what the later tasks do ✔ COMPLETE
 
-These carry no look-and-feel risk and unblock four later tasks. Do them first;
-three of them can invalidate a planned edit.
+All four done 2026-07-30; evidence in `00-findings.md` measurement addendum.
+Scripts kept for re-runs: `scripts/ref-measure.cjs` (pixel measurement),
+`scripts/reachability-sweep.cjs`, `scripts/pullin-probe.cjs` (live camera
+space), `scripts/perf-probe.cjs` (with the `renderer.info` auto-reset caveat
+noted in the addendum).
 
-1. **Confirm the ground-floor black band on a live frame** (R1b). Capture the
-   fixed `b-street` and `d-intersection` cameras, sample the black regions, and
-   confirm they correspond to the `DOOR_GLASS = '#38495e'` band (bottom
-   0–24% of small models, 0–8% of medium/large) rather than to cast shadow.
-   *Blocks:* task 3. *Evidence:* annotated crop plus sampled sRGB values
-   appended to `00-findings.md`.
-2. **Settle whether R5's blue band is reachable in play.** Sweep the reachable
-   camera space — pitch across the 35°–55° range, avatar radius from spawn to
-   the cap, and the `camera.js` obstacle pull-in — and record the lowest eye
-   height any of them produces against the 20-unit `camera.near`.
-   *Blocks:* task 6. *Evidence:* a table of eye height per configuration, plus
-   either a reproducing screenshot (item stays open) or the proof that none
-   reproduces (item closes as unreachable, and task 6 is cancelled).
-3. **Measure the on-screen stripe-to-car ratio** (R3). At the fixed
-   `d-intersection` camera, measure in pixels the widest painted stripe and the
-   narrowest car beside it. Also measure a pedestrian's height against the
-   crosswalk band. *Blocks:* task 5. *Evidence:* pixel measurements recorded in
-   this package; the ratio names which constant moves, in `groundtex.js` or in
-   `propkit.js`'s render-scale table — no constant moves before this exists.
-4. **Re-baseline draw calls, triangles, and instanced groups.** Run
-   `node scripts/perf-probe.cjs` against the live URL and record `calls`,
-   `triangles`, `groupCount`, and `groupKeys`. This exists to settle the
-   recorded contradiction between `current-state.md` (~390 calls / ~1.0M tris),
-   `scene.js`'s comment (~25 / 205k), and the ≤150 desktop / ≤60 mobile
-   budgets. *Blocks:* task 8's budget decision. *Evidence:* the probe output,
-   plus a note in `current-state.md` reconciling or explicitly flagging the
-   three figures. This is also the before-baseline every later task diffs
-   against.
+1. **DONE — black band confirmed as baked paint** (R1b). Ground-floor band
+   rgb(23,32,36) with zero luminance variance, identical across building
+   orientations; consistent with `DOOR_GLASS #38495e` dimmed. Not shadow.
+2. **DONE — R5's blue band is unreachable in play.** Lowest live eye height
+   across pitch/radius/pull-in/transient sweep: 315.4u; analytic pull-in
+   floor 157.7u (70u at theoretical minimum radius) against `camera.near =
+   20`. No reachable camera reproduces the band. **Cancels task 11.**
+3. **DONE — stripe-to-car ratio measured.** Crosswalk stripe correct
+   (0.57m, ratio ~0.3 vs adjacent car); indicted: `LANE_CENTRE_WIDTH` (~2x),
+   `LANE_EDGE_WIDTH` (~1.5x), dash/gap 14/12 (~3x too frequent),
+   `PARKING_PITCH` (2.2m vs real 6.0–6.7m).
+4. **DONE — re-baselined.** 333 calls / 987,291 tris / 163 geom / 26 tex /
+   **114 groups**; frame avg 9.4–14.5ms, p95 21–28ms. `scene.js:159`'s
+   "~25 calls / 205k tris" comment was stale (corrected); ≤150 desktop
+   budget is exceeded at 333 — no headroom exists for new passes.
 
 ## Phase A — items 1, 4, 3, 5 (the P0 batch)
 
@@ -81,39 +88,46 @@ three of them can invalidate a planned edit.
    *Follow-up, not blocking:* file the same fix in
    `scripts/blender/build_props.py` for whenever a machine with Blender is
    available, then delete the remap.
-8. **R4 — sky gradient and haze band** †. Widen the `'sky-dome'` ramp in
-   `main.js` `buildLevelWorld()` (deepen `skyZenith`, lift and hold the
-   near-horizon haze band, replace the `sqrt` ramp) and raise the dome's
-   latitude segment count from 12 so the bands stop reading as bands. The
-   sub-horizon band must remain exactly `skyHorizon` — the identity that
-   `94f5383` established with `scene.background` and the fog colour, and which
-   the horizon-seam closure depends on. *Depends on:* nothing.
-   *Evidence:* before/after at `h-far-horizon` and `f-vista`; the horizon-seam
-   measurement re-run and still in its 1–3 target band; a fixed `f-vista`
-   capture confirming the furthest in-play building is still crisp (`NR4`).
-9. **R4 — cloud on the existing dome** †. Procedurally bake a cloud map (the
-   seeded `mulberry32` noise machinery in `textures.js` is the precedent) and
-   sample it on the sky dome's existing UVs, with `fog: false` and
-   `toneMapped: false` like the rest of the dome. One texture, same mesh, same
-   material, **no new draw call**. *Depends on:* task 8. *Evidence:* cloud
-   visible at `h-far-horizon`; draw-call and material counts unchanged against
-   task 4's baseline; sub-horizon band still colour-identical.
-10. **R3 — correct the road-marking rhythm and gauge** †. Move only the
-    constants task 3's measurement indicts, in `src/content/groundtex.js`
-    (`LANE_CENTRE_WIDTH`, `LANE_EDGE_WIDTH`, the 14/12 dash-gap pair,
-    `PARKING_PITCH`, `CURB_WIDTH`). *Depends on:* task 3.
+8. **R4 — lighten and drain the sky** † *(re-aimed 2026-07-30)*. The
+   reference sky is nearly flat and cloudless — pale, drained blue at the
+   zenith (measured rgb(153,202,230) against ours at rgb(35,103,223)) fading
+   toward near-white haze at the horizon, where ours brightens to
+   rgb(84,144,250) and then drops to a near-black sub-horizon band
+   rgb(5,21,34). So: lift and desaturate `skyZenith` (much less than the old
+   "deepen" plan — the reference is flatter than our dome), push the
+   near-horizon band toward the reference's pale haze, and re-aim
+   `skyHorizon` itself at the pale value — the `94f5383` identity between
+   dome sub-horizon, `scene.background` and fog colour must be *preserved
+   while the shared colour changes*, since all three resolve to
+   `skyHorizon`. Raise the dome's latitude segment count from 12 so the ramp
+   stops reading as bands. *Depends on:* nothing.
+   *Evidence:* before/after at `h-far-horizon` and `f-vista`; the zenith and
+   horizon values re-measured against the reference numbers above; the
+   horizon-seam measurement re-run and still in its 1–3 target band; a fixed
+   `f-vista` capture confirming the furthest in-play building is still crisp
+   (`NR4`).
+9. ~~**R4 — cloud on the existing dome**~~ **DROPPED (2026-07-30).** The
+   reference sky is cloudless; adding cloud would move *away* from the
+   target. The `design.md` §R4 mechanism-2 notes stand as the record of the
+   considered approach.
+10. **R3 — correct the road-marking rhythm and gauge** †. Move exactly the
+    four constants the Phase-0 measurement indicted, in
+    `src/content/groundtex.js`: `LANE_CENTRE_WIDTH` (3.0 → ~1.5),
+    `LANE_EDGE_WIDTH` (2.2 → ~1.6), the dash/gap pair (14/12 → a real ~1:3
+    rhythm at scale), `PARKING_PITCH` (24 → ~66). The crosswalk band stays as
+    authored (measured correct). *Depends on:* nothing (task 3 done).
     *Evidence:* before/after at `d-intersection` and `j-elevated-rail`, with the
     stripe visibly narrower than a car; `MIN_STREET_FOR_MARKINGS = 26` and
     `MIN_STREET_FOR_PARKING = 52` still satisfied at every street width the
     100-level campaign generates (these constants are shared, so run the full
     campaign, not just Level 1); `npm test` green at 100/100.
-11. **R5 — close the ground-plane clip** † *(cancelled if task 2 proves it
-    unreachable)*. Extend the `'horizon-skirt'` `RingGeometry` inner radius
-    inward, or clamp the reachable camera height — whichever task 2's data
-    indicates. Do not touch the `skirtOuter === hazeFull` binding and do not
-    move `camera.near`. *Depends on:* task 2. *Evidence:* the reachable-camera
-    sweep from task 2 re-run with zero frames showing a blue band beneath the
-    road; horizon-seam measurement unchanged.
+11. ~~**R5 — close the ground-plane clip**~~ **CANCELLED (2026-07-30).**
+    Phase-0 check 2 proved no reachable camera configuration comes within an
+    order of magnitude of the eye height where the band appears (measured
+    minimum 315.4u live; analytic floor 157.7u at pitch-min / ~70u at the
+    theoretical smallest radius, against `camera.near = 20`). The
+    `b-street.png` band was a review-rig artifact at ~9u eye height. No fix
+    is warranted; the geometry notes in `design.md` §R5 stand as the record.
 
 ## Phase B — items 6, 7, 8
 
@@ -123,11 +137,14 @@ three of them can invalidate a planned edit.
     real park features via `parkSites` — benches on path edges, fence and hedge
     runs on the block perimeter, planters at path junctions. **Prefer expressing
     the furniture through existing `visualId`s at new transforms (zero new
-    groups) before spending a group.** *Depends on:* task 4 (the budget answer).
+    groups) before spending a group.** *Depends on:* nothing (task 4 done —
+    but note the baseline measured **114 groups**, not the 59/60 the plan
+    assumed; the group economy must be re-derived before spending any).
     *Evidence:* before/after at `e-park`; a visible boundary and recognisable
-    furniture; `groupCount` from `scripts/perf-probe.cjs` at or below the 60
-    guard, or an explicit measured decision to raise it; `npm test` green with
-    zero placement penetrations; seeded determinism preserved.
+    furniture; `groupCount` re-measured with an explicit decision about what
+    the real guard is (the recorded 60-guard premise is stale at 114);
+    `npm test` green with zero placement penetrations; seeded determinism
+    preserved.
 13. **R6 — widen and terminate the painted park paths** †. In `groundtex.js`'s
     `zone === 'grass'` branch, widen the `lineWidth 9` path network toward a
     real promenade and terminate paths on the plaza disc and block edges rather
@@ -210,3 +227,43 @@ the toolchain arrives.
     remediation records"; `0007`'s reference-comparison table gets the
     *Open space*, *Roads*, *Architecture* and *Grounding* rows marked against
     what this pass actually closed.
+
+## Phase B+ — the reference's street level (added 2026-07-30)
+
+Named by the direction correction: the reference frames carry three things
+the original plan never listed. None of them waits on Blender — they are
+texture/geometry-content work in pipelines that already exist (the PixelLab
+set already carries 26 generated textures; the tree/vehicle kinds already
+exist as merged groups, including `street_tree_blob` and
+`street_tree_lollipop`). Sequence after Phase A (the albedo must be settled
+before street-level dressing is matched to it) and interleave with Phase B
+by dependency.
+
+22. **Coloured awnings + glazed shopfronts at ground floor** †. The
+    reference's storefronts have striped fabric awnings (teal/white,
+    red/white, green) and glass shopfront glazing where ours has the flat
+    `DOOR_GLASS` band. Mechanism to be designed at implementation time, but
+    the cheap route rides task 7's remap: once the ground-floor band samples
+    something other than the flat swatch, give it an authored
+    shopfront/awning strip texture via the same facade-map machinery the
+    buildings already use (one map per group, no new draw call). Level-1-only
+    gate. *Depends on:* task 7. *Evidence:* before/after at `b-street` and
+    `c-block`; ground floors read as shops, not bands; group/draw-call
+    counts unchanged.
+23. **Round leafy trees, not conifers** †. The reference canopy is round and
+    leafy; our street mix leans on `street_tree_cone`. The round kinds
+    (`street_tree_blob`, `street_tree_lollipop`) already exist as live
+    groups, so this is a placement-weight data change, not new assets:
+    re-weight Level 1's tree pick toward blob/lollipop (and away from cone)
+    in the seeded placement data. *Depends on:* nothing. *Evidence:*
+    before/after at `e-park` and `d-intersection`; seeded determinism
+    preserved; `npm test` green; Level 2 and Level 50 pixel-identical.
+24. **Real traffic density** †. The reference carries several vehicles per
+    block face, parked and moving; our streets read empty (one bus and one
+    car in `c-block`). Raise Level 1's vehicle placement counts in the
+    district/placement data toward the reference density, parked bays filled
+    first (binds to the `PARKING_PITCH` fix in task 10). Existing vehicle
+    kinds only — no new groups. *Depends on:* task 10 (bays must be real
+    size before they are filled). *Evidence:* before/after at `c-block` and
+    `d-intersection`; placement penetration count zero; perf re-measured
+    against the 333-call / 114-group baseline.

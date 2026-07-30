@@ -156,8 +156,11 @@ export function createEngine(canvasEl, THREE, { quality = 'high' } = {}) {
   // Real cast shadows (art-direction §5). Crisp contact shadows under every
   // building, car, tree and lamp are the single biggest contributor to the
   // reference's "clean 3D" read — flat blob decals cannot draw a building's
-  // silhouette across a street. Level 1 renders in ~25 draw calls / 205k
-  // triangles, so there is ample budget for one extra shadow pass.
+  // silhouette across a street. Level 1 measures ~333 draw calls / ~987k
+  // triangles a frame (live, 2026-07-30, composer+shadow pass included —
+  // renderer.info auto-reset hides everything but the final quad, so probe
+  // with autoReset=false as scripts/reachability-sweep.cjs does), already
+  // past the ≤150 desktop target, so this shadow pass is spent, not free.
   //
   // The light is directional, so its shadow camera is an ORTHOGRAPHIC box that
   // has to be re-aimed at whatever the player is looking at — a box big enough

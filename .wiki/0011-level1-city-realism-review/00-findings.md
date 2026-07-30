@@ -1,8 +1,10 @@
 # 0011 — Level 1 City Realism Review
 
-Status: **findings recorded; no remediation implemented.**
+Status: **findings recorded; Phase-0 measurements complete (see addendum);
+no remediation implemented.**
 Date: 2026-07-29. Evidence: `shots/l1-realism-review/` (10 screenshots,
-`a-spawn.png` through `j-elevated-rail.png`).
+`a-spawn.png` through `j-elevated-rail.png`), plus the 2026-07-30
+measurement addendum below.
 
 ## Method
 
@@ -170,6 +172,161 @@ Items 1, 4, and 3, plus the item-5 defect, are the highest value-per-cost —
 they would move street level from ~4 to ~7 without authoring a single new
 building. This is a recommendation for the next pass, not a scoped or
 approved change.
+
+---
+
+## Measurement addendum (2026-07-30, Phase 0 of `tasks.md`)
+
+Read-only. Two passes: reference-vs-capture pixel measurement
+(`scripts/ref-measure.cjs`, sampling the PNGs through a headless-browser
+canvas) and the four Phase-0 live checks (`scripts/reachability-sweep.cjs`,
+`scripts/pullin-probe.cjs`, `scripts/perf-probe.cjs`; raw output in
+`shots/reachability/reachability.json`). No game code was changed.
+
+### Direction correction: the reference screenshots are the target
+
+The target is the reference set in `assets/references/` (the
+`target-in_game-graphics-*` frames, `actual-in_game-graphics-city.png`, and
+the `holeio/` stills) — **not** an abstract "photoreal" bar. Consequences
+recorded here so they cannot get lost:
+
+- Their sky has **no cloud and is nearly flat** — it is simply *paler* than
+  ours, and their distance fades toward near-white haze while ours fades to
+  a near-black band. The sky task is therefore "lighten and drain it," and
+  the planned cloud layer (`tasks.md` task 9, `design.md` §R4 mechanism 2)
+  is **dropped**.
+- Three things the reference has that the original plan never named:
+  **coloured awnings and glazed shopfronts at ground floor**, **round leafy
+  trees** (not our conifers), and **real traffic density**. All three are
+  achievable in the existing pipelines (see tasks 22–24).
+
+### Reference vs capture: the hard numbers
+
+Global mean luminance (0–255), whole frame:
+
+| Set | Values | Mean |
+|---|---|---|
+| Reference (6 frames) | 110.6, 102.5, 110.3, 115.4, 129.5, 137.9 | **117.7** |
+| Ours (8 gameplay frames) | 38.1, 59.9, 43.5, 41.7, 50.3, 78.0, 47.1, 74.3 | **54.1** |
+
+Ours renders at **46% of the reference's brightness** (~2.2× darker); even
+our brightest frame (`f-vista`, 78.0) is below the darkest reference (102.5).
+Item 1 remains the number-one defect, unaffected by the re-aim.
+
+Sky gradient (sRGB, center column):
+
+| | Zenith (y=0.05) | Toward horizon | At/below horizon |
+|---|---|---|---|
+| Reference (`target-bg02`) | rgb(153,202,230) pale, drained | lightens | near-white haze |
+| Ours (`h-far-horizon`) | rgb(35,103,223) deep saturated | rgb(84,144,250) at y=0.45 | **near-black band rgb(5,21,34)** |
+
+The gradients run in *opposite directions at the seam*: theirs goes pale,
+ours goes near-black. Water tells the same story: reference lake
+rgb(142,186,242) lum ~183; ours rgb(6,22,35) lum ~17 — 10× darker.
+
+Crosswalk stripe vs car (scanline runs, same-depth neighbours):
+
+- Reference (`target-city`, orig px): zebra stripe narrow dim **8px** vs
+  adjacent car narrow dim **13–20px** → stripe ≈ 0.4–0.6 of car width.
+- Ours (`d-intersection`): crosswalk bar narrow dim ~15px at ~2.4px/u →
+  0.57m as authored (matches the §R3 desk figure, real-world correct);
+  a car at the same depth would be ~50px wide → ratio ≈ 0.3. **The
+  stripe-to-car ratio is not the defect** — confirming the errata on item 3.
+
+Street level inventory (target crops at native res): striped awnings
+(teal/white, red/white, green), glazed shopfronts, street trees spaced
+roughly one per building bay along every sidewalk, parks with round
+canopies/gazebo/fountain, dense parked and moving traffic (several cars per
+block face), thin crosswalk stripes. Building palette per frame: red brick,
+tan/brown, purple-lavender mid-rise, teal glass, dark-roof low-rises with
+readable roof furniture — 6–8 distinct mid-light palettes.
+
+### Phase 0 check 1 — the black ground floors are baked paint (task 1, R1b) ✔
+
+Rect samples on the live captures (`b-street.png`):
+
+- Right-building ground-floor band interior: **rgb(23,32,36), luminance
+  range 30..30 — perfectly uniform**. A cast shadow multiplies whatever
+  facade texture lies beneath and cannot erase it; a zero-variance region
+  means there is no texture beneath — the band samples the flat white
+  `TRIM_UV` swatch exactly as the code reading said.
+- The identical value rgb(23,32,36) appears on the left-side buildings'
+  dark faces — same value on different orientations, which illumination
+  cannot produce from different irradiance.
+- Value is consistent with `DOOR_GLASS #38495e` = rgb(56,73,94) × shade-side
+  lighting × `TOO_BIG_DIM_TEXTURED 0.78`. Balcony/trim bands render
+  rgb(13,9,7) down to rgb(2,2,2) (`TRIM #5f6b7a`); the hole interior (true
+  black reference) measures rgb(0,1,1).
+
+Confirmed: albedo, not shadow. Task 7's vertex-colour remap is the right
+shape of fix.
+
+### Phase 0 check 2 — R5's blue band is NOT reachable in play (task 2) ✔
+
+Live sweep at 1600×1000 (`reachability-sweep.cjs`, `pullin-probe.cjs`),
+`camera.near = 20`:
+
+| Configuration | Eye height |
+|---|---|
+| Level-entry transient (3s, 120ms samples) | min 448.4u |
+| A — spawn idle, pitch default 55° (r=31.4) | 450.4u |
+| B — pitch min 35° (orbit drag) | 315.4u |
+| C — drive-through pull-in hunt | 315.4u (no lower) |
+| D — pitch max 65° | 690.4u |
+| Pull-in probe, 24 positions ringing the landmark | min 315.4u |
+
+Analytic floor, independent of the sweep: the pull-in ray originates at
+`avatar.y + height/2`, so a pulled camera can never sit below half the
+free-flight height — 157.7u at the measured minimum, ~70u even at the
+smallest theoretical radius (r=14, pitch 35°). The band in `b-street.png`
+was produced at a ~9u review-rig eye height. **No reachable camera gets
+within an order of magnitude of the near plane.** Item 5 closes as a
+capture-rig artifact; `tasks.md` task 11 is cancelled.
+
+### Phase 0 check 3 — road-marking measurement (task 3, R3) ✔
+
+On-screen pixels (`b-street`, `d-intersection`, native res) against the
+`groundtex.js` constants (11 u/m):
+
+| Marking | Authored | Real-world | On-screen check | Verdict |
+|---|---|---|---|---|
+| `LANE_CENTRE_WIDTH` | 3.0u = 0.27m | 0.10–0.15m | dash ~35px vs truck width ~170px at same depth (0.21 vs real ~0.12) | **~2× too wide — move it** |
+| `LANE_EDGE_WIDTH` | 2.2u = 0.20m | 0.10–0.15m | consistent with centre line | **~1.5× too wide — move it** |
+| dash/gap | 14u/12u = 1.27m/1.09m | 3m/9m (US) | dash:gap ≈ 2:1 on screen vs real 1:3 | **~3× too frequent — move it** |
+| `PARKING_PITCH` | 24u = 2.2m | 6.0–6.7m | — | **far too tight — move it** |
+| crosswalk stripe | 6.32u = 0.57m | 0.30–0.60m | ~15px vs ~50px car at same depth ≈ 0.3 | correct — do not move |
+
+The measurement indicts the same constants as the desk estimate: centre
+line, edge line, dash rhythm, parking pitch. Reading A (props undersized)
+is not supported for the markings themselves — the stripe:car ratio is
+right. Task 10 proceeds against those four constants only.
+
+### Phase 0 check 4 — perf re-baseline (task 4) ✔
+
+Live deploy, real GPU, 1600×1000. **Instrumentation fix discovered:**
+`renderer.info` auto-resets per internal pass, so with the composer enabled
+`performanceSnapshot()` only ever sees the final fullscreen quad — this is
+why naive reads return `calls=1 tris=1`. Re-measured with
+`info.autoReset=false` + one reset per frame (accumulates shadow pass and
+composer passes — the honest whole-frame cost):
+
+- **calls = 333, triangles = 987,291, geometries = 163, textures = 26**
+  (spawn idle, post-sweep).
+- **`state.world.groupCount = 114`** (632 prop instances; full key list in
+  `reachability.json`) — the "59 instanced prop groups, guard 60" premise in
+  `tech-architecture.md` §1 / `00-overview.md` is stale. Any task written
+  against a zero-group-headroom assumption must be re-read against 114.
+- Frame times (perf-probe, live): spawn avg 9.41ms / p95 21.40ms;
+  mid-city 9.67/21.00; vista 3.34/8.60; 10s walk 11.41/21.80.
+- Sweep snapshot (different spot): avg 14.49ms / p95 27.80ms.
+
+Reconciliation of the three recorded figures: `current-state.md`'s
+"~390 calls / ~1.0M tris" is **confirmed in substance** (333/~987k at a
+quiet spot; ~390 at busier ones); `scene.js:159`'s "~25 draw calls / 205k
+triangles" comment is **stale and wrong** (corrected in the same change as
+this note); the ≤150 desktop budget is **exceeded at 333 calls**, which the
+next pass that wants headroom must reckon with.
+
 
 ## Relationship to existing wiki claims
 
